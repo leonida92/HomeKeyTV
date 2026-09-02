@@ -75,7 +75,7 @@ fun SettingsScreen(
     val updateState by viewModel.updateState.collectAsState()
     val appVersion = viewModel.appVersion
 
-    var selectedTab by remember { mutableStateOf(0) } // 0: Phone Setup, 1: Layout Position, 2: Button Remap, 3: Installed Apps, 4: Updates
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Phone Setup, 1: Layout Position, 2: Button Remap, 3: Installed Apps, 4: Updates
 
     val tab0FocusRequester = remember { FocusRequester() }
     val tab1FocusRequester = remember { FocusRequester() }

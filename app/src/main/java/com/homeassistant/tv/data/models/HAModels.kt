@@ -2,7 +2,6 @@ package com.homeassistant.tv.data.models
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
@@ -82,54 +81,6 @@ object OptimisticToggle {
         }
     }
 }
-
-@Serializable
-data class HAAuthMessage(
-    val type: String,
-    @SerialName("access_token") val accessToken: String? = null,
-    @SerialName("ha_version") val haVersion: String? = null,
-    val message: String? = null
-)
-
-@Serializable
-data class HACommand(
-    val id: Long,
-    val type: String,
-    val domain: String? = null,
-    val service: String? = null,
-    @SerialName("service_data") val serviceData: JsonObject? = null,
-    val target: JsonObject? = null,
-    @SerialName("event_type") val eventType: String? = null
-)
-
-@Serializable
-data class HAResponse(
-    val id: Long? = null,
-    val type: String,
-    val success: Boolean? = null,
-    val result: JsonElement? = null,
-    val error: HAError? = null,
-    val event: HAEvent? = null
-)
-
-@Serializable
-data class HAError(
-    val code: String? = null,
-    val message: String? = null
-)
-
-@Serializable
-data class HAEvent(
-    @SerialName("event_type") val eventType: String? = null,
-    val data: HAEventData? = null
-)
-
-@Serializable
-data class HAEventData(
-    @SerialName("entity_id") val entityId: String? = null,
-    @SerialName("new_state") val newState: HAEntityState? = null,
-    @SerialName("old_state") val oldState: HAEntityState? = null
-)
 
 @Serializable
 data class PinnedEntityConfig(

@@ -2,6 +2,7 @@ package com.homeassistant.tv.service
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -198,10 +199,13 @@ class RemoteButtonRemapService : AccessibilityService() {
 
             "SYSTEM_SLEEP" -> {
                 // The SDK exposes no true "sleep" action to accessibility services. Locking the
-                // screen is the closest supported proxy — on Android TV this follows the same
-                // path as the power button's sleep/standby. If the device can't lock (e.g. no
-                // lock screen configured), fall back to the power menu so the user can pick Sleep.
-                val locked = performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+                // screen is the closest supported proxy on Android 9+ (API 28+). On older versions
+                // or if locking is unavailable, fall back to the power dialog.
+                val locked = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
+                } else {
+                    false
+                }
                 if (!locked) {
                     performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
                 }

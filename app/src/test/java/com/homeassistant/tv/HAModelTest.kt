@@ -133,4 +133,24 @@ class HAModelTest {
         assertNull(OptimisticToggle.nextStateAfterToggle("climate", "off"))
         assertNull(OptimisticToggle.nextStateAfterToggle("climate", null))
     }
+
+    @Test
+    fun testUpdateManagerVersionComparison() {
+        // Newer major version
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v2.0.0", "1.1.0"))
+        // Newer minor version
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.0", "1.1.0"))
+        // Newer patch version
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.1.1", "1.1.0"))
+        // Same version with prefix
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.1.0", "1.1.0"))
+        // Same version without prefix
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("1.1.0", "1.1.0"))
+        // Older versions
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.0.9", "1.1.0"))
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v0.9.0", "1.1.0"))
+        // Pre-release tag stripping
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.0-beta1", "1.1.0"))
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.1.0-rc1", "1.1.0"))
+    }
 }

@@ -37,11 +37,11 @@ fun ClimateDialog(
     onDismiss: () -> Unit
 ) {
     val initialTemp = entity.targetTemperature ?: 21.0f
-    var targetTemp by remember { mutableStateOf(initialTemp) }
+    var targetTemp by remember { mutableFloatStateOf(initialTemp) }
 
     val scope = rememberCoroutineScope()
     var debounceJob by remember { mutableStateOf<Job?>(null) }
-    var lastSent by remember { mutableStateOf(Float.NaN) }
+    var lastSent by remember { mutableFloatStateOf(Float.NaN) }
 
     fun sendTemperature(value: Float) {
         if (value == lastSent) return

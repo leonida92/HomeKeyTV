@@ -36,12 +36,12 @@ fun BrightnessDialog(
     onDismiss: () -> Unit
 ) {
     val initialBrightness = entity.brightness ?: 128
-    var brightness by remember { mutableStateOf(initialBrightness) }
+    var brightness by remember { mutableIntStateOf(initialBrightness) }
     val brightnessPercent = ((brightness / 255f) * 100).toInt()
 
     val scope = rememberCoroutineScope()
     var debounceJob by remember { mutableStateOf<Job?>(null) }
-    var lastSent by remember { mutableStateOf(-1) }
+    var lastSent by remember { mutableIntStateOf(-1) }
 
     fun sendBrightness(value: Int) {
         if (value == lastSent) return
