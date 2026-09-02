@@ -152,5 +152,11 @@ class HAModelTest {
         // Pre-release tag stripping
         assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.0-beta1", "1.1.0"))
         assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.1.0-rc1", "1.1.0"))
+
+        // Comparisons against 1.1.1
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.1.2", "1.1.1"))
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.0", "1.1.1"))
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.1.1", "1.1.1"))
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.1.0", "1.1.1"))
     }
 }
