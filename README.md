@@ -13,6 +13,25 @@
 
 ---
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/dock_overlay.png" width="900" alt="Quick-Access Floating Dock">
+  <br>
+  <em>Floating Quick-Access Dock with dynamic state badge over Google TV</em>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/settings_phone_setup.png" width="48%" alt="Instant Phone Setup">
+  <img src="docs/screenshots/settings_button_remap.png" width="48%" alt="Remote Button Remapper">
+</p>
+<p align="center">
+  <img src="docs/screenshots/settings_layout.png" width="48%" alt="Custom Layout Position">
+  <img src="docs/screenshots/settings_updates.png" width="48%" alt="In-App GitHub Updates">
+</p>
+
+---
+
 ## Features
 
 - **Floating Quick-Access Dock**:
