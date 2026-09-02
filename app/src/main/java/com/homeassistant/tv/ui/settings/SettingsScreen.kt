@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.provider.Settings
 import android.view.KeyEvent
+import java.io.File
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
@@ -71,13 +72,16 @@ fun SettingsScreen(
     val buttonRemaps by viewModel.buttonRemaps.collectAsState()
     val isAccessibilityEnabled by viewModel.isAccessibilityEnabled.collectAsState()
     val learnedKey by viewModel.learnedKey.collectAsState()
+    val updateState by viewModel.updateState.collectAsState()
+    val appVersion = viewModel.appVersion
 
-    var selectedTab by remember { mutableStateOf(0) } // 0: Phone Setup, 1: Layout Position, 2: Button Remap, 3: Installed Apps
+    var selectedTab by remember { mutableStateOf(0) } // 0: Phone Setup, 1: Layout Position, 2: Button Remap, 3: Installed Apps, 4: Updates
 
     val tab0FocusRequester = remember { FocusRequester() }
     val tab1FocusRequester = remember { FocusRequester() }
     val tab2FocusRequester = remember { FocusRequester() }
     val tab3FocusRequester = remember { FocusRequester() }
+    val tab4FocusRequester = remember { FocusRequester() }
 
     BackHandler(onBack = onBack)
 
@@ -108,7 +112,7 @@ fun SettingsScreen(
                         modifier = Modifier.size(24.dp)
                     )
                     Text(
-                        text = "HomeAssistantTV Settings",
+                        text = "HomeKey TV Settings",
                         fontSize = 22.sp,
                         fontWeight = FontWeight.Bold,
                         color = Color.White
@@ -180,7 +184,15 @@ fun SettingsScreen(
                     isSelected = selectedTab == 3,
                     focusRequester = tab3FocusRequester,
                     onLeft = { tab2FocusRequester.requestFocus() },
+                    onRight = { tab4FocusRequester.requestFocus() },
                     onSelect = { selectedTab = 3 }
+                )
+                SettingsTabItem(
+                    title = "Updates (v$appVersion)",
+                    isSelected = selectedTab == 4,
+                    focusRequester = tab4FocusRequester,
+                    onLeft = { tab3FocusRequester.requestFocus() },
+                    onSelect = { selectedTab = 4 }
                 )
             }
 
@@ -226,6 +238,15 @@ fun SettingsScreen(
                         appIcons = appIcons,
                         pinnedApps = pinnedApps,
                         onTogglePinnedApp = { pkg, name -> viewModel.togglePinnedApp(pkg, name) }
+                    )
+                    4 -> UpdatesView(
+                        appVersion = appVersion,
+                        updateState = updateState,
+                        onCheckForUpdates = { viewModel.checkForUpdates() },
+                        onDownloadAndInstall = { viewModel.downloadAndInstallUpdate(it) },
+                        onInstallApk = { viewModel.installApk(it) },
+                        onOpenReleaseUrl = { viewModel.openReleaseUrl(it) },
+                        onDismiss = { viewModel.resetUpdateState() }
                     )
                 }
             }
@@ -1315,6 +1336,301 @@ fun AppGridCard(
 
             if (isPinned) {
                 Icon(Icons.Default.CheckCircle, contentDescription = null, tint = HA_Blue, modifier = Modifier.size(20.dp))
+            }
+        }
+    }
+}
+
+@Composable
+fun UpdatesView(
+    appVersion: String,
+    updateState: AppUpdateState,
+    onCheckForUpdates: () -> Unit,
+    onDownloadAndInstall: (String) -> Unit,
+    onInstallApk: (File) -> Unit,
+    onOpenReleaseUrl: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val checkButtonFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        try {
+            checkButtonFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = "App Updates",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "Installed Version: v$appVersion",
+                    fontSize = 14.sp,
+                    color = TV_Text_Secondary
+                )
+            }
+
+            Text(
+                text = "Repository: leonida92/HomeKeyTV",
+                fontSize = 12.sp,
+                color = HA_Blue,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF1E293B))
+                .border(1.dp, Color(0x33475569), RoundedCornerShape(16.dp))
+                .padding(24.dp)
+        ) {
+            when (updateState) {
+                is AppUpdateState.Idle -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text(
+                            text = "Check directly with GitHub for new versions and improvements.",
+                            fontSize = 14.sp,
+                            color = Color.White
+                        )
+                        FocusableButton(
+                            text = "Check for Updates",
+                            modifier = Modifier.focusRequester(checkButtonFocusRequester),
+                            onClick = onCheckForUpdates
+                        )
+                    }
+                }
+
+                is AppUpdateState.Checking -> {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        CircularProgressIndicator(
+                            color = HA_Blue,
+                            modifier = Modifier.size(28.dp),
+                            strokeWidth = 3.dp
+                        )
+                        Column {
+                            Text(
+                                text = "Checking for updates...",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                            Text(
+                                text = "Connecting to GitHub API (leonida92/HomeKeyTV)...",
+                                fontSize = 13.sp,
+                                color = TV_Text_Secondary
+                            )
+                        }
+                    }
+                }
+
+                is AppUpdateState.UpToDate -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = HA_Green_On,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "HomeKey TV is up to date",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "You are running the latest version (v${updateState.version}).",
+                                    fontSize = 13.sp,
+                                    color = TV_Text_Secondary
+                                )
+                            }
+                        }
+
+                        FocusableButton(
+                            text = "Check Again",
+                            modifier = Modifier.focusRequester(checkButtonFocusRequester),
+                            onClick = onCheckForUpdates
+                        )
+                    }
+                }
+
+                is AppUpdateState.UpdateAvailable -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.SystemUpdate,
+                                contentDescription = null,
+                                tint = HA_Yellow_On,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Update Available: ${updateState.latestVersion}",
+                                    fontSize = 17.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = updateState.releaseTitle,
+                                    fontSize = 13.sp,
+                                    color = HA_Yellow_On
+                                )
+                            }
+                        }
+
+                        if (updateState.releaseNotes.isNotBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF0F172A))
+                                    .padding(12.dp)
+                            ) {
+                                Text(
+                                    text = updateState.releaseNotes,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFCBD5E1),
+                                    maxLines = 6
+                                )
+                            }
+                        }
+
+                        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (!updateState.downloadUrl.isNullOrBlank()) {
+                                FocusableButton(
+                                    text = "Download & Install",
+                                    modifier = Modifier.focusRequester(checkButtonFocusRequester),
+                                    onClick = { onDownloadAndInstall(updateState.downloadUrl) }
+                                )
+                            }
+                            FocusableButton(
+                                text = "View Release Page",
+                                modifier = if (updateState.downloadUrl.isNullOrBlank()) Modifier.focusRequester(checkButtonFocusRequester) else Modifier,
+                                onClick = { onOpenReleaseUrl(updateState.releaseUrl) }
+                            )
+                            FocusableButton(
+                                text = "Dismiss",
+                                onClick = onDismiss
+                            )
+                        }
+                    }
+                }
+
+                is AppUpdateState.Downloading -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Text(
+                            text = "Downloading Update... ${updateState.progressPercent}%",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        LinearProgressIndicator(
+                            progress = { updateState.progressPercent / 100f },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp)
+                                .clip(RoundedCornerShape(4.dp)),
+                            color = HA_Blue,
+                            trackColor = Color(0xFF0F172A)
+                        )
+                    }
+                }
+
+                is AppUpdateState.ReadyToInstall -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.CheckCircle,
+                                contentDescription = null,
+                                tint = HA_Green_On,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Download Complete",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = "Package ready. Click below to launch installer.",
+                                    fontSize = 13.sp,
+                                    color = TV_Text_Secondary
+                                )
+                            }
+                        }
+
+                        FocusableButton(
+                            text = "Install Update",
+                            modifier = Modifier.focusRequester(checkButtonFocusRequester),
+                            onClick = { onInstallApk(updateState.apkFile) }
+                        )
+                    }
+                }
+
+                is AppUpdateState.Error -> {
+                    Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Error,
+                                contentDescription = null,
+                                tint = HA_Red_Off,
+                                modifier = Modifier.size(28.dp)
+                            )
+                            Column {
+                                Text(
+                                    text = "Update Check Failed",
+                                    fontSize = 16.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
+                                Text(
+                                    text = updateState.message,
+                                    fontSize = 13.sp,
+                                    color = HA_Red_Off
+                                )
+                            }
+                        }
+
+                        FocusableButton(
+                            text = "Retry",
+                            modifier = Modifier.focusRequester(checkButtonFocusRequester),
+                            onClick = onCheckForUpdates
+                        )
+                    }
+                }
             }
         }
     }

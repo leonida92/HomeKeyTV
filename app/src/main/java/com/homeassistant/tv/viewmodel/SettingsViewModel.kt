@@ -10,7 +10,9 @@ import android.graphics.drawable.Drawable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.homeassistant.tv.data.api.HAWebSocketClient
+import com.homeassistant.tv.data.api.UpdateManager
 import com.homeassistant.tv.data.local.PreferencesManager
+import com.homeassistant.tv.data.models.AppUpdateState
 import com.homeassistant.tv.data.models.ButtonRemapConfig
 import com.homeassistant.tv.data.models.ConnectionStatus
 import com.homeassistant.tv.data.models.HAEntityState
@@ -36,6 +38,16 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     private val prefs = PreferencesManager.getInstance(application)
     private val wsClient = HAWebSocketClient.getInstance()
+    private val updateManager = UpdateManager(application)
+
+    val appVersion: String = try {
+        application.packageManager.getPackageInfo(application.packageName, 0).versionName ?: "1.1.0"
+    } catch (_: Exception) {
+        "1.1.0"
+    }
+
+    private val _updateState = MutableStateFlow<AppUpdateState>(AppUpdateState.Idle)
+    val updateState: StateFlow<AppUpdateState> = _updateState.asStateFlow()
 
     val serverUrl: StateFlow<String> = prefs.serverUrl
     val accessToken: StateFlow<String> = prefs.accessToken
@@ -212,5 +224,40 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun clearLearnedKey() {
         RemoteButtonRemapService.clearLearnedKey()
+    }
+
+    fun checkForUpdates() {
+        viewModelScope.launch {
+            _updateState.value = AppUpdateState.Checking
+            val result = updateManager.checkForUpdates(appVersion)
+            _updateState.value = result
+        }
+    }
+
+    fun downloadAndInstallUpdate(downloadUrl: String) {
+        viewModelScope.launch {
+            _updateState.value = AppUpdateState.Downloading(0)
+            val result = updateManager.downloadApk(downloadUrl) { progress ->
+                _updateState.value = AppUpdateState.Downloading(progress)
+            }
+            result.onSuccess { apkFile ->
+                _updateState.value = AppUpdateState.ReadyToInstall(apkFile)
+                updateManager.promptInstallApk(apkFile)
+            }.onFailure { error ->
+                _updateState.value = AppUpdateState.Error(error.message ?: "Download failed")
+            }
+        }
+    }
+
+    fun installApk(file: java.io.File) {
+        updateManager.promptInstallApk(file)
+    }
+
+    fun openReleaseUrl(url: String) {
+        updateManager.openBrowserUrl(url)
+    }
+
+    fun resetUpdateState() {
+        _updateState.value = AppUpdateState.Idle
     }
 }
