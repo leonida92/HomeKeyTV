@@ -1,0 +1,24 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <!-- Dark TV Banner Background -->
+    <path
+        android:fillColor="#FF0F172A"
+        android:pathData="M0,0h320v180h-320z" />
+    <path
+        android:fillColor="#FF0288D1"
+        android:pathData="M0,0h320v10h-320z" />
+    <!-- Home Assistant House & Circuit Icon -->
+    <path
+        android:fillColor="#FF03A9F4"
+        android:pathData="M160,40 L210,80 L200,80 L200,135 L120,135 L120,80 L110,80 Z" />
+    <!-- Inner Home Detail -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M160,65 L185,88 L175,88 L175,120 L145,120 L145,88 L135,88 Z" />
+    <path
+        android:fillColor="#FF0288D1"
+        android:pathData="M152,95h16v25h-16z" />
+</vector>
