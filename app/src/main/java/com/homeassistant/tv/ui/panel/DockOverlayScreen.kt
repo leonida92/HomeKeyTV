@@ -75,7 +75,8 @@ class FocusBadgeState {
 fun DockOverlayScreen(
     viewModel: PanelViewModel,
     layoutPosition: String, // DOCK_BOTTOM, DOCK_LEFT, DOCK_RIGHT
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit = {}
 ) {
     val displayEntities by viewModel.displayEntities.collectAsState()
     val activeDialogEntity by viewModel.activeDialogEntity.collectAsState()
@@ -135,6 +136,7 @@ fun DockOverlayScreen(
                         onItemClick = { item ->
                             if (item.isApp && item.packageName != null) {
                                 viewModel.launchApp(item.packageName)
+                                onDismiss()
                             } else if (item.entity != null) {
                                 viewModel.toggleEntity(item.id)
                             }
@@ -182,6 +184,7 @@ fun DockOverlayScreen(
                         onItemClick = { item ->
                             if (item.isApp && item.packageName != null) {
                                 viewModel.launchApp(item.packageName)
+                                onDismiss()
                             } else if (item.entity != null) {
                                 viewModel.toggleEntity(item.id)
                             }
@@ -221,6 +224,7 @@ fun DockOverlayScreen(
                         onItemClick = { item ->
                             if (item.isApp && item.packageName != null) {
                                 viewModel.launchApp(item.packageName)
+                                onDismiss()
                             } else if (item.entity != null) {
                                 viewModel.toggleEntity(item.id)
                             }
@@ -360,6 +364,14 @@ fun DockListHorizontal(
     val itemFocusRequesters = remember(items) { items.associate { it.id to FocusRequester() } }
     var lastFocusedItemId by remember { mutableStateOf<String?>(null) }
     var wasDialogActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        delay(50)
+        try {
+            val target = lastFocusedItemId?.let { itemFocusRequesters[it] } ?: firstFocusRequester
+            target.requestFocus()
+        } catch (_: Exception) {}
+    }
 
     LaunchedEffect(isDialogActive) {
         if (isDialogActive) {
@@ -501,6 +513,14 @@ fun DockListVertical(
     val itemFocusRequesters = remember(items) { items.associate { it.id to FocusRequester() } }
     var lastFocusedItemId by remember { mutableStateOf<String?>(null) }
     var wasDialogActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        delay(50)
+        try {
+            val target = lastFocusedItemId?.let { itemFocusRequesters[it] } ?: firstFocusRequester
+            target.requestFocus()
+        } catch (_: Exception) {}
+    }
 
     LaunchedEffect(isDialogActive) {
         if (isDialogActive) {

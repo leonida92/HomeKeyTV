@@ -14,6 +14,8 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
+import com.homeassistant.tv.service.DockOverlayManager
+import com.homeassistant.tv.service.RemoteButtonRemapService
 import com.homeassistant.tv.ui.panel.PanelOverlayScreen
 import com.homeassistant.tv.ui.theme.HomeAssistantTVTheme
 import com.homeassistant.tv.viewmodel.PanelViewModel
@@ -44,6 +46,19 @@ class MainActivity : ComponentActivity() {
             handleBackAction()
         }
 
+        val service = RemoteButtonRemapService.instance
+        if (service != null) {
+            DockOverlayManager.show(service)
+            finish()
+            if (Build.VERSION.SDK_INT >= 34) {
+                overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
+            } else {
+                @Suppress("DEPRECATION")
+                overridePendingTransition(0, 0)
+            }
+            return
+        }
+
         setContent {
             HomeAssistantTVTheme {
                 Surface(
@@ -57,6 +72,9 @@ class MainActivity : ComponentActivity() {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
                             }
                             startActivity(intent)
+                        },
+                        onDismiss = {
+                            dismissOverlay()
                         }
                     )
                 }

@@ -6,13 +6,15 @@ import com.homeassistant.tv.viewmodel.PanelViewModel
 @Composable
 fun PanelOverlayScreen(
     viewModel: PanelViewModel,
-    onOpenSettings: () -> Unit
+    onOpenSettings: () -> Unit,
+    onDismiss: () -> Unit = {}
 ) {
     val panelLayout by viewModel.panelLayout.collectAsState()
 
     DockOverlayScreen(
         viewModel = viewModel,
         layoutPosition = panelLayout,
-        onOpenSettings = onOpenSettings
+        onOpenSettings = onOpenSettings,
+        onDismiss = onDismiss
     )
 }

@@ -5,6 +5,7 @@ import android.content.Intent
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
@@ -37,14 +38,24 @@ class RemoteButtonRemapService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         Log.d(tag, "RemoteButtonRemapService connected and active")
         prefs = PreferencesManager.getInstance(this)
         _isServiceRunning.value = true
     }
 
+    override fun onUnbind(intent: Intent?): Boolean {
+        DockOverlayManager.hide()
+        return super.onUnbind(intent)
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         Log.d(tag, "RemoteButtonRemapService destroyed")
+        if (instance == this) {
+            instance = null
+        }
+        DockOverlayManager.hide()
         keyStates.values.forEach { state ->
             state.singleClickRunnable?.let { handler.removeCallbacks(it) }
             state.longPressRunnable?.let { handler.removeCallbacks(it) }
@@ -82,6 +93,32 @@ class RemoteButtonRemapService : AccessibilityService() {
                 return false // Allow D-pad and Back to control SettingsActivity
             } else {
                 return true // Consume app launch buttons (Netflix, YouTube, Star) so OS doesn't close Settings!
+            }
+        }
+
+        // If Dock Overlay is currently showing, handle Back or pass D-pad through to overlay window
+        if (DockOverlayManager.isShowing) {
+            val mappedConfig = prefs.buttonRemaps.value.find { it.keyCode == keyCode }
+            val isDockToggleKey = mappedConfig?.singlePressAction?.type == "OPEN_DOCK" ||
+                    mappedConfig?.doublePressAction?.type == "OPEN_DOCK" ||
+                    mappedConfig?.longPressAction?.type == "OPEN_DOCK"
+
+            if (!isDockToggleKey) {
+                if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
+                    if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+                        DockOverlayManager.handleBack()
+                    }
+                    return true
+                }
+                val isNavKey = keyCode in listOf(
+                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
+                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
+                    KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_NUMPAD_ENTER
+                )
+                if (isNavKey) {
+                    return false
+                }
             }
         }
 
@@ -126,7 +163,7 @@ class RemoteButtonRemapService : AccessibilityService() {
             }
 
             // Short release before the long-press threshold: single vs double.
-            val now = System.currentTimeMillis()
+            val now = SystemClock.uptimeMillis()
             val timeSinceLastClick = now - state.lastUpTime
 
             if (config.doublePressAction != null && timeSinceLastClick < DOUBLE_PRESS_TIMEOUT_MS) {
@@ -167,10 +204,7 @@ class RemoteButtonRemapService : AccessibilityService() {
 
         when (action.type) {
             "OPEN_DOCK" -> {
-                val intent = Intent(this, MainActivity::class.java).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
-                }
-                startActivity(intent)
+                DockOverlayManager.toggle(this)
             }
 
             "TOGGLE_ENTITY" -> {
@@ -223,6 +257,9 @@ class RemoteButtonRemapService : AccessibilityService() {
     companion object {
         private const val LONG_PRESS_TIMEOUT_MS = 450L
         private const val DOUBLE_PRESS_TIMEOUT_MS = 280L
+
+        var instance: RemoteButtonRemapService? = null
+            private set
 
         private val _isServiceRunning = MutableStateFlow(false)
         val isServiceRunning: StateFlow<Boolean> = _isServiceRunning.asStateFlow()
