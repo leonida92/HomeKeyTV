@@ -84,12 +84,37 @@ fun DockOverlayScreen(
     val selectedReorderEntityId by viewModel.selectedReorderEntityId.collectAsState()
 
     val badgeState = remember { FocusBadgeState() }
+    val isDialogActive = activeDialogEntity != null
+    val scope = rememberCoroutineScope()
+    var suppressCenterKeyAfterLongPress by remember { mutableStateOf(false) }
+
+    val handleItemLongPress: (DockItem) -> Unit = { item ->
+        suppressCenterKeyAfterLongPress = true
+        scope.launch {
+            delay(1000L)
+            suppressCenterKeyAfterLongPress = false
+        }
+        item.entity?.let { viewModel.openEntityDialog(it) }
+    }
 
     // Completely transparent root overlay (TV display shows behind dock)
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Transparent)
+            .onPreviewKeyEvent { keyEvent ->
+                val native = keyEvent.nativeKeyEvent
+                val isCenter = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                        native.keyCode == KeyEvent.KEYCODE_ENTER ||
+                        native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                if (isCenter && suppressCenterKeyAfterLongPress) {
+                    if (keyEvent.type == KeyEventType.KeyUp) {
+                        suppressCenterKeyAfterLongPress = false
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                false
+            }
     ) {
         when (layoutPosition) {
             "DOCK_LEFT" -> {
@@ -103,6 +128,7 @@ fun DockOverlayScreen(
                         items = displayEntities,
                         isConfigured = isConfigured,
                         isReorderMode = isReorderMode,
+                        isDialogActive = isDialogActive,
                         selectedReorderId = selectedReorderEntityId,
                         onFocused = { name, state -> badgeState.update(name, state) },
                         onUnfocused = { name -> badgeState.clear(name) },
@@ -113,9 +139,7 @@ fun DockOverlayScreen(
                                 viewModel.toggleEntity(item.id)
                             }
                         },
-                        onItemLongPress = { item ->
-                            item.entity?.let { viewModel.openEntityDialog(it) }
-                        },
+                        onItemLongPress = handleItemLongPress,
                         onSelectForReorder = { id -> viewModel.selectEntityForReorder(id) },
                         onMove = { id, dir -> viewModel.moveEntity(id, dir) },
                         onToggleReorderMode = { viewModel.toggleReorderMode() },
@@ -151,6 +175,7 @@ fun DockOverlayScreen(
                         items = displayEntities,
                         isConfigured = isConfigured,
                         isReorderMode = isReorderMode,
+                        isDialogActive = isDialogActive,
                         selectedReorderId = selectedReorderEntityId,
                         onFocused = { name, state -> badgeState.update(name, state) },
                         onUnfocused = { name -> badgeState.clear(name) },
@@ -161,9 +186,7 @@ fun DockOverlayScreen(
                                 viewModel.toggleEntity(item.id)
                             }
                         },
-                        onItemLongPress = { item ->
-                            item.entity?.let { viewModel.openEntityDialog(it) }
-                        },
+                        onItemLongPress = handleItemLongPress,
                         onSelectForReorder = { id -> viewModel.selectEntityForReorder(id) },
                         onMove = { id, dir -> viewModel.moveEntity(id, dir) },
                         onToggleReorderMode = { viewModel.toggleReorderMode() },
@@ -191,6 +214,7 @@ fun DockOverlayScreen(
                         items = displayEntities,
                         isConfigured = isConfigured,
                         isReorderMode = isReorderMode,
+                        isDialogActive = isDialogActive,
                         selectedReorderId = selectedReorderEntityId,
                         onFocused = { name, state -> badgeState.update(name, state) },
                         onUnfocused = { name -> badgeState.clear(name) },
@@ -201,9 +225,7 @@ fun DockOverlayScreen(
                                 viewModel.toggleEntity(item.id)
                             }
                         },
-                        onItemLongPress = { item ->
-                            item.entity?.let { viewModel.openEntityDialog(it) }
-                        },
+                        onItemLongPress = handleItemLongPress,
                         onSelectForReorder = { id -> viewModel.selectEntityForReorder(id) },
                         onMove = { id, dir -> viewModel.moveEntity(id, dir) },
                         onToggleReorderMode = { viewModel.toggleReorderMode() },
@@ -213,27 +235,34 @@ fun DockOverlayScreen(
             }
         }
 
-        // Active Dialogs (Brightness / Climate)
+        // Active Dialogs (Brightness / Climate) rendered directly as in-window modal overlay
         activeDialogEntity?.let { entity ->
-            when (entity.domain) {
-                "light" -> {
-                    BrightnessDialog(
-                        entity = entity,
-                        onSetBrightness = { viewModel.setBrightness(entity.entityId, it) },
-                        onDismiss = { viewModel.closeEntityDialog() }
-                    )
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.65f)),
+                contentAlignment = Alignment.Center
+            ) {
+                when (entity.domain) {
+                    "light" -> {
+                        BrightnessDialog(
+                            entity = entity,
+                            onSetBrightness = { viewModel.setBrightness(entity.entityId, it) },
+                            onDismiss = { viewModel.closeEntityDialog() }
+                        )
+                    }
+                    "climate" -> {
+                        ClimateDialog(
+                            entity = entity,
+                            onSetTemperature = { viewModel.setTargetTemperature(entity.entityId, it) },
+                            onSetHvacMode = { viewModel.setHvacMode(entity.entityId, it) },
+                            onSetFanMode = { viewModel.setFanMode(entity.entityId, it) },
+                            onSetPresetMode = { viewModel.setPresetMode(entity.entityId, it) },
+                            onDismiss = { viewModel.closeEntityDialog() }
+                        )
+                    }
+                    else -> {}
                 }
-                "climate" -> {
-                    ClimateDialog(
-                        entity = entity,
-                        onSetTemperature = { viewModel.setTargetTemperature(entity.entityId, it) },
-                        onSetHvacMode = { viewModel.setHvacMode(entity.entityId, it) },
-                        onSetFanMode = { viewModel.setFanMode(entity.entityId, it) },
-                        onSetPresetMode = { viewModel.setPresetMode(entity.entityId, it) },
-                        onDismiss = { viewModel.closeEntityDialog() }
-                    )
-                }
-                else -> {}
             }
         }
     }
@@ -315,6 +344,7 @@ fun DockListHorizontal(
     items: List<DockItem>,
     isConfigured: Boolean,
     isReorderMode: Boolean,
+    isDialogActive: Boolean,
     selectedReorderId: String?,
     onFocused: (String, String) -> Unit,
     onUnfocused: (String) -> Unit,
@@ -327,6 +357,23 @@ fun DockListHorizontal(
 ) {
     val firstFocusRequester = remember { FocusRequester() }
     val settingsFocusRequester = remember { FocusRequester() }
+    val itemFocusRequesters = remember(items) { items.associate { it.id to FocusRequester() } }
+    var lastFocusedItemId by remember { mutableStateOf<String?>(null) }
+    var wasDialogActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isDialogActive) {
+        if (isDialogActive) {
+            wasDialogActive = true
+        } else if (wasDialogActive) {
+            wasDialogActive = false
+            delay(50)
+            try {
+                val target = lastFocusedItemId?.let { itemFocusRequesters[it] } ?: firstFocusRequester
+                target.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
@@ -367,9 +414,10 @@ fun DockListHorizontal(
                     item = item,
                     index = index,
                     isReorderMode = isReorderMode,
+                    isDialogActive = isDialogActive,
                     isSelectedForReorder = selectedReorderId == item.id,
                     isVertical = false,
-                    customFocusRequester = if (index == 0) firstFocusRequester else null,
+                    customFocusRequester = itemFocusRequesters[item.id] ?: (if (index == 0) firstFocusRequester else null),
                     onWrapToLast = {
                         scope.launch {
                             try {
@@ -380,7 +428,10 @@ fun DockListHorizontal(
                             } catch (_: Exception) {}
                         }
                     },
-                    onFocused = onFocused,
+                    onFocused = { name, state ->
+                        lastFocusedItemId = item.id
+                        onFocused(name, state)
+                    },
                     onUnfocused = onUnfocused,
                     onClick = { onItemClick(item) },
                     onLongPress = if (!item.isApp && item.entity != null &&
@@ -397,6 +448,7 @@ fun DockListHorizontal(
             item(key = "dock_reorder_tile") {
                 DockReorderTile(
                     isReorderMode = isReorderMode,
+                    isDialogActive = isDialogActive,
                     onFocused = { onFocused("Reorder Mode", if (isReorderMode) "Active (Click to Exit)" else "Click to Enter") },
                     onUnfocused = { onUnfocused("Reorder Mode") },
                     onClick = onToggleReorderMode
@@ -408,6 +460,7 @@ fun DockListHorizontal(
                 DockSettingsTile(
                     focusRequester = settingsFocusRequester,
                     isVertical = false,
+                    isDialogActive = isDialogActive,
                     onWrapToFirst = {
                         scope.launch {
                             try {
@@ -432,6 +485,7 @@ fun DockListVertical(
     items: List<DockItem>,
     isConfigured: Boolean,
     isReorderMode: Boolean,
+    isDialogActive: Boolean,
     selectedReorderId: String?,
     onFocused: (String, String) -> Unit,
     onUnfocused: (String) -> Unit,
@@ -444,6 +498,23 @@ fun DockListVertical(
 ) {
     val firstFocusRequester = remember { FocusRequester() }
     val settingsFocusRequester = remember { FocusRequester() }
+    val itemFocusRequesters = remember(items) { items.associate { it.id to FocusRequester() } }
+    var lastFocusedItemId by remember { mutableStateOf<String?>(null) }
+    var wasDialogActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(isDialogActive) {
+        if (isDialogActive) {
+            wasDialogActive = true
+        } else if (wasDialogActive) {
+            wasDialogActive = false
+            delay(50)
+            try {
+                val target = lastFocusedItemId?.let { itemFocusRequesters[it] } ?: firstFocusRequester
+                target.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
@@ -484,9 +555,10 @@ fun DockListVertical(
                     item = item,
                     index = index,
                     isReorderMode = isReorderMode,
+                    isDialogActive = isDialogActive,
                     isSelectedForReorder = selectedReorderId == item.id,
                     isVertical = true,
-                    customFocusRequester = if (index == 0) firstFocusRequester else null,
+                    customFocusRequester = itemFocusRequesters[item.id] ?: (if (index == 0) firstFocusRequester else null),
                     onWrapToLast = {
                         scope.launch {
                             try {
@@ -497,7 +569,10 @@ fun DockListVertical(
                             } catch (_: Exception) {}
                         }
                     },
-                    onFocused = onFocused,
+                    onFocused = { name, state ->
+                        lastFocusedItemId = item.id
+                        onFocused(name, state)
+                    },
                     onUnfocused = onUnfocused,
                     onClick = { onItemClick(item) },
                     onLongPress = if (!item.isApp && item.entity != null &&
@@ -513,6 +588,7 @@ fun DockListVertical(
             item(key = "dock_vertical_reorder") {
                 DockReorderTile(
                     isReorderMode = isReorderMode,
+                    isDialogActive = isDialogActive,
                     onFocused = { onFocused("Reorder Mode", if (isReorderMode) "Active (Click to Exit)" else "Click to Enter") },
                     onUnfocused = { onUnfocused("Reorder Mode") },
                     onClick = onToggleReorderMode
@@ -523,6 +599,7 @@ fun DockListVertical(
                 DockSettingsTile(
                     focusRequester = settingsFocusRequester,
                     isVertical = true,
+                    isDialogActive = isDialogActive,
                     onWrapToFirst = {
                         scope.launch {
                             try {
@@ -550,6 +627,7 @@ fun DockTile(
     isSelectedForReorder: Boolean,
     isVertical: Boolean,
     customFocusRequester: FocusRequester?,
+    isDialogActive: Boolean = false,
     onWrapToLast: () -> Unit,
     onFocused: (String, String) -> Unit,
     onUnfocused: (String) -> Unit,
@@ -721,8 +799,12 @@ fun DockTile(
                 }
                 false
             }
-            .focusable(interactionSource = interactionSource)
+            .focusable(
+                enabled = !isDialogActive,
+                interactionSource = interactionSource
+            )
             .clickable(
+                enabled = !isDialogActive,
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = {
@@ -809,6 +891,7 @@ fun drawableToImageBitmap(drawable: Drawable): ImageBitmap? {
 @Composable
 fun DockReorderTile(
     isReorderMode: Boolean,
+    isDialogActive: Boolean = false,
     onFocused: () -> Unit,
     onUnfocused: () -> Unit,
     onClick: () -> Unit
@@ -857,8 +940,12 @@ fun DockReorderTile(
                 }
                 false
             }
-            .focusable(interactionSource = interactionSource)
+            .focusable(
+                enabled = !isDialogActive,
+                interactionSource = interactionSource
+            )
             .clickable(
+                enabled = !isDialogActive,
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick
@@ -878,6 +965,7 @@ fun DockReorderTile(
 fun DockSettingsTile(
     focusRequester: FocusRequester,
     isVertical: Boolean,
+    isDialogActive: Boolean = false,
     onWrapToFirst: () -> Unit,
     onFocused: () -> Unit,
     onUnfocused: () -> Unit,
@@ -931,8 +1019,12 @@ fun DockSettingsTile(
                 }
                 false
             }
-            .focusable(interactionSource = interactionSource)
+            .focusable(
+                enabled = !isDialogActive,
+                interactionSource = interactionSource
+            )
             .clickable(
+                enabled = !isDialogActive,
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick

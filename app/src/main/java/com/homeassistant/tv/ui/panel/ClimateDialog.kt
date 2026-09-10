@@ -17,7 +17,10 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.activity.compose.BackHandler
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -25,7 +28,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.homeassistant.tv.data.models.HAEntityState
 import com.homeassistant.tv.ui.theme.*
 import kotlinx.coroutines.Job
@@ -88,72 +90,81 @@ fun ClimateDialog(
         else -> Color(0xFFFF7043)
     }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Box(
-            modifier = Modifier
-                .width(550.dp)
-                .clip(RoundedCornerShape(24.dp))
-                .background(Color(0xFF1E293B))
-                .border(2.dp, TV_Border_Focused, RoundedCornerShape(20.dp))
-                .padding(horizontal = 24.dp, vertical = 20.dp)
+    val initialFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        try {
+            initialFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    Box(
+        modifier = Modifier
+            .width(550.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(Color(0xFF1E293B))
+            .border(2.dp, TV_Border_Focused, RoundedCornerShape(20.dp))
+            .padding(horizontal = 24.dp, vertical = 20.dp)
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.fillMaxWidth()
         ) {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
+            // Header: Entity Name + Live Action Badge + Close Button
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Header: Entity Name + Live Action Badge + Close Button
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(activeColor.copy(alpha = 0.2f)),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(36.dp)
-                                .clip(CircleShape)
-                                .background(activeColor.copy(alpha = 0.2f)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Icon(
-                                imageVector = resolveModeIcon(currentMode),
-                                contentDescription = null,
-                                tint = activeColor,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
-
-                        Column {
-                            Text(
-                                text = entity.friendlyName,
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color.White,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-
-                            // Live action / status badge
-                            val actionText = formatHvacStatus(entity.hvacAction, entity.state)
-                            Text(
-                                text = actionText,
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (entity.state.equals("off", ignoreCase = true)) Color(0xFF94A3B8) else activeColor
-                            )
-                        }
+                        Icon(
+                            imageVector = resolveModeIcon(currentMode),
+                            contentDescription = null,
+                            tint = activeColor,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
 
-                    // Close Button
-                    TVIconButton(
-                        onClick = onDismiss,
-                        icon = Icons.Default.Close,
-                        contentDescription = "Close"
-                    )
+                    Column {
+                        Text(
+                            text = entity.friendlyName,
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+
+                        // Live action / status badge
+                        val actionText = formatHvacStatus(entity.hvacAction, entity.state)
+                        Text(
+                            text = actionText,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = if (entity.state.equals("off", ignoreCase = true)) Color(0xFF94A3B8) else activeColor
+                        )
+                    }
                 }
+
+                // Close Button
+                TVIconButton(
+                    onClick = onDismiss,
+                    icon = Icons.Default.Close,
+                    contentDescription = "Close",
+                    modifier = Modifier.size(42.dp)
+                )
+            }
 
                 Spacer(modifier = Modifier.height(16.dp))
 
@@ -234,7 +245,7 @@ fun ClimateDialog(
                                 },
                                 icon = Icons.Default.Remove,
                                 contentDescription = "Decrease Temperature",
-                                modifier = Modifier.size(52.dp)
+                                modifier = Modifier.size(52.dp).focusRequester(initialFocusRequester)
                             )
 
                             // Target Temperature Display
@@ -423,7 +434,6 @@ fun ClimateDialog(
             }
         }
     }
-}
 
 @Composable
 private fun ClimateModeButton(

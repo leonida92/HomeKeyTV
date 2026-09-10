@@ -8,6 +8,7 @@ import android.os.Bundle
 import android.view.KeyEvent
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
+import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
@@ -39,6 +40,10 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = Color.TRANSPARENT
         window.navigationBarColor = Color.TRANSPARENT
 
+        onBackPressedDispatcher.addCallback(this) {
+            handleBackAction()
+        }
+
         setContent {
             HomeAssistantTVTheme {
                 Surface(
@@ -64,20 +69,24 @@ class MainActivity : ComponentActivity() {
         viewModel.connectToHomeAssistant()
     }
 
-    override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
-            if (viewModel.isReorderMode.value) {
-                viewModel.exitReorderMode()
-                return true
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (event.keyCode == KeyEvent.KEYCODE_BACK || event.keyCode == KeyEvent.KEYCODE_ESCAPE) {
+            if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
+                handleBackAction()
             }
-            if (viewModel.activeDialogEntity.value != null) {
-                viewModel.closeEntityDialog()
-                return true
-            }
-            dismissOverlay()
             return true
         }
-        return super.onKeyDown(keyCode, event)
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun handleBackAction() {
+        if (viewModel.isReorderMode.value) {
+            viewModel.exitReorderMode()
+        } else if (viewModel.activeDialogEntity.value != null) {
+            viewModel.closeEntityDialog()
+        } else {
+            dismissOverlay()
+        }
     }
 
     private fun dismissOverlay() {

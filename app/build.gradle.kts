@@ -12,7 +12,7 @@ android {
         applicationId = "com.homeassistant.tv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 4
+        versionCode = 8
         versionName = "1.1.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
