@@ -34,8 +34,15 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     val pinnedApps: StateFlow<List<PinnedAppConfig>> = prefs.pinnedApps
     val panelLayout: StateFlow<String> = prefs.panelLayout
 
-    private val _activeDialogEntity = MutableStateFlow<HAEntityState?>(null)
-    val activeDialogEntity: StateFlow<HAEntityState?> = _activeDialogEntity.asStateFlow()
+    private var lastOpenedDialogEntity: HAEntityState? = null
+    private val _activeDialogEntityId = MutableStateFlow<String?>(null)
+    val activeDialogEntity: StateFlow<HAEntityState?> = combine(
+        _activeDialogEntityId,
+        allEntities
+    ) { id, entities ->
+        if (id == null) null
+        else entities[id] ?: (if (lastOpenedDialogEntity?.entityId == id) lastOpenedDialogEntity else null)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _isReorderMode = MutableStateFlow(false)
     val isReorderMode: StateFlow<Boolean> = _isReorderMode.asStateFlow()
@@ -146,11 +153,21 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun openEntityDialog(entity: HAEntityState) {
-        _activeDialogEntity.value = entity
+        lastOpenedDialogEntity = entity
+        _activeDialogEntityId.value = entity.entityId
     }
 
     fun closeEntityDialog() {
-        _activeDialogEntity.value = null
+        _activeDialogEntityId.value = null
+        lastOpenedDialogEntity = null
+    }
+
+    fun turnOnEntity(entityId: String) {
+        wsClient.turnOn(entityId)
+    }
+
+    fun turnOffEntity(entityId: String) {
+        wsClient.turnOff(entityId)
     }
 
     fun setBrightness(entityId: String, brightness: Int) {

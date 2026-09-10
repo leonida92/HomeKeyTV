@@ -202,5 +202,65 @@ class HAModelTest {
         assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.3.0", "1.2.1"))
         assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.1", "1.2.1"))
         assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.0", "1.2.1"))
+
+        // Comparisons against 1.2.2
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.3", "1.2.2"))
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.3.0", "1.2.2"))
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.2", "1.2.2"))
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.1", "1.2.2"))
+    }
+
+    @Test
+    fun testSupportsBrightness() {
+        val dimmableJson = """
+            {
+                "entity_id": "light.dimmable_lamp",
+                "state": "on",
+                "attributes": {
+                    "friendly_name": "Dimmable Lamp",
+                    "supported_color_modes": ["brightness"]
+                }
+            }
+        """.trimIndent()
+        val dimmable = json.decodeFromString<HAEntityState>(dimmableJson)
+        assertTrue(dimmable.supportsBrightness)
+
+        val onOffJson = """
+            {
+                "entity_id": "light.on_off_bulb",
+                "state": "on",
+                "attributes": {
+                    "friendly_name": "On Off Bulb",
+                    "supported_color_modes": ["onoff"]
+                }
+            }
+        """.trimIndent()
+        val onOff = json.decodeFromString<HAEntityState>(onOffJson)
+        assertFalse(onOff.supportsBrightness)
+
+        val switchJson = """
+            {
+                "entity_id": "switch.coffee_maker",
+                "state": "on",
+                "attributes": {
+                    "friendly_name": "Coffee Maker"
+                }
+            }
+        """.trimIndent()
+        val switchEntity = json.decodeFromString<HAEntityState>(switchJson)
+        assertFalse(switchEntity.supportsBrightness)
+
+        val lightWithBrightnessAttr = """
+            {
+                "entity_id": "light.mystery_light",
+                "state": "on",
+                "attributes": {
+                    "friendly_name": "Mystery",
+                    "brightness": 128
+                }
+            }
+        """.trimIndent()
+        val withBrightness = json.decodeFromString<HAEntityState>(lightWithBrightnessAttr)
+        assertTrue(withBrightness.supportsBrightness)
     }
 }

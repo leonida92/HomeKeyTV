@@ -91,6 +91,29 @@ data class HAEntityState(
 
     val isUnavailable: Boolean
         get() = state.equals("unavailable", ignoreCase = true) || state.equals("unknown", ignoreCase = true)
+
+    val supportedColorModes: List<String>
+        get() = try {
+            attributes["supported_color_modes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+    val supportedFeatures: Int
+        get() = attributes["supported_features"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 0
+
+    val supportsBrightness: Boolean
+        get() {
+            if (domain != "light") return false
+            if (brightness != null) return true
+            val modes = supportedColorModes
+            if (modes.isNotEmpty()) {
+                // If it only has "onoff", it does NOT support brightness
+                return modes.any { it != "onoff" && it != "unknown" }
+            }
+            // Fallback for older HA entities: bit 0 (value 1) is SUPPORT_BRIGHTNESS
+            return (supportedFeatures and 1) != 0
+        }
 }
 
 /**

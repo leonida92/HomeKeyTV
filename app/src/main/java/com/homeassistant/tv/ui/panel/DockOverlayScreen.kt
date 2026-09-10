@@ -239,7 +239,7 @@ fun DockOverlayScreen(
             }
         }
 
-        // Active Dialogs (Brightness / Climate) rendered directly as in-window modal overlay
+        // Active Dialogs (Brightness / Climate / Switch) rendered directly as in-window modal overlay
         activeDialogEntity?.let { entity ->
             Box(
                 modifier = Modifier
@@ -247,21 +247,30 @@ fun DockOverlayScreen(
                     .background(Color.Black.copy(alpha = 0.65f)),
                 contentAlignment = Alignment.Center
             ) {
-                when (entity.domain) {
-                    "light" -> {
-                        BrightnessDialog(
-                            entity = entity,
-                            onSetBrightness = { viewModel.setBrightness(entity.entityId, it) },
-                            onDismiss = { viewModel.closeEntityDialog() }
-                        )
-                    }
-                    "climate" -> {
+                when {
+                    entity.domain == "climate" -> {
                         ClimateDialog(
                             entity = entity,
                             onSetTemperature = { viewModel.setTargetTemperature(entity.entityId, it) },
                             onSetHvacMode = { viewModel.setHvacMode(entity.entityId, it) },
                             onSetFanMode = { viewModel.setFanMode(entity.entityId, it) },
                             onSetPresetMode = { viewModel.setPresetMode(entity.entityId, it) },
+                            onDismiss = { viewModel.closeEntityDialog() }
+                        )
+                    }
+                    entity.domain == "light" && entity.supportsBrightness -> {
+                        BrightnessDialog(
+                            entity = entity,
+                            onSetBrightness = { viewModel.setBrightness(entity.entityId, it) },
+                            onDismiss = { viewModel.closeEntityDialog() }
+                        )
+                    }
+                    entity.domain == "switch" || entity.domain == "input_boolean" || (entity.domain == "light" && !entity.supportsBrightness) -> {
+                        SwitchDialog(
+                            entity = entity,
+                            onToggle = { viewModel.toggleEntity(entity.entityId) },
+                            onTurnOn = { viewModel.turnOnEntity(entity.entityId) },
+                            onTurnOff = { viewModel.turnOffEntity(entity.entityId) },
                             onDismiss = { viewModel.closeEntityDialog() }
                         )
                     }
@@ -451,7 +460,7 @@ fun DockListHorizontal(
                     onUnfocused = onUnfocused,
                     onClick = { onItemClick(item) },
                     onLongPress = if (!item.isApp && item.entity != null &&
-                        (item.entity.domain == "light" || item.entity.domain == "climate")
+                        (item.entity.domain == "light" || item.entity.domain == "climate" || item.entity.domain == "switch" || item.entity.domain == "input_boolean")
                     ) {
                         { onItemLongPress(item) }
                     } else null,
@@ -605,7 +614,7 @@ fun DockListVertical(
                     onUnfocused = onUnfocused,
                     onClick = { onItemClick(item) },
                     onLongPress = if (!item.isApp && item.entity != null &&
-                        (item.entity.domain == "light" || item.entity.domain == "climate")
+                        (item.entity.domain == "light" || item.entity.domain == "climate" || item.entity.domain == "switch" || item.entity.domain == "input_boolean")
                     ) {
                         { onItemLongPress(item) }
                     } else null,
