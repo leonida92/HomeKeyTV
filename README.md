@@ -94,7 +94,7 @@
    ```
 3. Install the Release APK:
    ```bash
-   adb install -r HomeKeyTV-v1.1.2.apk
+   adb install -r HomeKeyTV-v1.1.3.apk
    ```
 
 ### Option 2: Sideload via File Manager
@@ -147,7 +147,7 @@ cd HomeKeyTV
 ```
 
 The compiled release APK will be located at:
-`app/build/outputs/apk/release/HomeKeyTV-v1.1.2.apk`
+`app/build/outputs/apk/release/HomeKeyTV-v1.1.3.apk`
 
 ---
 
