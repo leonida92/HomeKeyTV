@@ -196,5 +196,11 @@ class HAModelTest {
         assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.0", "1.2.0"))
         assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.1.3", "1.2.0"))
         assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.1.0", "1.2.0"))
+
+        // Comparisons against 1.2.1
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.2", "1.2.1"))
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.3.0", "1.2.1"))
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.1", "1.2.1"))
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.0", "1.2.1"))
     }
 }

@@ -11,6 +11,7 @@ import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import com.homeassistant.tv.data.api.HAWebSocketClient
 import com.homeassistant.tv.data.local.PreferencesManager
+import com.homeassistant.tv.data.models.ButtonRemapConfig
 import com.homeassistant.tv.data.models.RemapAction
 import com.homeassistant.tv.ui.MainActivity
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -98,7 +99,7 @@ class RemoteButtonRemapService : AccessibilityService() {
 
         // If Dock Overlay is currently showing, handle Back or pass D-pad through to overlay window
         if (DockOverlayManager.isShowing) {
-            val mappedConfig = prefs.buttonRemaps.value.find { it.keyCode == keyCode }
+            val mappedConfig = findRemapConfig(keyCode)
             val isDockToggleKey = mappedConfig?.singlePressAction?.type == "OPEN_DOCK" ||
                     mappedConfig?.doublePressAction?.type == "OPEN_DOCK" ||
                     mappedConfig?.longPressAction?.type == "OPEN_DOCK"
@@ -123,9 +124,9 @@ class RemoteButtonRemapService : AccessibilityService() {
         }
 
         // Check if this key is mapped
-        val config = prefs.buttonRemaps.value.find { it.keyCode == keyCode } ?: return false
+        val config = findRemapConfig(keyCode) ?: return false
 
-        val state = keyStates.getOrPut(keyCode) { KeyState() }
+        val state = keyStates.getOrPut(config.keyCode) { KeyState() }
 
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (event.repeatCount == 0) {
@@ -252,6 +253,20 @@ class RemoteButtonRemapService : AccessibilityService() {
                 startActivity(intent)
             }
         }
+    }
+
+    private fun findRemapConfig(keyCode: Int): ButtonRemapConfig? {
+        val remaps = prefs.buttonRemaps.value
+        return remaps.find { it.keyCode == keyCode }
+            ?: if (keyCode == 313) {
+                // KeyCode 313 is KEYCODE_MACRO_1 (Google TV Streamer Star button).
+                // Fallback to KEYCODE_PAIRING (225) or "Star" named configuration.
+                remaps.find { it.keyCode == KeyEvent.KEYCODE_PAIRING || it.keyName.contains("Star", ignoreCase = true) }
+            } else if (keyCode == KeyEvent.KEYCODE_PAIRING) {
+                remaps.find { it.keyCode == 313 || it.keyName.contains("Star", ignoreCase = true) }
+            } else {
+                null
+            }
     }
 
     companion object {

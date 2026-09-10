@@ -361,7 +361,9 @@ fun DockListHorizontal(
 ) {
     val firstFocusRequester = remember { FocusRequester() }
     val settingsFocusRequester = remember { FocusRequester() }
-    val itemFocusRequesters = remember(items) { items.associate { it.id to FocusRequester() } }
+    val itemFocusRequesters = remember(items) {
+        items.associate { it.id to (if (items.firstOrNull()?.id == it.id) firstFocusRequester else FocusRequester()) }
+    }
     var lastFocusedItemId by remember { mutableStateOf<String?>(null) }
     var wasDialogActive by remember { mutableStateOf(false) }
 
@@ -429,12 +431,14 @@ fun DockListHorizontal(
                     isDialogActive = isDialogActive,
                     isSelectedForReorder = selectedReorderId == item.id,
                     isVertical = false,
-                    customFocusRequester = itemFocusRequesters[item.id] ?: (if (index == 0) firstFocusRequester else null),
+                    customFocusRequester = if (index == 0) firstFocusRequester else itemFocusRequesters[item.id],
                     onWrapToLast = {
                         scope.launch {
+                            val lastIndex = (items.size + 1).coerceAtLeast(0)
                             try {
-                                listState.animateScrollToItem((items.size + 1).coerceAtLeast(0))
+                                listState.scrollToItem(lastIndex)
                             } catch (_: Exception) {}
+                            delay(16)
                             try {
                                 settingsFocusRequester.requestFocus()
                             } catch (_: Exception) {}
@@ -476,8 +480,9 @@ fun DockListHorizontal(
                     onWrapToFirst = {
                         scope.launch {
                             try {
-                                listState.animateScrollToItem(0)
+                                listState.scrollToItem(0)
                             } catch (_: Exception) {}
+                            delay(16)
                             try {
                                 firstFocusRequester.requestFocus()
                             } catch (_: Exception) {}
@@ -510,7 +515,9 @@ fun DockListVertical(
 ) {
     val firstFocusRequester = remember { FocusRequester() }
     val settingsFocusRequester = remember { FocusRequester() }
-    val itemFocusRequesters = remember(items) { items.associate { it.id to FocusRequester() } }
+    val itemFocusRequesters = remember(items) {
+        items.associate { it.id to (if (items.firstOrNull()?.id == it.id) firstFocusRequester else FocusRequester()) }
+    }
     var lastFocusedItemId by remember { mutableStateOf<String?>(null) }
     var wasDialogActive by remember { mutableStateOf(false) }
 
@@ -578,12 +585,14 @@ fun DockListVertical(
                     isDialogActive = isDialogActive,
                     isSelectedForReorder = selectedReorderId == item.id,
                     isVertical = true,
-                    customFocusRequester = itemFocusRequesters[item.id] ?: (if (index == 0) firstFocusRequester else null),
+                    customFocusRequester = if (index == 0) firstFocusRequester else itemFocusRequesters[item.id],
                     onWrapToLast = {
                         scope.launch {
+                            val lastIndex = (items.size + 1).coerceAtLeast(0)
                             try {
-                                listState.animateScrollToItem((items.size + 1).coerceAtLeast(0))
+                                listState.scrollToItem(lastIndex)
                             } catch (_: Exception) {}
+                            delay(16)
                             try {
                                 settingsFocusRequester.requestFocus()
                             } catch (_: Exception) {}
@@ -623,8 +632,9 @@ fun DockListVertical(
                     onWrapToFirst = {
                         scope.launch {
                             try {
-                                listState.animateScrollToItem(0)
+                                listState.scrollToItem(0)
                             } catch (_: Exception) {}
+                            delay(16)
                             try {
                                 firstFocusRequester.requestFocus()
                             } catch (_: Exception) {}

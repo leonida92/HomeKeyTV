@@ -742,7 +742,7 @@ fun ButtonRemapView(
                     ) {
                         item {
                             PresetButtonRow("★ Custom Star Button") {
-                                selectedKeyForConfig = Pair(KeyEvent.KEYCODE_PAIRING, "Custom Star Button")
+                                selectedKeyForConfig = Pair(313, "Custom Star Button")
                             }
                         }
                         item {
