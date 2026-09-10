@@ -47,7 +47,16 @@ class HAModelTest {
                     "friendly_name": "Living Room AC",
                     "current_temperature": 22.5,
                     "temperature": 24.0,
-                    "hvac_modes": ["heat", "cool", "auto", "off"]
+                    "hvac_modes": ["heat", "cool", "auto", "off"],
+                    "hvac_action": "heating",
+                    "current_humidity": 45,
+                    "fan_modes": ["auto", "low", "high"],
+                    "fan_mode": "auto",
+                    "preset_modes": ["none", "eco", "boost"],
+                    "preset_mode": "eco",
+                    "min_temp": 16.0,
+                    "max_temp": 30.0,
+                    "target_temp_step": 0.5
                 }
             }
         """.trimIndent()
@@ -56,6 +65,15 @@ class HAModelTest {
         assertEquals("climate", entity.domain)
         assertEquals(22.5f, entity.currentTemperature ?: 0f, 0.01f)
         assertEquals(24.0f, entity.targetTemperature ?: 0f, 0.01f)
+        assertEquals("heating", entity.hvacAction)
+        assertEquals(45f, entity.currentHumidity ?: 0f, 0.01f)
+        assertEquals(listOf("auto", "low", "high"), entity.fanModes)
+        assertEquals("auto", entity.fanMode)
+        assertEquals(listOf("none", "eco", "boost"), entity.presetModes)
+        assertEquals("eco", entity.presetMode)
+        assertEquals(16.0f, entity.minTemp, 0.01f)
+        assertEquals(30.0f, entity.maxTemp, 0.01f)
+        assertEquals(0.5f, entity.targetTempStep, 0.01f)
         assertTrue(entity.isOn)
     }
 

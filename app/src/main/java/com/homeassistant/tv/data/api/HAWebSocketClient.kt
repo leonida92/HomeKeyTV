@@ -384,6 +384,20 @@ class HAWebSocketClient(
         callService("climate", "set_hvac_mode", serviceData, entityId)
     }
 
+    fun setFanMode(entityId: String, fanMode: String) {
+        val serviceData = buildJsonObject {
+            put("fan_mode", fanMode)
+        }
+        callService("climate", "set_fan_mode", serviceData, entityId)
+    }
+
+    fun setPresetMode(entityId: String, presetMode: String) {
+        val serviceData = buildJsonObject {
+            put("preset_mode", presetMode)
+        }
+        callService("climate", "set_preset_mode", serviceData, entityId)
+    }
+
     fun mediaPlayPause(entityId: String) {
         callService("media_player", "media_play_pause", entityId = entityId)
     }

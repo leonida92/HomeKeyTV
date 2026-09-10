@@ -165,6 +165,14 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
         wsClient.setHvacMode(entityId, mode)
     }
 
+    fun setFanMode(entityId: String, fanMode: String) {
+        wsClient.setFanMode(entityId, fanMode)
+    }
+
+    fun setPresetMode(entityId: String, presetMode: String) {
+        wsClient.setPresetMode(entityId, presetMode)
+    }
+
     fun setPanelLayout(layout: String) {
         prefs.setPanelLayout(layout)
     }

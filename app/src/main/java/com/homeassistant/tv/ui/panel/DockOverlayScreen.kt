@@ -228,6 +228,8 @@ fun DockOverlayScreen(
                         entity = entity,
                         onSetTemperature = { viewModel.setTargetTemperature(entity.entityId, it) },
                         onSetHvacMode = { viewModel.setHvacMode(entity.entityId, it) },
+                        onSetFanMode = { viewModel.setFanMode(entity.entityId, it) },
+                        onSetPresetMode = { viewModel.setPresetMode(entity.entityId, it) },
                         onDismiss = { viewModel.closeEntityDialog() }
                     )
                 }

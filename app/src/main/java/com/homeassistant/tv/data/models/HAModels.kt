@@ -44,6 +44,41 @@ data class HAEntityState(
             emptyList()
         }
 
+    val hvacAction: String?
+        get() = attributes["hvac_action"]?.jsonPrimitive?.contentOrNull
+
+    val currentHumidity: Float?
+        get() = (attributes["current_humidity"] ?: attributes["humidity"])?.jsonPrimitive?.contentOrNull?.toFloatOrNull()
+
+    val fanModes: List<String>
+        get() = try {
+            attributes["fan_modes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+    val fanMode: String?
+        get() = attributes["fan_mode"]?.jsonPrimitive?.contentOrNull
+
+    val presetModes: List<String>
+        get() = try {
+            attributes["preset_modes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
+
+    val presetMode: String?
+        get() = attributes["preset_mode"]?.jsonPrimitive?.contentOrNull
+
+    val minTemp: Float
+        get() = attributes["min_temp"]?.jsonPrimitive?.contentOrNull?.toFloatOrNull() ?: 16.0f
+
+    val maxTemp: Float
+        get() = attributes["max_temp"]?.jsonPrimitive?.contentOrNull?.toFloatOrNull() ?: 32.0f
+
+    val targetTempStep: Float
+        get() = attributes["target_temp_step"]?.jsonPrimitive?.contentOrNull?.toFloatOrNull() ?: 0.5f
+
     val isOn: Boolean
         get() = !isUnavailable && !state.equals("off", ignoreCase = true) &&
                 !state.equals("closed", ignoreCase = true) &&
