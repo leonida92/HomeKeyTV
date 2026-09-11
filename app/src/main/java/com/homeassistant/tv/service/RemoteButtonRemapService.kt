@@ -84,14 +84,17 @@ class RemoteButtonRemapService : AccessibilityService() {
                 Log.d(tag, "Learned Key: $keyCode ($name)")
                 return true
             }
-            val isNavKey = keyCode in listOf(
+            val isSystemOrNavKey = keyCode in listOf(
                 KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,
                 KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT,
                 KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER,
-                KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE
+                KeyEvent.KEYCODE_NUMPAD_ENTER, KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_ESCAPE,
+                KeyEvent.KEYCODE_HOME, KeyEvent.KEYCODE_APP_SWITCH,
+                KeyEvent.KEYCODE_VOLUME_UP, KeyEvent.KEYCODE_VOLUME_DOWN, KeyEvent.KEYCODE_VOLUME_MUTE,
+                KeyEvent.KEYCODE_MUTE, KeyEvent.KEYCODE_POWER, KeyEvent.KEYCODE_SLEEP
             )
-            if (isNavKey) {
-                return false // Allow D-pad and Back to control SettingsActivity
+            if (isSystemOrNavKey) {
+                return false // Allow D-pad, Back, Home, Volume, and System keys to control TV naturally
             } else {
                 return true // Consume app launch buttons (Netflix, YouTube, Star) so OS doesn't close Settings!
             }
@@ -110,6 +113,10 @@ class RemoteButtonRemapService : AccessibilityService() {
                         DockOverlayManager.handleBack()
                     }
                     return true
+                }
+                if (keyCode == KeyEvent.KEYCODE_HOME) {
+                    DockOverlayManager.hide()
+                    return false
                 }
                 val isNavKey = keyCode in listOf(
                     KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN,

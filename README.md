@@ -41,9 +41,11 @@
   - Pin installed Android TV apps directly alongside Home Assistant entities.
 
 - **Native Remote Button Remapper**:
-  - Intercept and remap any remote button (e.g. Netflix, YouTube, Color Keys, Guide, Live TV) using an isolated, non-blocking `AccessibilityService`.
+  - Intercept and remap any remote button (e.g. Netflix, YouTube, Color Keys, Guide, Live TV, Star button) using an isolated, non-blocking `AccessibilityService`.
   - Independent Single-Press, Double-Press, and Long-Press triggers per keycode.
   - Remap to actions: Open Dock, Toggle Light/Switch, Run Scene/Script, Launch TV App, or Put TV to Sleep.
+  - **In-App Local ADB Auto-Setup**: Activate button remapping and overlay permissions directly from the TV on Fire OS and Android TV without requiring an external computer or manual terminal commands.
+  - Pass-through protection for system keys: Home, Volume, Recents, and Sleep are never blocked.
 
 - **Instant Phone Web Setup (Port 8124)**:
   - Built-in lightweight local web server with QR code for instant pairing on mobile or desktop browsers.
@@ -94,7 +96,7 @@
    ```
 3. Install the Release APK:
    ```bash
-   adb install -r HomeKeyTV-v1.2.2.apk
+   adb install -r HomeKeyTV-v1.3.0.apk
    ```
 
 ### Option 2: Sideload via File Manager
@@ -147,7 +149,7 @@ cd HomeKeyTV
 ```
 
 The compiled release APK will be located at:
-`app/build/outputs/apk/release/HomeKeyTV-v1.2.2.apk`
+`app/build/outputs/apk/release/HomeKeyTV-v1.3.0.apk`
 
 ---
 

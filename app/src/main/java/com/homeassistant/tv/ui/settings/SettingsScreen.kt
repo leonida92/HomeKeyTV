@@ -52,6 +52,7 @@ import com.homeassistant.tv.data.models.*
 import com.homeassistant.tv.ui.panel.FocusableButton
 import com.homeassistant.tv.ui.panel.FocusableIconButton
 import com.homeassistant.tv.ui.theme.*
+import com.homeassistant.tv.viewmodel.AdbSetupState
 import com.homeassistant.tv.viewmodel.SettingsViewModel
 
 @Composable
@@ -71,6 +72,7 @@ fun SettingsScreen(
     val pinnedApps by viewModel.pinnedApps.collectAsState()
     val buttonRemaps by viewModel.buttonRemaps.collectAsState()
     val isAccessibilityEnabled by viewModel.isAccessibilityEnabled.collectAsState()
+    val adbSetupState by viewModel.adbSetupState.collectAsState()
     val learnedKey by viewModel.learnedKey.collectAsState()
     val updateState by viewModel.updateState.collectAsState()
     val appVersion = viewModel.appVersion
@@ -217,6 +219,7 @@ fun SettingsScreen(
                         val remapEntities by viewModel.sortedEntities.collectAsState()
                         ButtonRemapView(
                             isAccessibilityEnabled = isAccessibilityEnabled,
+                            adbSetupState = adbSetupState,
                             buttonRemaps = buttonRemaps,
                             learnedKey = learnedKey,
                             installedApps = installedApps,
@@ -227,6 +230,7 @@ fun SettingsScreen(
                                 }
                                 context.startActivity(intent)
                             },
+                            onEnableViaAdb = { viewModel.enableAccessibilityViaAdb() },
                             onStartLearnMode = { viewModel.setLearnMode(true) },
                             onStopLearnMode = { viewModel.setLearnMode(false) },
                             onSaveRemap = { viewModel.saveOrUpdateButtonRemap(it) },
@@ -617,11 +621,13 @@ private fun SetupStep(number: String, text: String) {
 @Composable
 fun ButtonRemapView(
     isAccessibilityEnabled: Boolean,
+    adbSetupState: AdbSetupState,
     buttonRemaps: List<ButtonRemapConfig>,
     learnedKey: Pair<Int, String>?,
     installedApps: List<InstalledAppInfo>,
     haEntities: List<HAEntityState>,
     onOpenAccessibilitySettings: () -> Unit,
+    onEnableViaAdb: () -> Unit,
     onStartLearnMode: () -> Unit,
     onStopLearnMode: () -> Unit,
     onSaveRemap: (ButtonRemapConfig) -> Unit,
@@ -685,16 +691,71 @@ fun ButtonRemapView(
                         text = if (isAccessibilityEnabled)
                             "Ready to intercept physical remote keys."
                         else
-                            "Enable HomeAssistantTV under TV Settings > Accessibility to allow button remapping.",
+                            "Enable HomeAssistantTV under TV Settings > Accessibility or use Local ADB auto-setup.",
                         fontSize = 11.sp,
                         color = TV_Text_Secondary
                     )
 
-                    FocusableButton(
-                        text = "Open TV Accessibility Settings",
-                        icon = Icons.Default.SettingsAccessibility,
-                        onClick = onOpenAccessibilitySettings
-                    )
+                    if (!isAccessibilityEnabled) {
+                        FocusableButton(
+                            text = "Open TV Accessibility Settings",
+                            icon = Icons.Default.SettingsAccessibility,
+                            onClick = onOpenAccessibilitySettings
+                        )
+
+                        FocusableButton(
+                            text = when (adbSetupState) {
+                                is AdbSetupState.Connecting -> "Connecting to ADB..."
+                                else -> "Auto-Enable via Local ADB"
+                            },
+                            icon = Icons.Default.Terminal,
+                            onClick = onEnableViaAdb
+                        )
+
+                        when (adbSetupState) {
+                            is AdbSetupState.Connecting -> {
+                                Text(
+                                    text = adbSetupState.message,
+                                    fontSize = 11.sp,
+                                    color = HA_Yellow_On,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                            is AdbSetupState.Success -> {
+                                Text(
+                                    text = adbSetupState.message,
+                                    fontSize = 11.sp,
+                                    color = HA_Green_On,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                            is AdbSetupState.Error -> {
+                                Text(
+                                    text = adbSetupState.message,
+                                    fontSize = 11.sp,
+                                    color = Color(0xFFEF4444),
+                                    lineHeight = 15.sp
+                                )
+                            }
+                            AdbSetupState.Idle -> {
+                                Text(
+                                    text = "Auto-Enable works on Fire TV or Android TV without opening TV settings. Requires ADB Debugging enabled in TV Settings > Developer Options.",
+                                    fontSize = 10.sp,
+                                    color = TV_Text_Secondary,
+                                    lineHeight = 13.sp
+                                )
+                            }
+                        }
+                    } else {
+                        if (adbSetupState is AdbSetupState.Success) {
+                            Text(
+                                text = adbSetupState.message,
+                                fontSize = 11.sp,
+                                color = HA_Green_On,
+                                lineHeight = 15.sp
+                            )
+                        }
+                    }
                 }
             }
 

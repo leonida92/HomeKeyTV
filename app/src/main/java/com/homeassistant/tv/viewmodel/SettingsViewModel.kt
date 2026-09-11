@@ -18,6 +18,7 @@ import com.homeassistant.tv.data.models.ConnectionStatus
 import com.homeassistant.tv.data.models.HAEntityState
 import com.homeassistant.tv.data.models.InstalledAppInfo
 import com.homeassistant.tv.data.models.PinnedAppConfig
+import com.homeassistant.tv.service.LocalAdbManager
 import com.homeassistant.tv.service.RemoteButtonRemapService
 import com.homeassistant.tv.util.NetworkUtils
 import com.homeassistant.tv.util.QRCodeGenerator
@@ -41,9 +42,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val updateManager = UpdateManager(application)
 
     val appVersion: String = try {
-        application.packageManager.getPackageInfo(application.packageName, 0).versionName ?: "1.2.2"
+        application.packageManager.getPackageInfo(application.packageName, 0).versionName ?: "1.3.0"
     } catch (_: Exception) {
-        "1.2.2"
+        "1.3.0"
     }
 
     private val _updateState = MutableStateFlow<AppUpdateState>(AppUpdateState.Idle)
@@ -76,6 +77,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val buttonRemaps: StateFlow<List<ButtonRemapConfig>> = prefs.buttonRemaps
     val isAccessibilityEnabled: StateFlow<Boolean> = RemoteButtonRemapService.isServiceRunning
     val learnedKey: StateFlow<Pair<Int, String>?> = RemoteButtonRemapService.lastLearnedKeyCode
+
+    private val _adbSetupState = MutableStateFlow<AdbSetupState>(AdbSetupState.Idle)
+    val adbSetupState: StateFlow<AdbSetupState> = _adbSetupState.asStateFlow()
 
     private val _installedApps = MutableStateFlow<List<InstalledAppInfo>>(emptyList())
     val installedApps: StateFlow<List<InstalledAppInfo>> = _installedApps.asStateFlow()
@@ -260,4 +264,52 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     fun resetUpdateState() {
         _updateState.value = AppUpdateState.Idle
     }
+
+    fun enableAccessibilityViaAdb(port: Int = LocalAdbManager.DEFAULT_PORT) {
+        if (_adbSetupState.value is AdbSetupState.Connecting) return
+        viewModelScope.launch(Dispatchers.IO) {
+            _adbSetupState.value = AdbSetupState.Connecting(
+                "Connecting to local ADB (127.0.0.1:$port)...\nIf prompted on screen, check 'Always allow' and press OK."
+            )
+            val context = getApplication<Application>()
+            val result = LocalAdbManager.enableAccessibilityService(
+                context = context,
+                port = port,
+                onConnecting = {
+                    _adbSetupState.value = AdbSetupState.Connecting(
+                        "Connecting to local ADB (127.0.0.1:$port)...\nIf prompted on screen, check 'Always allow' and press OK."
+                    )
+                }
+            )
+
+            when (result) {
+                is LocalAdbManager.AdbResult.Success -> {
+                    kotlinx.coroutines.delay(1000)
+                    _adbSetupState.value = AdbSetupState.Success(
+                        "Permissions granted! Accessibility service is now active."
+                    )
+                }
+                is LocalAdbManager.AdbResult.AdbDisabled -> {
+                    _adbSetupState.value = AdbSetupState.Error(result.message)
+                }
+                is LocalAdbManager.AdbResult.AuthTimeout -> {
+                    _adbSetupState.value = AdbSetupState.Error(result.message)
+                }
+                is LocalAdbManager.AdbResult.Error -> {
+                    _adbSetupState.value = AdbSetupState.Error(result.message)
+                }
+            }
+        }
+    }
+
+    fun resetAdbSetupState() {
+        _adbSetupState.value = AdbSetupState.Idle
+    }
+}
+
+sealed class AdbSetupState {
+    object Idle : AdbSetupState()
+    data class Connecting(val message: String) : AdbSetupState()
+    data class Success(val message: String) : AdbSetupState()
+    data class Error(val message: String) : AdbSetupState()
 }

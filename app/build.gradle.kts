@@ -12,8 +12,8 @@ android {
         applicationId = "com.homeassistant.tv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 12
-        versionName = "1.2.2"
+        versionCode = 13
+        versionName = "1.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -54,6 +54,8 @@ android {
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            excludes += "/META-INF/LICENSE*.md"
+            excludes += "/META-INF/LICENSE*"
         }
     }
 }
@@ -92,6 +94,13 @@ dependencies {
 
     // Security crypto for token storage
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+
+    // Pure Kotlin ADB client for local loopback permission setup
+    implementation("dev.mobile:dadb:1.2.9") {
+        exclude(group = "org.graalvm.buildtools")
+        exclude(group = "org.junit.platform")
+        exclude(group = "org.junit.jupiter")
+    }
 
     // Testing
     testImplementation("junit:junit:4.13.2")
