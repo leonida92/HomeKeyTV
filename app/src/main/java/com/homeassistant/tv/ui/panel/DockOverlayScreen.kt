@@ -83,8 +83,15 @@ fun DockOverlayScreen(
     val isConfigured by viewModel.isConfigured.collectAsState()
     val isReorderMode by viewModel.isReorderMode.collectAsState()
     val selectedReorderEntityId by viewModel.selectedReorderEntityId.collectAsState()
+    val overlayOpenEpoch by viewModel.overlayOpenEpoch.collectAsState()
 
     val badgeState = remember { FocusBadgeState() }
+    LaunchedEffect(overlayOpenEpoch) {
+        if (overlayOpenEpoch > 0) {
+            badgeState.name = null
+            badgeState.state = null
+        }
+    }
     val isDialogActive = activeDialogEntity != null
     val scope = rememberCoroutineScope()
     var suppressCenterKeyAfterLongPress by remember { mutableStateOf(false) }
@@ -131,6 +138,7 @@ fun DockOverlayScreen(
                         isReorderMode = isReorderMode,
                         isDialogActive = isDialogActive,
                         selectedReorderId = selectedReorderEntityId,
+                        overlayOpenEpoch = overlayOpenEpoch,
                         onFocused = { name, state -> badgeState.update(name, state) },
                         onUnfocused = { name -> badgeState.clear(name) },
                         onItemClick = { item ->
@@ -179,6 +187,7 @@ fun DockOverlayScreen(
                         isReorderMode = isReorderMode,
                         isDialogActive = isDialogActive,
                         selectedReorderId = selectedReorderEntityId,
+                        overlayOpenEpoch = overlayOpenEpoch,
                         onFocused = { name, state -> badgeState.update(name, state) },
                         onUnfocused = { name -> badgeState.clear(name) },
                         onItemClick = { item ->
@@ -219,6 +228,7 @@ fun DockOverlayScreen(
                         isReorderMode = isReorderMode,
                         isDialogActive = isDialogActive,
                         selectedReorderId = selectedReorderEntityId,
+                        overlayOpenEpoch = overlayOpenEpoch,
                         onFocused = { name, state -> badgeState.update(name, state) },
                         onUnfocused = { name -> badgeState.clear(name) },
                         onItemClick = { item ->
@@ -373,6 +383,7 @@ fun DockListHorizontal(
     isReorderMode: Boolean,
     isDialogActive: Boolean,
     selectedReorderId: String?,
+    overlayOpenEpoch: Long = 0L,
     onFocused: (String, String) -> Unit,
     onUnfocused: (String) -> Unit,
     onItemClick: (DockItem) -> Unit,
@@ -382,6 +393,8 @@ fun DockListHorizontal(
     onToggleReorderMode: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val firstFocusRequester = remember { FocusRequester() }
     val settingsFocusRequester = remember { FocusRequester() }
     val itemFocusRequesters = remember(items) {
@@ -389,6 +402,20 @@ fun DockListHorizontal(
     }
     var lastFocusedItemId by remember { mutableStateOf<String?>(null) }
     var wasDialogActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(overlayOpenEpoch) {
+        if (overlayOpenEpoch > 0) {
+            lastFocusedItemId = null
+            if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+                try {
+                    listState.scrollToItem(0)
+                } catch (_: Exception) {}
+            }
+            try {
+                firstFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
 
     LaunchedEffect(Unit) {
         delay(50)
@@ -410,9 +437,6 @@ fun DockListHorizontal(
             } catch (_: Exception) {}
         }
     }
-
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
 
     if (!isConfigured && items.isEmpty()) {
         Row(
@@ -527,6 +551,7 @@ fun DockListVertical(
     isReorderMode: Boolean,
     isDialogActive: Boolean,
     selectedReorderId: String?,
+    overlayOpenEpoch: Long = 0L,
     onFocused: (String, String) -> Unit,
     onUnfocused: (String) -> Unit,
     onItemClick: (DockItem) -> Unit,
@@ -536,6 +561,8 @@ fun DockListVertical(
     onToggleReorderMode: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
+    val listState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
     val firstFocusRequester = remember { FocusRequester() }
     val settingsFocusRequester = remember { FocusRequester() }
     val itemFocusRequesters = remember(items) {
@@ -543,6 +570,20 @@ fun DockListVertical(
     }
     var lastFocusedItemId by remember { mutableStateOf<String?>(null) }
     var wasDialogActive by remember { mutableStateOf(false) }
+
+    LaunchedEffect(overlayOpenEpoch) {
+        if (overlayOpenEpoch > 0) {
+            lastFocusedItemId = null
+            if (listState.firstVisibleItemIndex != 0 || listState.firstVisibleItemScrollOffset != 0) {
+                try {
+                    listState.scrollToItem(0)
+                } catch (_: Exception) {}
+            }
+            try {
+                firstFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
 
     LaunchedEffect(Unit) {
         delay(50)
@@ -564,9 +605,6 @@ fun DockListVertical(
             } catch (_: Exception) {}
         }
     }
-
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
 
     if (!isConfigured && items.isEmpty()) {
         Column(

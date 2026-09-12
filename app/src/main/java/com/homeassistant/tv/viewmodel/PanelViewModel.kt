@@ -33,6 +33,13 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     val pinnedConfigs: StateFlow<List<PinnedEntityConfig>> = prefs.pinnedEntities
     val pinnedApps: StateFlow<List<PinnedAppConfig>> = prefs.pinnedApps
     val panelLayout: StateFlow<String> = prefs.panelLayout
+    
+    private val _overlayOpenEpoch = MutableStateFlow(0L)
+    val overlayOpenEpoch: StateFlow<Long> = _overlayOpenEpoch.asStateFlow()
+
+    fun notifyOverlayShown() {
+        _overlayOpenEpoch.value = android.os.SystemClock.uptimeMillis()
+    }
 
     private var lastOpenedDialogEntity: HAEntityState? = null
     private val _activeDialogEntityId = MutableStateFlow<String?>(null)

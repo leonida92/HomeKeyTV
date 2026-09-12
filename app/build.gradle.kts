@@ -12,8 +12,8 @@ android {
         applicationId = "com.homeassistant.tv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 17
-        versionName = "1.4.3"
+        versionCode = 18
+        versionName = "1.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

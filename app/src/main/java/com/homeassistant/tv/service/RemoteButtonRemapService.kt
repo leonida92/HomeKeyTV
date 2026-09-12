@@ -2,6 +2,7 @@ package com.homeassistant.tv.service
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -14,14 +15,20 @@ import com.homeassistant.tv.data.local.PreferencesManager
 import com.homeassistant.tv.data.models.ButtonRemapConfig
 import com.homeassistant.tv.data.models.RemapAction
 import com.homeassistant.tv.ui.MainActivity
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 class RemoteButtonRemapService : AccessibilityService() {
 
     private val tag = "RemoteButtonRemapService"
     private val handler = Handler(Looper.getMainLooper())
+    private var serviceScope: CoroutineScope? = null
 
     private lateinit var prefs: PreferencesManager
 
@@ -43,10 +50,30 @@ class RemoteButtonRemapService : AccessibilityService() {
         Log.d(tag, "RemoteButtonRemapService connected and active")
         prefs = PreferencesManager.getInstance(this)
         _isServiceRunning.value = true
+
+        serviceScope?.cancel()
+        val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+        serviceScope = scope
+
+        // Reactively pre-warm or teardown overlay when button remaps change
+        scope.launch {
+            prefs.buttonRemaps.collect { remaps ->
+                val hasDockRemap = remaps.any { remap ->
+                    remap.singlePressAction?.type == "OPEN_DOCK" ||
+                        remap.doublePressAction?.type == "OPEN_DOCK" ||
+                        remap.longPressAction?.type == "OPEN_DOCK"
+                }
+                if (hasDockRemap) {
+                    DockOverlayManager.prewarm(this@RemoteButtonRemapService)
+                } else if (!DockOverlayManager.isShowing) {
+                    DockOverlayManager.teardown()
+                }
+            }
+        }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        DockOverlayManager.hide()
+        DockOverlayManager.teardown()
         return super.onUnbind(intent)
     }
 
@@ -56,13 +83,38 @@ class RemoteButtonRemapService : AccessibilityService() {
         if (instance == this) {
             instance = null
         }
-        DockOverlayManager.hide()
+        serviceScope?.cancel()
+        serviceScope = null
+        DockOverlayManager.teardown()
         keyStates.values.forEach { state ->
             state.singleClickRunnable?.let { handler.removeCallbacks(it) }
             state.longPressRunnable?.let { handler.removeCallbacks(it) }
         }
         keyStates.clear()
         _isServiceRunning.value = false
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (!DockOverlayManager.isShowing) {
+            DockOverlayManager.teardown()
+            val hasDockRemap = prefs.buttonRemaps.value.any { remap ->
+                remap.singlePressAction?.type == "OPEN_DOCK" ||
+                    remap.doublePressAction?.type == "OPEN_DOCK" ||
+                    remap.longPressAction?.type == "OPEN_DOCK"
+            }
+            if (hasDockRemap) {
+                DockOverlayManager.prewarm(this)
+            }
+        }
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= TRIM_MEMORY_RUNNING_CRITICAL && !DockOverlayManager.isShowing) {
+            Log.d(tag, "Low memory: tearing down idle pre-warmed overlay")
+            DockOverlayManager.teardown()
+        }
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
@@ -133,11 +185,22 @@ class RemoteButtonRemapService : AccessibilityService() {
         // Check if this key is mapped
         val config = findRemapConfig(keyCode) ?: return false
 
+        val isSingleActionOnly = config.singlePressAction != null &&
+            config.doublePressAction == null &&
+            config.longPressAction == null
         val state = keyStates.getOrPut(config.keyCode) { KeyState() }
 
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (event.repeatCount == 0) {
                 state.isLongPressTriggered = false
+
+                if (isSingleActionOnly) {
+                    // Adaptive single-action optimization:
+                    // Only a single action is assigned (no double-press or long-press configured).
+                    // Fire immediately on physical button down for 0ms input latency!
+                    executeAction(config.singlePressAction)
+                    return true
+                }
 
                 // A second press of the same key cancels the pending single-click (armed because the
                 // previous press was within the double-tap window) so it cannot fire mid-hold.
@@ -162,6 +225,11 @@ class RemoteButtonRemapService : AccessibilityService() {
             }
             return true
         } else if (event.action == KeyEvent.ACTION_UP) {
+            if (isSingleActionOnly) {
+                // Action was already executed on ACTION_DOWN; consume UP to prevent OS leak
+                return true
+            }
+
             state.longPressRunnable?.let { handler.removeCallbacks(it) }
             state.longPressRunnable = null
 

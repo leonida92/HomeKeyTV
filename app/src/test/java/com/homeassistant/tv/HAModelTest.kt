@@ -365,5 +365,36 @@ class HAModelTest {
         assertNull(decoded.doublePressAction?.extra)
         assertNull(decoded.longPressAction)
     }
+
+    @Test
+    fun testSingleActionVsMultiActionDetection() {
+        fun isSingleActionOnly(config: com.homeassistant.tv.data.models.ButtonRemapConfig): Boolean {
+            return config.singlePressAction != null &&
+                config.doublePressAction == null &&
+                config.longPressAction == null
+        }
+
+        val singleOnly = com.homeassistant.tv.data.models.ButtonRemapConfig(
+            keyCode = 313,
+            keyName = "Star",
+            singlePressAction = com.homeassistant.tv.data.models.RemapAction("OPEN_DOCK")
+        )
+        assertTrue(isSingleActionOnly(singleOnly))
+
+        val withDouble = singleOnly.copy(
+            doublePressAction = com.homeassistant.tv.data.models.RemapAction("TOGGLE_ENTITY")
+        )
+        assertFalse(isSingleActionOnly(withDouble))
+
+        val withLong = singleOnly.copy(
+            longPressAction = com.homeassistant.tv.data.models.RemapAction("CALL_SERVICE")
+        )
+        assertFalse(isSingleActionOnly(withLong))
+
+        val noneConfigured = singleOnly.copy(
+            singlePressAction = null
+        )
+        assertFalse(isSingleActionOnly(noneConfigured))
+    }
 }
 
