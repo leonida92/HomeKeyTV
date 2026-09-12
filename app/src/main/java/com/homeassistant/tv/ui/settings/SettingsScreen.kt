@@ -84,6 +84,7 @@ fun SettingsScreen(
     val tab2FocusRequester = remember { FocusRequester() }
     val tab3FocusRequester = remember { FocusRequester() }
     val tab4FocusRequester = remember { FocusRequester() }
+    val updateActionButtonFocusRequester = remember { FocusRequester() }
 
     BackHandler(onBack = onBack)
 
@@ -190,10 +191,11 @@ fun SettingsScreen(
                     onSelect = { selectedTab = 3 }
                 )
                 SettingsTabItem(
-                    title = "Updates (v$appVersion)",
+                    title = "Updates",
                     isSelected = selectedTab == 4,
                     focusRequester = tab4FocusRequester,
                     onLeft = { tab3FocusRequester.requestFocus() },
+                    onDown = { updateActionButtonFocusRequester.requestFocus() },
                     onSelect = { selectedTab = 4 }
                 )
             }
@@ -243,15 +245,24 @@ fun SettingsScreen(
                         pinnedApps = pinnedApps,
                         onTogglePinnedApp = { pkg, name -> viewModel.togglePinnedApp(pkg, name) }
                     )
-                    4 -> UpdatesView(
-                        appVersion = appVersion,
-                        updateState = updateState,
-                        onCheckForUpdates = { viewModel.checkForUpdates() },
-                        onDownloadAndInstall = { viewModel.downloadAndInstallUpdate(it) },
-                        onInstallApk = { viewModel.installApk(it) },
-                        onOpenReleaseUrl = { viewModel.openReleaseUrl(it) },
-                        onDismiss = { viewModel.resetUpdateState() }
-                    )
+                    4 -> {
+                        LaunchedEffect(Unit) {
+                            if (updateState is AppUpdateState.Idle) {
+                                viewModel.checkForUpdates()
+                            }
+                        }
+                        UpdatesView(
+                            appVersion = appVersion,
+                            updateState = updateState,
+                            actionButtonFocusRequester = updateActionButtonFocusRequester,
+                            onCheckForUpdates = { viewModel.checkForUpdates() },
+                            onDownloadAndInstall = { viewModel.downloadAndInstallUpdate(it) },
+                            onInstallApk = { viewModel.installApk(it) },
+                            onOpenReleaseUrl = { viewModel.openReleaseUrl(it) },
+                            onDismiss = { viewModel.resetUpdateState() },
+                            onUp = { tab4FocusRequester.requestFocus() }
+                        )
+                    }
                 }
             }
         }
@@ -1622,19 +1633,29 @@ fun AppGridCard(
 fun UpdatesView(
     appVersion: String,
     updateState: AppUpdateState,
+    actionButtonFocusRequester: FocusRequester = remember { FocusRequester() },
     onCheckForUpdates: () -> Unit,
     onDownloadAndInstall: (String) -> Unit,
     onInstallApk: (File) -> Unit,
     onOpenReleaseUrl: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onUp: (() -> Unit)? = null
 ) {
-    val checkButtonFocusRequester = remember { FocusRequester() }
-
-    LaunchedEffect(Unit) {
+    LaunchedEffect(updateState) {
+        delay(60)
         try {
-            checkButtonFocusRequester.requestFocus()
+            actionButtonFocusRequester.requestFocus()
         } catch (_: Exception) {}
     }
+
+    val upModifier = if (onUp != null) {
+        Modifier.onPreviewKeyEvent { keyEvent ->
+            if (keyEvent.type == KeyEventType.KeyDown && keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                onUp()
+                true
+            } else false
+        }
+    } else Modifier
 
     Column(
         modifier = Modifier
@@ -1687,7 +1708,7 @@ fun UpdatesView(
                         )
                         FocusableButton(
                             text = "Check for Updates",
-                            modifier = Modifier.focusRequester(checkButtonFocusRequester),
+                            modifier = Modifier.focusRequester(actionButtonFocusRequester).then(upModifier),
                             onClick = onCheckForUpdates
                         )
                     }
@@ -1748,7 +1769,7 @@ fun UpdatesView(
 
                         FocusableButton(
                             text = "Check Again",
-                            modifier = Modifier.focusRequester(checkButtonFocusRequester),
+                            modifier = Modifier.focusRequester(actionButtonFocusRequester).then(upModifier),
                             onClick = onCheckForUpdates
                         )
                     }
@@ -1802,17 +1823,18 @@ fun UpdatesView(
                             if (!updateState.downloadUrl.isNullOrBlank()) {
                                 FocusableButton(
                                     text = "Download & Install",
-                                    modifier = Modifier.focusRequester(checkButtonFocusRequester),
+                                    modifier = Modifier.focusRequester(actionButtonFocusRequester).then(upModifier),
                                     onClick = { onDownloadAndInstall(updateState.downloadUrl) }
                                 )
                             }
                             FocusableButton(
                                 text = "View Release Page",
-                                modifier = if (updateState.downloadUrl.isNullOrBlank()) Modifier.focusRequester(checkButtonFocusRequester) else Modifier,
+                                modifier = (if (updateState.downloadUrl.isNullOrBlank()) Modifier.focusRequester(actionButtonFocusRequester) else Modifier).then(upModifier),
                                 onClick = { onOpenReleaseUrl(updateState.releaseUrl) }
                             )
                             FocusableButton(
                                 text = "Dismiss",
+                                modifier = upModifier,
                                 onClick = onDismiss
                             )
                         }
@@ -1868,7 +1890,7 @@ fun UpdatesView(
 
                         FocusableButton(
                             text = "Install Update",
-                            modifier = Modifier.focusRequester(checkButtonFocusRequester),
+                            modifier = Modifier.focusRequester(actionButtonFocusRequester).then(upModifier),
                             onClick = { onInstallApk(updateState.apkFile) }
                         )
                     }
@@ -1903,7 +1925,7 @@ fun UpdatesView(
 
                         FocusableButton(
                             text = "Retry",
-                            modifier = Modifier.focusRequester(checkButtonFocusRequester),
+                            modifier = Modifier.focusRequester(actionButtonFocusRequester).then(upModifier),
                             onClick = onCheckForUpdates
                         )
                     }

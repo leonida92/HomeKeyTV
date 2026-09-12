@@ -133,6 +133,17 @@ class UpdateManager(private val context: Context) {
 
     fun promptInstallApk(apkFile: File) {
         try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+                !context.packageManager.canRequestPackageInstalls()
+            ) {
+                val manageIntent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
+                }
+                context.startActivity(manageIntent)
+                return
+            }
+
             val authority = "${context.packageName}.fileprovider"
             val uri: Uri = FileProvider.getUriForFile(context, authority, apkFile)
             val intent = Intent(Intent.ACTION_VIEW).apply {

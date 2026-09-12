@@ -88,10 +88,11 @@ object LocalAdbManager {
                 // 3. Turn on master accessibility switch
                 dadb.shell("settings put secure accessibility_enabled 1")
 
-                // 4. Grant overlay and secure settings permissions
+                // 4. Grant overlay, secure settings, and package installation permissions
                 try {
                     dadb.shell("pm grant $PACKAGE_NAME android.permission.SYSTEM_ALERT_WINDOW")
                     dadb.shell("pm grant $PACKAGE_NAME android.permission.WRITE_SECURE_SETTINGS")
+                    dadb.shell("appops set $PACKAGE_NAME REQUEST_INSTALL_PACKAGES allow")
                 } catch (pe: Exception) {
                     Log.w(TAG, "Optional permission grant warning: ${pe.message}")
                 }
