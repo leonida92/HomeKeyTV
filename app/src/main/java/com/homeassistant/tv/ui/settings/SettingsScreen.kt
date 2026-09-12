@@ -17,6 +17,7 @@ import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -87,6 +88,7 @@ fun SettingsScreen(
     val tab3FocusRequester = remember { FocusRequester() }
     val tab4FocusRequester = remember { FocusRequester() }
     val updateActionButtonFocusRequester = remember { FocusRequester() }
+    var requestButtonRemapContentFocus by remember { mutableStateOf(false) }
 
     BackHandler(onBack = onBack)
 
@@ -182,6 +184,7 @@ fun SettingsScreen(
                     focusRequester = tab2FocusRequester,
                     onLeft = { tab1FocusRequester.requestFocus() },
                     onRight = { tab3FocusRequester.requestFocus() },
+                    onDown = { requestButtonRemapContentFocus = true },
                     onSelect = { selectedTab = 2 }
                 )
                 SettingsTabItem(
@@ -228,6 +231,8 @@ fun SettingsScreen(
                             learnedKey = learnedKey,
                             installedApps = installedApps,
                             haEntities = remapEntities,
+                            requestContentFocus = requestButtonRemapContentFocus,
+                            onResetContentFocus = { requestButtonRemapContentFocus = false },
                             onOpenAccessibilitySettings = {
                                 val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -639,6 +644,8 @@ fun ButtonRemapView(
     learnedKey: Pair<Int, String>?,
     installedApps: List<InstalledAppInfo>,
     haEntities: List<HAEntityState>,
+    requestContentFocus: Boolean = false,
+    onResetContentFocus: () -> Unit = {},
     onOpenAccessibilitySettings: () -> Unit,
     onEnableViaAdb: () -> Unit,
     onStartLearnMode: () -> Unit,
@@ -649,8 +656,40 @@ fun ButtonRemapView(
     var isLearning by remember { mutableStateOf(false) }
     var selectedKeyForConfig by remember { mutableStateOf<Pair<Int, String>?>(null) }
 
+    val editMenuFocusRequester = remember { FocusRequester() }
+    val remapListFocusRequester = remember { FocusRequester() }
+    val learnButtonFocusRequester = remember { FocusRequester() }
+
     BackHandler(enabled = selectedKeyForConfig != null) {
         selectedKeyForConfig = null
+    }
+
+    LaunchedEffect(selectedKeyForConfig) {
+        delay(80)
+        try {
+            if (selectedKeyForConfig != null) {
+                editMenuFocusRequester.requestFocus()
+            } else if (buttonRemaps.isNotEmpty()) {
+                remapListFocusRequester.requestFocus()
+            } else {
+                learnButtonFocusRequester.requestFocus()
+            }
+        } catch (_: Exception) {}
+    }
+
+    LaunchedEffect(requestContentFocus) {
+        if (requestContentFocus) {
+            try {
+                if (selectedKeyForConfig != null) {
+                    editMenuFocusRequester.requestFocus()
+                } else if (buttonRemaps.isNotEmpty()) {
+                    remapListFocusRequester.requestFocus()
+                } else {
+                    learnButtonFocusRequester.requestFocus()
+                }
+            } catch (_: Exception) {}
+            onResetContentFocus()
+        }
     }
 
     LaunchedEffect(learnedKey) {
@@ -793,6 +832,7 @@ fun ButtonRemapView(
                     FocusableButton(
                         text = if (isLearning) "Press any button on remote..." else "Learn Remote Button (Press Key)",
                         icon = if (isLearning) Icons.Default.HourglassBottom else Icons.Default.Sensors,
+                        modifier = Modifier.focusRequester(learnButtonFocusRequester),
                         onClick = {
                             if (isLearning) {
                                 isLearning = false
@@ -889,6 +929,7 @@ fun ButtonRemapView(
                             currentExtra = singleExtra,
                             installedApps = installedApps,
                             haEntities = haEntities,
+                            initialFocusRequester = editMenuFocusRequester,
                             onSelectAction = { type, target, extra ->
                                 singleActionType = type
                                 singleTarget = target ?: ""
@@ -993,9 +1034,10 @@ fun ButtonRemapView(
                         }
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            items(buttonRemaps, key = { it.keyCode }) { remap ->
+                            itemsIndexed(buttonRemaps, key = { _, remap -> remap.keyCode }) { index, remap ->
                                 RemapCardItem(
                                     remap = remap,
+                                    modifier = if (index == 0) Modifier.focusRequester(remapListFocusRequester) else Modifier,
                                     onEdit = { selectedKeyForConfig = Pair(remap.keyCode, remap.keyName) },
                                     onDelete = { onRemoveRemap(remap.keyCode) }
                                 )
@@ -1053,12 +1095,16 @@ fun ActionChoiceRow(
     currentExtra: String? = null,
     installedApps: List<InstalledAppInfo>,
     haEntities: List<HAEntityState>,
+    initialFocusRequester: FocusRequester? = null,
     onSelectAction: (String, String?, String?) -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Text(text = "$pressType Action:", fontSize = 12.sp, color = TV_Text_Secondary, fontWeight = FontWeight.Bold)
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             val actions = listOf(
                 "OPEN_DOCK" to "Open Dock",
                 "LAUNCH_APP" to "Open App",
@@ -1068,10 +1114,18 @@ fun ActionChoiceRow(
                 "SYSTEM_SETTINGS" to "TV Settings",
                 "NONE" to "None"
             )
-            items(actions) { (type, label) ->
+            actions.forEach { (type, label) ->
                 val isSelected = currentAction == type
                 val interactionSource = remember { MutableInteractionSource() }
                 val isFocused by interactionSource.collectIsFocusedAsState()
+
+                val focusModifier = if (initialFocusRequester != null &&
+                    (isSelected || (actions.none { it.first == currentAction } && type == actions.first().first))
+                ) {
+                    Modifier.focusRequester(initialFocusRequester)
+                } else {
+                    Modifier
+                }
 
                 val chooseAction = {
                     val defaultTarget = when (type) {
@@ -1098,6 +1152,7 @@ fun ActionChoiceRow(
 
                 Box(
                     modifier = Modifier
+                        .then(focusModifier)
                         .clip(RoundedCornerShape(8.dp))
                         .background(if (isFocused) TV_Surface_Focused else if (isSelected) HA_Blue else Color(0x22FFFFFF))
                         .border(1.dp, if (isFocused) TV_Border_Focused else Color.Transparent, RoundedCornerShape(8.dp))
@@ -1382,6 +1437,7 @@ fun ActionChoiceRow(
 @Composable
 fun RemapCardItem(
     remap: ButtonRemapConfig,
+    modifier: Modifier = Modifier,
     onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
@@ -1395,7 +1451,7 @@ fun RemapCardItem(
     )
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .graphicsLayer {
                 scaleX = scale
