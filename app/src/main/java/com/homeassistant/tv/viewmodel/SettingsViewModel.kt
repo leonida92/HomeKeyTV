@@ -272,6 +272,21 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 "Connecting to local ADB (127.0.0.1:$port)...\nIf prompted on screen, check 'Always allow' and press OK."
             )
             val context = getApplication<Application>()
+
+            // 1. Try direct Secure Settings write first if WRITE_SECURE_SETTINGS is already granted
+            if (LocalAdbManager.tryEnableViaSecureSettings(context)) {
+                for (i in 1..10) {
+                    if (RemoteButtonRemapService.isServiceRunning.value) {
+                        _adbSetupState.value = AdbSetupState.Success(
+                            "Permissions active! Accessibility service is connected."
+                        )
+                        return@launch
+                    }
+                    kotlinx.coroutines.delay(100)
+                }
+            }
+
+            // 2. Perform ADB setup to grant permissions, bypass restricted settings, and bind service
             val result = LocalAdbManager.enableAccessibilityService(
                 context = context,
                 port = port,
@@ -284,10 +299,22 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
             when (result) {
                 is LocalAdbManager.AdbResult.Success -> {
-                    kotlinx.coroutines.delay(1000)
-                    _adbSetupState.value = AdbSetupState.Success(
-                        "Permissions granted! Accessibility service is now active."
-                    )
+                    // Poll for service to bind up to 3 seconds
+                    var isBound = RemoteButtonRemapService.isServiceRunning.value
+                    for (i in 1..30) {
+                        if (isBound) break
+                        kotlinx.coroutines.delay(100)
+                        isBound = RemoteButtonRemapService.isServiceRunning.value
+                    }
+                    if (isBound) {
+                        _adbSetupState.value = AdbSetupState.Success(
+                            "Permissions granted! Accessibility service is now active."
+                        )
+                    } else {
+                        _adbSetupState.value = AdbSetupState.Success(
+                            "Permissions configured. Service should connect shortly."
+                        )
+                    }
                 }
                 is LocalAdbManager.AdbResult.AdbDisabled -> {
                     _adbSetupState.value = AdbSetupState.Error(result.message)

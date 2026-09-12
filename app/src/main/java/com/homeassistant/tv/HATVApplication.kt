@@ -5,6 +5,11 @@ import android.util.Log
 import com.homeassistant.tv.data.api.HAWebSocketClient
 import com.homeassistant.tv.data.local.PreferencesManager
 import com.homeassistant.tv.data.server.WebSetupServer
+import com.homeassistant.tv.service.LocalAdbManager
+import com.homeassistant.tv.service.RemoteButtonRemapService
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 class HATVApplication : Application() {
 
@@ -29,6 +34,13 @@ class HATVApplication : Application() {
             Log.d("HATVApplication", "Web setup server started on port 8124")
         } catch (e: Exception) {
             Log.e("HATVApplication", "Failed to start web server on 8124", e)
+        }
+
+        // Ensure RemoteButtonRemapService is active if button remaps are configured
+        if (prefs.buttonRemaps.value.isNotEmpty() && !RemoteButtonRemapService.isServiceRunning.value) {
+            CoroutineScope(Dispatchers.IO).launch {
+                LocalAdbManager.tryEnableViaSecureSettings(this@HATVApplication)
+            }
         }
     }
 }

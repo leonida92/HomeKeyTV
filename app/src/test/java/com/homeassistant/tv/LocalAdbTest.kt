@@ -7,7 +7,7 @@ import org.junit.Test
 
 class LocalAdbTest {
 
-    private val targetService = "com.homeassistant.tv/.service.RemoteButtonRemapService"
+    private val targetService = LocalAdbManager.SERVICE_NAME
 
     @Test
     fun testMergeAccessibilityServices_nullOrEmpty() {
@@ -38,9 +38,26 @@ class LocalAdbTest {
     }
 
     @Test
-    fun testMergeAccessibilityServices_handlesColonsWithSpaces() {
-        val existing = "com.example.service1/.Service1 : $targetService"
-        assertEquals(existing.trim(), LocalAdbManager.mergeAccessibilityServices(existing, targetService))
+    fun testMergeAccessibilityServices_replacesNonCanonicalVariant() {
+        val existing = "com.google.android.marvin.talkback/.TalkBackService:com.homeassistant.tv/.service.RemoteButtonRemapService"
+        val expected = "com.google.android.marvin.talkback/.TalkBackService:$targetService"
+        assertEquals(expected, LocalAdbManager.mergeAccessibilityServices(existing, targetService))
+    }
+
+    @Test
+    fun testRemoveAccessibilityService() {
+        val sole = targetService
+        assertEquals("", LocalAdbManager.removeAccessibilityService(sole))
+
+        val nonCanonical = "com.homeassistant.tv/.service.RemoteButtonRemapService"
+        assertEquals("", LocalAdbManager.removeAccessibilityService(nonCanonical))
+
+        val multi = "com.google.android.marvin.talkback/.TalkBackService:$targetService:com.other.service/.Other"
+        val expectedMulti = "com.google.android.marvin.talkback/.TalkBackService:com.other.service/.Other"
+        assertEquals(expectedMulti, LocalAdbManager.removeAccessibilityService(multi))
+
+        assertEquals("", LocalAdbManager.removeAccessibilityService(null))
+        assertEquals("", LocalAdbManager.removeAccessibilityService(""))
     }
 
     @Test
