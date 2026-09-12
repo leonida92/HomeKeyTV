@@ -114,6 +114,31 @@ data class HAEntityState(
             // Fallback for older HA entities: bit 0 (value 1) is SUPPORT_BRIGHTNESS
             return (supportedFeatures and 1) != 0
         }
+
+    val mediaTitle: String?
+        get() = attributes["media_title"]?.jsonPrimitive?.contentOrNull
+
+    val mediaArtist: String?
+        get() = attributes["media_artist"]?.jsonPrimitive?.contentOrNull
+
+    val source: String?
+        get() = attributes["source"]?.jsonPrimitive?.contentOrNull
+
+    val sourceList: List<String>
+        get() = try {
+            attributes["source_list"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList()
+        } catch (_: Exception) {
+            emptyList()
+        }
+
+    val volumeLevel: Float?
+        get() = attributes["volume_level"]?.jsonPrimitive?.contentOrNull?.toFloatOrNull()
+
+    val isVolumeMuted: Boolean
+        get() = attributes["is_volume_muted"]?.jsonPrimitive?.contentOrNull?.toBoolean() ?: false
+
+    val isPlaying: Boolean
+        get() = state.equals("playing", ignoreCase = true)
 }
 
 /**

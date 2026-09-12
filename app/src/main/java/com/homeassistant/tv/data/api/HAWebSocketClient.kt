@@ -418,6 +418,28 @@ class HAWebSocketClient(
         callService("media_player", "volume_down", entityId = entityId)
     }
 
+    fun selectSource(entityId: String, source: String) {
+        val serviceData = buildJsonObject {
+            put("source", source)
+        }
+        callService("media_player", "select_source", serviceData, entityId)
+    }
+
+    fun setVolume(entityId: String, volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
+        val serviceData = buildJsonObject {
+            put("volume_level", clamped.toDouble())
+        }
+        callService("media_player", "volume_set", serviceData, entityId)
+    }
+
+    fun mediaMute(entityId: String, mute: Boolean) {
+        val serviceData = buildJsonObject {
+            put("is_volume_muted", mute)
+        }
+        callService("media_player", "volume_mute", serviceData, entityId)
+    }
+
     fun callService(
         domain: String,
         service: String,

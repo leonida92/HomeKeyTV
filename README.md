@@ -37,13 +37,19 @@
 - **Floating Quick-Access Dock**:
   - Customizable dock positioning: Bottom Dock, Left Dock, or Right Dock.
   - Solid, high-contrast tiles and badges designed for TV readability over any background or active video stream.
-  - Interactive popup dialogs for light brightness adjustment (0–100%) and climate controls (temperature and HVAC modes).
+  - Interactive popup dialogs for light brightness adjustment (0–100%), switches/booleans, and climate controls (temperature and HVAC modes).
   - Pin installed Android TV apps directly alongside Home Assistant entities.
+
+- **Smart Home Media & TV Controls**:
+  - Interactive `MediaPlayerDialog` modal for active media players: volume control bar with D-pad Left/Right control and Mute toggle, input source carousel, transport playback buttons (Play/Pause, Prev, Next), and power toggle.
+  - Short click on a media player tile in the dock toggles Play/Pause instantly; long-press opens the interactive dialog.
 
 - **Native Remote Button Remapper**:
   - Intercept and remap any remote button (e.g. Netflix, YouTube, Color Keys, Guide, Live TV, Star button) using an isolated, non-blocking `AccessibilityService`.
   - Independent Single-Press, Double-Press, and Long-Press triggers per keycode.
-  - Remap to actions: Open Dock, Toggle Light/Switch, Run Scene/Script, Launch TV App, or Put TV to Sleep.
+  - Remap to actions: Open Dock, Toggle Light/Switch, Input Source Switch, Launch TV App, Sleep TV, or TV Settings.
+  - **Input Source Switching (`SELECT_SOURCE`)**: Map any physical remote button to switch your TV or receiver directly to a desired input (e.g. TV, HDMI 1, HDMI 2) via Home Assistant with zero UI popups.
+  - **Entity Search**: Instant real-time search filter when selecting Toggle HA entities in button remap configuration.
   - **In-App Local ADB Auto-Setup**: Activate button remapping and overlay permissions directly from the TV on Fire OS and Android TV without requiring an external computer or manual terminal commands.
   - Pass-through protection for system keys: Home, Volume, Recents, and Sleep are never blocked.
 
@@ -96,7 +102,7 @@
    ```
 3. Install the Release APK:
    ```bash
-   adb install -r HomeKeyTV-v1.3.0.apk
+   adb install -r HomeKeyTV-v1.4.0.apk
    ```
 
 ### Option 2: Sideload via File Manager
@@ -149,7 +155,7 @@ cd HomeKeyTV
 ```
 
 The compiled release APK will be located at:
-`app/build/outputs/apk/release/HomeKeyTV-v1.3.0.apk`
+`app/build/outputs/apk/release/HomeKeyTV-v1.4.0.apk`
 
 ---
 

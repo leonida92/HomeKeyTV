@@ -214,6 +214,12 @@ class HAModelTest {
         assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v2.0.0", "1.3.0"))
         assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.3.0", "1.3.0"))
         assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.2.2", "1.3.0"))
+
+        // Comparisons against 1.4.0
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.4.1", "1.4.0"))
+        assertTrue(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v2.0.0", "1.4.0"))
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.4.0", "1.4.0"))
+        assertFalse(com.homeassistant.tv.data.api.UpdateManager.isNewerVersion("v1.3.0", "1.4.0"))
     }
 
     @Test
@@ -269,4 +275,84 @@ class HAModelTest {
         val withBrightness = json.decodeFromString<HAEntityState>(lightWithBrightnessAttr)
         assertTrue(withBrightness.supportsBrightness)
     }
+
+    @Test
+    fun testMediaPlayerEntityStateParsing() {
+        val jsonString = """
+            {
+                "entity_id": "media_player.living_room_tv",
+                "state": "playing",
+                "attributes": {
+                    "friendly_name": "Living Room TV",
+                    "media_title": "Interstellar",
+                    "media_artist": "Hans Zimmer",
+                    "source": "HDMI 1",
+                    "source_list": ["TV", "HDMI 1", "HDMI 2", "Apple TV"],
+                    "volume_level": 0.45,
+                    "is_volume_muted": false
+                }
+            }
+        """.trimIndent()
+
+        val entity = json.decodeFromString<HAEntityState>(jsonString)
+        assertEquals("media_player.living_room_tv", entity.entityId)
+        assertEquals("media_player", entity.domain)
+        assertEquals("Living Room TV", entity.friendlyName)
+        assertEquals("Interstellar", entity.mediaTitle)
+        assertEquals("Hans Zimmer", entity.mediaArtist)
+        assertEquals("HDMI 1", entity.source)
+        assertEquals(listOf("TV", "HDMI 1", "HDMI 2", "Apple TV"), entity.sourceList)
+        assertEquals(0.45f, entity.volumeLevel ?: 0f, 0.01f)
+        assertFalse(entity.isVolumeMuted)
+        assertTrue(entity.isPlaying)
+    }
+
+    @Test
+    fun testButtonRemapConfigWithExtraSerialization() {
+        val config = com.homeassistant.tv.data.models.ButtonRemapConfig(
+            keyCode = 225,
+            keyName = "Live TV",
+            singlePressAction = com.homeassistant.tv.data.models.RemapAction("SELECT_SOURCE", "media_player.living_room_tv", extra = "TV"),
+            doublePressAction = com.homeassistant.tv.data.models.RemapAction("SELECT_SOURCE", "media_player.living_room_tv", extra = "HDMI 1"),
+            longPressAction = com.homeassistant.tv.data.models.RemapAction("OPEN_DOCK")
+        )
+        val serialized = json.encodeToString(com.homeassistant.tv.data.models.ButtonRemapConfig.serializer(), config)
+        val decoded = json.decodeFromString<com.homeassistant.tv.data.models.ButtonRemapConfig>(serialized)
+
+        assertEquals(225, decoded.keyCode)
+        assertEquals("Live TV", decoded.keyName)
+        assertEquals("SELECT_SOURCE", decoded.singlePressAction?.type)
+        assertEquals("media_player.living_room_tv", decoded.singlePressAction?.target)
+        assertEquals("TV", decoded.singlePressAction?.extra)
+        assertEquals("HDMI 1", decoded.doublePressAction?.extra)
+        assertNull(decoded.longPressAction?.extra)
+    }
+
+    @Test
+    fun testButtonRemapConfigBackwardCompatibility() {
+        // Test JSON without "extra" field parses properly with extra = null
+        val legacyJson = """
+            {
+                "keyCode": 313,
+                "keyName": "Star Button",
+                "singlePressAction": {
+                    "type": "OPEN_DOCK"
+                },
+                "doublePressAction": {
+                    "type": "TOGGLE_ENTITY",
+                    "target": "light.living_room"
+                }
+            }
+        """.trimIndent()
+
+        val decoded = json.decodeFromString<com.homeassistant.tv.data.models.ButtonRemapConfig>(legacyJson)
+        assertEquals(313, decoded.keyCode)
+        assertEquals("Star Button", decoded.keyName)
+        assertEquals("OPEN_DOCK", decoded.singlePressAction?.type)
+        assertNull(decoded.singlePressAction?.extra)
+        assertEquals("light.living_room", decoded.doublePressAction?.target)
+        assertNull(decoded.doublePressAction?.extra)
+        assertNull(decoded.longPressAction)
+    }
 }
+

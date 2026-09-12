@@ -259,6 +259,14 @@ class RemoteButtonRemapService : AccessibilityService() {
                 }
                 startActivity(intent)
             }
+
+            "SELECT_SOURCE" -> {
+                val entityId = action.target
+                val source = action.extra
+                if (entityId != null && source != null) {
+                    HAWebSocketClient.getInstance().selectSource(entityId, source)
+                }
+            }
         }
     }
 

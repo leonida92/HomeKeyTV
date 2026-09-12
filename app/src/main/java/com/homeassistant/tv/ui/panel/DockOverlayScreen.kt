@@ -274,6 +274,20 @@ fun DockOverlayScreen(
                             onDismiss = { viewModel.closeEntityDialog() }
                         )
                     }
+                    entity.domain == "media_player" -> {
+                        MediaPlayerDialog(
+                            entity = entity,
+                            onSelectSource = { source -> viewModel.selectMediaSource(entity.entityId, source) },
+                            onSetVolume = { volume -> viewModel.setMediaVolume(entity.entityId, volume) },
+                            onTogglePlayPause = { viewModel.toggleMediaPlayPause(entity.entityId) },
+                            onNextTrack = { viewModel.mediaNext(entity.entityId) },
+                            onPreviousTrack = { viewModel.mediaPrevious(entity.entityId) },
+                            onToggleMute = { viewModel.toggleMediaMute(entity.entityId, entity.isVolumeMuted) },
+                            onTurnOn = { viewModel.turnOnEntity(entity.entityId) },
+                            onTurnOff = { viewModel.turnOffEntity(entity.entityId) },
+                            onDismiss = { viewModel.closeEntityDialog() }
+                        )
+                    }
                     else -> {}
                 }
             }
@@ -460,7 +474,7 @@ fun DockListHorizontal(
                     onUnfocused = onUnfocused,
                     onClick = { onItemClick(item) },
                     onLongPress = if (!item.isApp && item.entity != null &&
-                        (item.entity.domain == "light" || item.entity.domain == "climate" || item.entity.domain == "switch" || item.entity.domain == "input_boolean")
+                        (item.entity.domain == "light" || item.entity.domain == "climate" || item.entity.domain == "switch" || item.entity.domain == "input_boolean" || item.entity.domain == "media_player")
                     ) {
                         { onItemLongPress(item) }
                     } else null,
@@ -614,7 +628,7 @@ fun DockListVertical(
                     onUnfocused = onUnfocused,
                     onClick = { onItemClick(item) },
                     onLongPress = if (!item.isApp && item.entity != null &&
-                        (item.entity.domain == "light" || item.entity.domain == "climate" || item.entity.domain == "switch" || item.entity.domain == "input_boolean")
+                        (item.entity.domain == "light" || item.entity.domain == "climate" || item.entity.domain == "switch" || item.entity.domain == "input_boolean" || item.entity.domain == "media_player")
                     ) {
                         { onItemLongPress(item) }
                     } else null,

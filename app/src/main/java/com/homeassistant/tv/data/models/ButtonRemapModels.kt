@@ -5,9 +5,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class RemapAction(
-    val type: String, // "OPEN_DOCK", "TOGGLE_ENTITY", "CALL_SERVICE", "LAUNCH_APP", "SYSTEM_SLEEP", "SYSTEM_SETTINGS"
+    val type: String, // "OPEN_DOCK", "TOGGLE_ENTITY", "CALL_SERVICE", "LAUNCH_APP", "SYSTEM_SLEEP", "SYSTEM_SETTINGS", "SELECT_SOURCE"
     val target: String? = null, // entityId, service (e.g. script.goodnight), or packageName (e.g. com.limelight)
-    val label: String? = null
+    val label: String? = null,
+    val extra: String? = null // target input source (e.g. "TV", "HDMI 1")
 )
 
 @Serializable

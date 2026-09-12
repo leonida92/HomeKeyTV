@@ -190,6 +190,30 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
         wsClient.setPresetMode(entityId, presetMode)
     }
 
+    fun selectMediaSource(entityId: String, source: String) {
+        wsClient.selectSource(entityId, source)
+    }
+
+    fun setMediaVolume(entityId: String, volume: Float) {
+        wsClient.setVolume(entityId, volume)
+    }
+
+    fun toggleMediaPlayPause(entityId: String) {
+        wsClient.mediaPlayPause(entityId)
+    }
+
+    fun mediaNext(entityId: String) {
+        wsClient.mediaNext(entityId)
+    }
+
+    fun mediaPrevious(entityId: String) {
+        wsClient.mediaPrevious(entityId)
+    }
+
+    fun toggleMediaMute(entityId: String, currentMute: Boolean) {
+        wsClient.mediaMute(entityId, !currentMute)
+    }
+
     fun setPanelLayout(layout: String) {
         prefs.setPanelLayout(layout)
     }
