@@ -15,6 +15,8 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
@@ -1660,6 +1662,7 @@ fun UpdatesView(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -1802,23 +1805,6 @@ fun UpdatesView(
                             }
                         }
 
-                        if (updateState.releaseNotes.isNotBlank()) {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .background(Color(0xFF0F172A))
-                                    .padding(12.dp)
-                            ) {
-                                Text(
-                                    text = updateState.releaseNotes,
-                                    fontSize = 13.sp,
-                                    color = Color(0xFFCBD5E1),
-                                    maxLines = 6
-                                )
-                            }
-                        }
-
                         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             if (!updateState.downloadUrl.isNullOrBlank()) {
                                 FocusableButton(
@@ -1837,6 +1823,24 @@ fun UpdatesView(
                                 modifier = upModifier,
                                 onClick = onDismiss
                             )
+                        }
+
+                        if (updateState.releaseNotes.isNotBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 140.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF0F172A))
+                                    .verticalScroll(rememberScrollState())
+                                    .padding(12.dp)
+                            ) {
+                                Text(
+                                    text = updateState.releaseNotes,
+                                    fontSize = 13.sp,
+                                    color = Color(0xFFCBD5E1)
+                                )
+                            }
                         }
                     }
                 }

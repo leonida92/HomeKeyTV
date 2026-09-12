@@ -93,6 +93,7 @@ object LocalAdbManager {
                     dadb.shell("pm grant $PACKAGE_NAME android.permission.SYSTEM_ALERT_WINDOW")
                     dadb.shell("pm grant $PACKAGE_NAME android.permission.WRITE_SECURE_SETTINGS")
                     dadb.shell("appops set $PACKAGE_NAME REQUEST_INSTALL_PACKAGES allow")
+                    dadb.shell("appops set $PACKAGE_NAME ACCESS_RESTRICTED_SETTINGS allow")
                 } catch (pe: Exception) {
                     Log.w(TAG, "Optional permission grant warning: ${pe.message}")
                 }
