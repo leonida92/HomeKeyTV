@@ -15,9 +15,11 @@ import com.homekey.tv.data.local.PreferencesManager
 import com.homekey.tv.data.models.AppUpdateState
 import com.homekey.tv.data.models.ButtonRemapConfig
 import com.homekey.tv.data.models.ConnectionStatus
+import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.InstalledAppInfo
 import com.homekey.tv.data.models.PinnedAppConfig
+import com.homekey.tv.data.models.ThemePreset
 import com.homekey.tv.data.server.WebSetupServerManager
 import com.homekey.tv.service.LocalAdbManager
 import com.homekey.tv.service.RemoteButtonRemapService
@@ -43,9 +45,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val updateManager = UpdateManager(application)
 
     val appVersion: String = try {
-        application.packageManager.getPackageInfo(application.packageName, 0).versionName ?: "1.6.3"
+        application.packageManager.getPackageInfo(application.packageName, 0).versionName ?: "1.6.6"
     } catch (_: Exception) {
-        "1.6.3"
+        "1.6.6"
     }
 
     private val _updateState = MutableStateFlow<AppUpdateState>(AppUpdateState.Idle)
@@ -61,6 +63,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val recentAppsEnabled: StateFlow<Boolean> = prefs.recentAppsEnabled
     val recentAppsCount: StateFlow<Int> = prefs.recentAppsCount
     val connectionStatus: StateFlow<ConnectionStatus> = wsClient.connectionStatus
+    val themePreset: StateFlow<String> = prefs.themePreset
+    val customThemeColors: StateFlow<Map<String, String>> = prefs.customThemeColors
+    val activePalette: StateFlow<DomainColorPalette> = prefs.activePalette
 
     // Pairing code shown next to the QR so the phone can authorise /api/save & /api/fetch-entities.
     val pairingPin: StateFlow<String> = prefs.pairingPin
@@ -255,6 +260,18 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun setRecentAppsCount(count: Int) {
         prefs.setRecentAppsCount(count)
+    }
+
+    fun setThemePreset(preset: String) {
+        prefs.setThemePreset(preset)
+    }
+
+    fun setCustomDomainColor(domain: String, hex: String) {
+        prefs.setCustomDomainColor(domain, hex)
+    }
+
+    fun setCustomDomainColors(colors: Map<String, String>) {
+        prefs.setCustomDomainColors(colors)
     }
 
     fun togglePinnedApp(packageName: String, appName: String) {

@@ -12,8 +12,8 @@ android {
         applicationId = "com.homekey.tv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 22
-        versionName = "1.6.3"
+        versionCode = 25
+        versionName = "1.6.6"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {

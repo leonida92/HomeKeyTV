@@ -744,4 +744,102 @@ class HAModelTest {
             assertEquals("Icon id '$id' must resolve to expected ${expectedIcon.name} but got ${resolved.name}", expectedIcon, resolved)
         }
     }
+
+    @Test
+    fun testCameraEntityIsOnState() {
+        val idleCamera = json.decodeFromString<HAEntityState>("""{"entity_id":"camera.front_door","state":"idle","attributes":{"friendly_name":"Front Door"}}""")
+        val streamingCamera = json.decodeFromString<HAEntityState>("""{"entity_id":"camera.backyard","state":"streaming","attributes":{"friendly_name":"Backyard"}}""")
+        val recordingCamera = json.decodeFromString<HAEntityState>("""{"entity_id":"camera.driveway","state":"recording","attributes":{"friendly_name":"Driveway"}}""")
+        val offCamera = json.decodeFromString<HAEntityState>("""{"entity_id":"camera.living_room","state":"off","attributes":{"friendly_name":"Living Room Camera"}}""")
+        val unavailableCamera = json.decodeFromString<HAEntityState>("""{"entity_id":"camera.garage","state":"unavailable","attributes":{"friendly_name":"Garage Camera"}}""")
+
+        assertTrue(idleCamera.isOn)
+        assertTrue(streamingCamera.isOn)
+        assertTrue(recordingCamera.isOn)
+        assertFalse(offCamera.isOn)
+        assertFalse(unavailableCamera.isOn)
+    }
+
+    @Test
+    fun testThemePresetLookup() {
+        assertEquals(com.homekey.tv.data.models.ThemePreset.CLASSIC, com.homekey.tv.data.models.ThemePreset.fromId("classic"))
+        assertEquals(com.homekey.tv.data.models.ThemePreset.APPLE, com.homekey.tv.data.models.ThemePreset.fromId("apple"))
+        assertEquals(com.homekey.tv.data.models.ThemePreset.CYBERPUNK, com.homekey.tv.data.models.ThemePreset.fromId("cyberpunk"))
+        assertEquals(com.homekey.tv.data.models.ThemePreset.NORDIC, com.homekey.tv.data.models.ThemePreset.fromId("nordic"))
+        assertEquals(com.homekey.tv.data.models.ThemePreset.MONOCHROME, com.homekey.tv.data.models.ThemePreset.fromId("monochrome"))
+        assertEquals(com.homekey.tv.data.models.ThemePreset.CUSTOM, com.homekey.tv.data.models.ThemePreset.fromId("custom"))
+        assertEquals(com.homekey.tv.data.models.ThemePreset.CLASSIC, com.homekey.tv.data.models.ThemePreset.fromId("unknown_id"))
+        assertEquals(com.homekey.tv.data.models.ThemePreset.CLASSIC, com.homekey.tv.data.models.ThemePreset.fromId(null))
+    }
+
+    @Test
+    fun testDomainColorPalettePresetsAndOverrides() {
+        val presets = listOf(
+            com.homekey.tv.data.models.DomainColorPalette.CLASSIC,
+            com.homekey.tv.data.models.DomainColorPalette.APPLE,
+            com.homekey.tv.data.models.DomainColorPalette.CYBERPUNK,
+            com.homekey.tv.data.models.DomainColorPalette.NORDIC,
+            com.homekey.tv.data.models.DomainColorPalette.MONOCHROME
+        )
+
+        val domains = listOf(
+            "light", "switch", "climate", "camera", "media_player",
+            "cover", "fan", "vacuum", "scene", "sensor", "off_background", "icon_color"
+        )
+
+        for (palette in presets) {
+            for (domain in domains) {
+                val hex = palette.getColorHexForDomain(domain)
+                assertTrue("Domain '$domain' hex should not be blank in palette", hex.isNotBlank())
+                assertTrue("Domain '$domain' hex should start with #", hex.startsWith("#"))
+                val color = palette.getColorForDomain(domain)
+                assertFalse("Compose color should not be unspecified", color == androidx.compose.ui.graphics.Color.Unspecified)
+            }
+            assertFalse(palette.getOffBackgroundColor() == androidx.compose.ui.graphics.Color.Unspecified)
+            assertFalse(palette.getIconColor() == androidx.compose.ui.graphics.Color.Unspecified)
+        }
+
+        // Specific preset expectations
+        assertEquals("#1E293B", com.homekey.tv.data.models.DomainColorPalette.CLASSIC.offBackground)
+        assertEquals("#FFFFFF", com.homekey.tv.data.models.DomainColorPalette.CLASSIC.iconColor)
+
+        assertEquals("#1C1C1E", com.homekey.tv.data.models.DomainColorPalette.APPLE.offBackground)
+        assertEquals("#FFFFFF", com.homekey.tv.data.models.DomainColorPalette.APPLE.iconColor)
+
+        assertEquals("#0D0D1A", com.homekey.tv.data.models.DomainColorPalette.CYBERPUNK.offBackground)
+        assertEquals("#000000", com.homekey.tv.data.models.DomainColorPalette.CYBERPUNK.iconColor)
+
+        assertEquals("#21272A", com.homekey.tv.data.models.DomainColorPalette.NORDIC.offBackground)
+        assertEquals("#FFFFFF", com.homekey.tv.data.models.DomainColorPalette.NORDIC.iconColor)
+
+        assertEquals("#18181B", com.homekey.tv.data.models.DomainColorPalette.MONOCHROME.offBackground)
+        assertEquals("#000000", com.homekey.tv.data.models.DomainColorPalette.MONOCHROME.iconColor)
+
+        // isColorDark tests
+        assertTrue(com.homekey.tv.data.models.DomainColorPalette.isColorDark(androidx.compose.ui.graphics.Color.Black))
+        assertTrue(com.homekey.tv.data.models.DomainColorPalette.isColorDark(androidx.compose.ui.graphics.Color(0xFF1E293B)))
+        assertFalse(com.homekey.tv.data.models.DomainColorPalette.isColorDark(androidx.compose.ui.graphics.Color.White))
+        assertFalse(com.homekey.tv.data.models.DomainColorPalette.isColorDark(androidx.compose.ui.graphics.Color(0xFFE2E8F0)))
+
+        // Overrides
+        val base = com.homekey.tv.data.models.DomainColorPalette.CLASSIC
+        val overridden = base.withOverride("camera", "#123456")
+            .withOverride("off_background", "#112233")
+            .withOverride("icon_color", "#445566")
+        assertEquals("#123456", overridden.camera)
+        assertEquals("#112233", overridden.offBackground)
+        assertEquals("#445566", overridden.iconColor)
+        assertEquals("#112233", overridden.getColorHexForDomain("off_background"))
+        assertEquals("#445566", overridden.getColorHexForDomain("icon_color"))
+
+        val multiOverridden = base.withOverrides(mapOf(
+            "camera" to "#AABBCC",
+            "off_background" to "#223344",
+            "icon_color" to "#556677"
+        ))
+        assertEquals("#AABBCC", multiOverridden.getColorHexForDomain("camera"))
+        assertEquals("#223344", multiOverridden.getColorHexForDomain("off_background"))
+        assertEquals("#556677", multiOverridden.getColorHexForDomain("icon_color"))
+    }
 }
+

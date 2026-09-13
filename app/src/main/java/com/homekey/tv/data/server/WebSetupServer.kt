@@ -76,6 +76,8 @@ class WebSetupServer(
         val token: String = "",
         val layout: String? = null,
         val pin: String = "",
+        val themePreset: String? = null,
+        val customThemeColors: Map<String, String>? = null,
         // null = client omitted the field (keep current selection); empty list = user cleared it.
         val pinnedEntities: List<PinnedItemPayload>? = null
     )
@@ -112,6 +114,7 @@ class WebSetupServer(
                     put("serverUrl", preferencesManager.serverUrl.value)
                     put("pinnedCount", preferencesManager.pinnedEntities.value.size)
                     put("layout", preferencesManager.panelLayout.value)
+                    put("themePreset", preferencesManager.themePreset.value)
                 }.toString()
                 newFixedLengthResponse(Response.Status.OK, "application/json", body)
             }
@@ -217,6 +220,14 @@ class WebSetupServer(
                         preferencesManager.setPanelLayout(payload.layout)
                     }
 
+                    if (!payload.themePreset.isNullOrBlank()) {
+                        preferencesManager.setThemePreset(payload.themePreset)
+                    }
+
+                    if (payload.customThemeColors != null) {
+                        preferencesManager.setCustomDomainColors(payload.customThemeColors)
+                    }
+
                     // null = field absent (leave dock untouched); an explicit empty list clears it.
                     if (payload.pinnedEntities != null) {
                         val pinned = payload.pinnedEntities.mapIndexed { idx, item ->
@@ -249,6 +260,8 @@ class WebSetupServer(
         // sent back to the browser; once the TV is configured, /api/* use the saved token server-side.
         val currentPinned = json.encodeToString(preferencesManager.pinnedEntities.value)
         val currentLayout = preferencesManager.panelLayout.value
+        val currentThemePreset = preferencesManager.themePreset.value
+        val currentCustomColors = json.encodeToString(preferencesManager.customThemeColors.value)
 
         return """
 <!DOCTYPE html>
@@ -286,6 +299,150 @@ class WebSetupServer(
             padding: 20px;
             box-shadow: 0 10px 25px rgba(0,0,0,0.5);
             border: 1px solid var(--border);
+        }
+        .setup-card {
+            background: #151f32;
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin-bottom: 16px;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+        .setup-card:focus-within {
+            border-color: var(--accent);
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 16px;
+            background: rgba(255, 255, 255, 0.03);
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+        .card-header:hover {
+            background: rgba(255, 255, 255, 0.07);
+        }
+        .card-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: var(--accent);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .card-badge {
+            font-size: 11px;
+            background: rgba(2, 132, 199, 0.25);
+            border: 1px solid var(--primary);
+            color: var(--accent);
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+        .card-chevron {
+            font-size: 11px;
+            color: var(--text-muted);
+            transition: transform 0.2s ease;
+        }
+        .setup-card.collapsed .card-chevron {
+            transform: rotate(-90deg);
+        }
+        .card-body {
+            padding: 16px;
+        }
+        .setup-card.collapsed .card-body {
+            display: none;
+        }
+        .theme-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 10px;
+            margin-top: 8px;
+            margin-bottom: 14px;
+        }
+        .theme-card {
+            padding: 12px;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: #0b1120;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            gap: 6px;
+        }
+        .theme-card:hover {
+            border-color: var(--accent);
+            background: #131d31;
+            transform: translateY(-2px);
+        }
+        .theme-card.active {
+            border-color: var(--accent);
+            background: rgba(2, 132, 199, 0.2);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+        .theme-card-title {
+            font-weight: 700;
+            font-size: 13px;
+            color: var(--text);
+        }
+        .theme-card-desc {
+            font-size: 11px;
+            color: var(--text-muted);
+            line-height: 1.3;
+        }
+        .theme-swatches-preview {
+            display: flex;
+            gap: 5px;
+            margin-top: 4px;
+        }
+        .theme-swatch-dot {
+            width: 13px;
+            height: 13px;
+            border-radius: 50%;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            display: inline-block;
+        }
+        .color-picker-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+            gap: 8px;
+        }
+        .color-picker-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 10px;
+            background: #0b1120;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+        .color-picker-label {
+            font-size: 12px;
+            font-weight: 500;
+            color: var(--text);
+        }
+        .color-picker-input-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .color-picker-hex {
+            font-size: 11px;
+            font-family: monospace;
+            color: var(--text-muted);
+        }
+        .color-input {
+            width: 34px;
+            height: 28px;
+            padding: 0;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            cursor: pointer;
+            background: transparent;
         }
         h1 {
             font-size: 22px;
@@ -621,64 +778,127 @@ class WebSetupServer(
 <body>
     <div class="container">
         <h1>HomeKey TV Setup</h1>
-        <p class="subtitle">Configure Home Assistant for your Google TV Streamer</p>
+        <p class="subtitle">Configure Home Assistant & Appearance for your Google TV</p>
 
         <div id="alertBox" class="alert"></div>
 
-        <div class="form-group">
-            <label>Home Assistant URL</label>
-            <input type="url" id="haUrl" placeholder="http://192.168.1.100:8123 or https://xxx.ui.nabu.casa" value="$currentUrl">
-            <p class="help-text">Local IP or your Nabu Casa remote URL</p>
+        <!-- Section 1: Home Assistant Connection (Collapsible) -->
+        <div class="setup-card" id="card-connection">
+            <div class="card-header" onclick="toggleCard('card-connection')">
+                <div class="card-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+                    <span>Home Assistant Connection</span>
+                </div>
+                <span class="card-chevron">&#9660;</span>
+            </div>
+            <div class="card-body">
+                <div class="form-group">
+                    <label>Home Assistant URL</label>
+                    <input type="url" id="haUrl" placeholder="http://192.168.1.100:8123 or https://xxx.ui.nabu.casa" value="$currentUrl">
+                    <p class="help-text">Local IP or your Nabu Casa remote URL</p>
+                </div>
+
+                <div class="form-group">
+                    <label>Long-Lived Access Token</label>
+                    <input type="password" id="haToken" placeholder="${if (isTokenSaved) "•••••••• (Saved on TV - leave blank to keep)" else "eyJhbGciOi..."}" autocomplete="off" oninput="persistCredentials()">
+                    <p class="help-text">Found in Home Assistant &gt; Profile &gt; Long-Lived Access Tokens. Leave blank if already configured.</p>
+                </div>
+
+                <div class="form-group">
+                    <label>Pairing PIN</label>
+                    <input type="text" id="pairingPin" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" oninput="persistCredentials()">
+                    <p class="help-text">6-digit code shown on the TV under Settings &gt; Instant Phone Setup</p>
+                </div>
+
+                <button type="button" id="btnFetch" class="btn btn-secondary" onclick="fetchEntities()">Fetch Entities from HA</button>
+            </div>
         </div>
 
-        <div class="form-group">
-            <label>Long-Lived Access Token</label>
-            <input type="password" id="haToken" placeholder="${if (isTokenSaved) "•••••••• (Saved on TV - leave blank to keep)" else "eyJhbGciOi..."}" autocomplete="off" oninput="persistCredentials()">
-            <p class="help-text">Found in Home Assistant &gt; Profile &gt; Long-Lived Access Tokens. Leave blank if this TV is already configured &mdash; it keeps its saved token.</p>
+        <!-- Section 2: Menu Layout Position (Collapsible) -->
+        <div class="setup-card" id="card-layout">
+            <div class="card-header" onclick="toggleCard('card-layout')">
+                <div class="card-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M3 15h18"/></svg>
+                    <span>Menu Layout Position</span>
+                </div>
+                <span class="card-chevron">&#9660;</span>
+            </div>
+            <div class="card-body">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label>Dock Layout Position</label>
+                    <select id="layoutStyle">
+                        <option value="DOCK_BOTTOM" ${if (currentLayout == "DOCK_BOTTOM" || currentLayout == "DOCK") "selected" else ""}>Bottom Dock (tvQuickActions style)</option>
+                        <option value="DOCK_LEFT" ${if (currentLayout == "DOCK_LEFT") "selected" else ""}>Left Dock (Vertical)</option>
+                        <option value="DOCK_RIGHT" ${if (currentLayout == "DOCK_RIGHT" || currentLayout == "SIDE_PANEL") "selected" else ""}>Right Dock (Vertical)</option>
+                    </select>
+                </div>
+            </div>
         </div>
 
-        <div class="form-group">
-            <label>Pairing PIN</label>
-            <input type="text" id="pairingPin" inputmode="numeric" maxlength="6" placeholder="000000" autocomplete="one-time-code" oninput="persistCredentials()">
-            <p class="help-text">6-digit code shown on the Google TV under Settings &gt; Instant Phone Setup</p>
+        <!-- Section 3: Themes & Domain Colors (Collapsible) -->
+        <div class="setup-card" id="card-theme">
+            <div class="card-header" onclick="toggleCard('card-theme')">
+                <div class="card-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="4"/><line x1="4.93" y1="4.93" x2="9.17" y2="9.17"/><line x1="14.83" y1="14.83" x2="19.07" y2="19.07"/><line x1="14.83" y1="9.17" x2="19.07" y2="4.93"/><line x1="4.93" y1="19.07" x2="9.17" y2="14.83"/></svg>
+                    <span>Theme & Domain Colors</span>
+                </div>
+                <span class="card-chevron">&#9660;</span>
+            </div>
+            <div class="card-body">
+                <label>Theme Preset</label>
+                <div class="theme-grid" id="themeGrid">
+                    <!-- Dynamic Theme Presets -->
+                </div>
+
+                <div id="customColorsSection" style="margin-top: 16px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                        <label style="margin-bottom: 0;">Domain Color Customizer</label>
+                        <button type="button" class="quick-btn" style="padding: 3px 10px;" onclick="resetCustomColors()">Reset to Preset</button>
+                    </div>
+                    <p class="help-text" style="margin-bottom: 12px;">Click any color swatch to pick custom hex colors for each entity domain.</p>
+                    <div class="color-picker-grid" id="colorPickerGrid">
+                        <!-- Dynamic Domain Color Pickers -->
+                    </div>
+                </div>
+            </div>
         </div>
 
-        <div class="form-group">
-            <label>Menu Layout Position</label>
-            <select id="layoutStyle">
-                <option value="DOCK_BOTTOM" ${if (currentLayout == "DOCK_BOTTOM" || currentLayout == "DOCK") "selected" else ""}>Bottom Dock (tvQuickActions style)</option>
-                <option value="DOCK_LEFT" ${if (currentLayout == "DOCK_LEFT") "selected" else ""}>Left Dock (Vertical)</option>
-                <option value="DOCK_RIGHT" ${if (currentLayout == "DOCK_RIGHT" || currentLayout == "SIDE_PANEL") "selected" else ""}>Right Dock (Vertical)</option>
-            </select>
-        </div>
+        <!-- Section 4: Pinned Entities (Collapsible) -->
+        <div class="setup-card" id="card-entities">
+            <div class="card-header" onclick="toggleCard('card-entities')">
+                <div class="card-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    <span>Selected Entities for TV Menu</span>
+                    <span id="selectedCountBadge" class="card-badge">0 selected</span>
+                </div>
+                <span class="card-chevron">&#9660;</span>
+            </div>
+            <div class="card-body">
+                <div class="quick-actions">
+                    <button type="button" class="quick-btn" onclick="selectAllFiltered(true)">Select All</button>
+                    <button type="button" class="quick-btn" onclick="selectAllFiltered(false)">Clear All</button>
+                </div>
 
-        <button type="button" id="btnFetch" class="btn btn-secondary" onclick="fetchEntities()">Fetch Entities from HA</button>
+                <div id="domainTabs" class="domain-tabs">
+                    <div class="domain-tab active" onclick="filterDomain('ALL')">All</div>
+                    <div id="selectedTab" class="domain-tab" onclick="filterDomain('SELECTED')" style="background: rgba(2, 132, 199, 0.2); border-color: var(--primary);">Selected (0)</div>
+                    <div class="domain-tab" onclick="filterDomain('light')">Lights</div>
+                    <div class="domain-tab" onclick="filterDomain('switch')">Switches</div>
+                    <div class="domain-tab" onclick="filterDomain('scene')">Scenes</div>
+                    <div class="domain-tab" onclick="filterDomain('script')">Scripts</div>
+                    <div class="domain-tab" onclick="filterDomain('climate')">Climate</div>
+                    <div class="domain-tab" onclick="filterDomain('camera')">Cameras</div>
+                    <div class="domain-tab" onclick="filterDomain('media_player')">Media</div>
+                    <div class="domain-tab" onclick="filterDomain('cover')">Covers</div>
+                    <div class="domain-tab" onclick="filterDomain('fan')">Fans</div>
+                </div>
 
-        <div class="section-title">
-            <span>Selected Entities for TV Menu</span>
-            <span id="selectedCount" style="font-size: 12px; color: var(--text-muted);">0 selected</span>
-        </div>
+                <input type="text" id="entityFilter" placeholder="Search devices by name or id..." oninput="renderEntitiesList()" style="margin-bottom: 8px;">
 
-        <div class="quick-actions">
-            <button type="button" class="quick-btn" onclick="selectAllFiltered(true)">Select All</button>
-            <button type="button" class="quick-btn" onclick="selectAllFiltered(false)">Clear All</button>
-        </div>
-
-        <div id="domainTabs" class="domain-tabs">
-            <div class="domain-tab active" onclick="filterDomain('ALL')">All</div>
-            <div id="selectedTab" class="domain-tab" onclick="filterDomain('SELECTED')" style="background: rgba(2, 132, 199, 0.2); border-color: var(--primary);">Selected (0)</div>
-            <div class="domain-tab" onclick="filterDomain('light')">Lights</div>
-            <div class="domain-tab" onclick="filterDomain('switch')">Switches</div>
-            <div class="domain-tab" onclick="filterDomain('scene')">Scenes</div>
-            <div class="domain-tab" onclick="filterDomain('script')">Scripts</div>
-            <div class="domain-tab" onclick="filterDomain('climate')">Climate</div>
-            <div class="domain-tab" onclick="filterDomain('media_player')">Media</div>
-        </div>
-
-        <input type="text" id="entityFilter" placeholder="Search devices by name or id..." oninput="renderEntitiesList()" style="margin-bottom: 8px;">
-
-        <div id="entitiesContainer" class="entity-list">
-            <p style="padding: 16px; text-align: center; color: var(--text-muted);">Tap Fetch Entities to load devices from Home Assistant</p>
+                <div id="entitiesContainer" class="entity-list">
+                    <p style="padding: 16px; text-align: center; color: var(--text-muted);">Tap Fetch Entities to load devices from Home Assistant</p>
+                </div>
+            </div>
         </div>
 
         <button type="button" class="btn" onclick="saveConfig()">Save Configuration to TV</button>
@@ -717,6 +937,13 @@ class WebSetupServer(
     </div>
 
     <script>
+        function toggleCard(cardId) {
+            const card = document.getElementById(cardId);
+            if (card) {
+                card.classList.toggle('collapsed');
+            }
+        }
+
         const ICON_GALLERY = [
             // Lighting
             { id: 'lightbulb', label: 'Lightbulb', cat: 'light', svg: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-1 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>' },
@@ -818,6 +1045,164 @@ class WebSetupServer(
             { id: 'play', label: 'Script / Play', cat: 'sensor', svg: '<polygon points="5 3 19 12 5 21 5 3"/>' },
             { id: 'pets', label: 'Pets', cat: 'sensor', svg: '<circle cx="4.5" cy="9.5" r="2"/><circle cx="9" cy="5.5" r="2"/><circle cx="15" cy="5.5" r="2"/><circle cx="19.5" cy="9.5" r="2"/><path d="M12 12c-3 0-5 2-5 5 0 2 2 3 5 3s5-1 5-3c0-3-2-5-5-5z"/>' }
         ];
+
+        const PRESET_PALETTES = {
+            classic: {
+                name: 'HomeKey Classic',
+                desc: 'Original vivid smart home palette',
+                colors: {
+                    light: '#F59E0B', switch: '#0284C7', climate: '#EA580C', camera: '#6366F1',
+                    media_player: '#0D9488', cover: '#059669', fan: '#0891B2', vacuum: '#78716C',
+                    scene: '#9333EA', sensor: '#8B5CF6',
+                    off_background: '#1E293B', icon_color: '#FFFFFF'
+                }
+            },
+            apple: {
+                name: 'Cupertino Glow',
+                desc: 'Apple HomeKit warm luminous design',
+                colors: {
+                    light: '#FFC043', switch: '#007AFF', climate: '#FF453A', camera: '#FF9500',
+                    media_player: '#FF2D55', cover: '#34C759', fan: '#64D2FF', vacuum: '#8E8E93',
+                    scene: '#BF5AF2', sensor: '#5E5CE6',
+                    off_background: '#1C1C1E', icon_color: '#FFFFFF'
+                }
+            },
+            cyberpunk: {
+                name: 'Cyberpunk Neon',
+                desc: 'High-contrast futuristic electric neon',
+                colors: {
+                    light: '#FFE600', switch: '#00F0FF', climate: '#FF0055', camera: '#FF1744',
+                    media_player: '#00FF66', cover: '#39FF14', fan: '#00B8FF', vacuum: '#64748B',
+                    scene: '#B000FF', sensor: '#FF007F',
+                    off_background: '#0D0D1A', icon_color: '#000000'
+                }
+            },
+            nordic: {
+                name: 'Nordic Calm',
+                desc: 'Subtle, Scandinavian minimal earth tones',
+                colors: {
+                    light: '#D4A373', switch: '#5B8296', climate: '#BC6C25', camera: '#9B5B6E',
+                    media_player: '#606C38', cover: '#588157', fan: '#7C98A6', vacuum: '#595959',
+                    scene: '#8E7C93', sensor: '#DDA15E',
+                    off_background: '#21272A', icon_color: '#FFFFFF'
+                }
+            },
+            monochrome: {
+                name: 'Monochrome Luxe',
+                desc: 'High-contrast OLED white & platinum',
+                colors: {
+                    light: '#FFFFFF', switch: '#E2E8F0', climate: '#F1F5F9', camera: '#E5E7EB',
+                    media_player: '#94A3B8', cover: '#A0AEC0', fan: '#F8FAFC', vacuum: '#64748B',
+                    scene: '#CBD5E1', sensor: '#D1D5DB',
+                    off_background: '#18181B', icon_color: '#000000'
+                }
+            },
+            custom: {
+                name: 'Custom Palette',
+                desc: 'Personalized custom domain colors',
+                colors: {}
+            }
+        };
+
+        const DOMAINS_META = [
+            { key: 'light', label: 'Lights' },
+            { key: 'switch', label: 'Switches & Outlets' },
+            { key: 'climate', label: 'Climate & AC' },
+            { key: 'camera', label: 'Camera Feeds' },
+            { key: 'media_player', label: 'Media Players' },
+            { key: 'cover', label: 'Covers & Blinds' },
+            { key: 'fan', label: 'Fans & Purifiers' },
+            { key: 'vacuum', label: 'Robot Vacuums' },
+            { key: 'scene', label: 'Scenes & Scripts' },
+            { key: 'sensor', label: 'Sensors' },
+            { key: 'off_background', label: 'Off-State Background' },
+            { key: 'icon_color', label: 'Active Icon Color' }
+        ];
+
+        let selectedThemePreset = '$currentThemePreset';
+        let customColorsMap = Object.assign({}, $currentCustomColors);
+
+        function getActiveColorForDomain(domain) {
+            if (selectedThemePreset === 'custom' && customColorsMap[domain]) {
+                return customColorsMap[domain];
+            }
+            const preset = PRESET_PALETTES[selectedThemePreset] || PRESET_PALETTES.classic;
+            if (preset.colors && preset.colors[domain]) {
+                return preset.colors[domain];
+            }
+            return PRESET_PALETTES.classic.colors[domain] || '#0284C7';
+        }
+
+        function renderThemeGrid() {
+            const container = document.getElementById('themeGrid');
+            if (!container) return;
+            const presetsKeys = ['classic', 'apple', 'cyberpunk', 'nordic', 'monochrome', 'custom'];
+            container.innerHTML = presetsKeys.map(function(key) {
+                const p = PRESET_PALETTES[key];
+                const isActive = (selectedThemePreset === key) ? ' active' : '';
+                const sampleKeys = ['light', 'switch', 'camera', 'off_background', 'icon_color'];
+                const swatchesHtml = sampleKeys.map(function(dk) {
+                    let col = '#888888';
+                    if (key === 'custom') {
+                        col = customColorsMap[dk] || PRESET_PALETTES.classic.colors[dk] || '#888888';
+                    } else {
+                        col = p.colors[dk] || '#888888';
+                    }
+                    return '<span class="theme-swatch-dot" style="background-color:' + col + '"></span>';
+                }).join('');
+
+                return '<div class="theme-card' + isActive + '" onclick="selectThemePreset(\'' + key + '\')">' +
+                    '<div>' +
+                        '<div class="theme-card-title">' + p.name + '</div>' +
+                        '<div class="theme-card-desc">' + p.desc + '</div>' +
+                    '</div>' +
+                    '<div class="theme-swatches-preview">' + swatchesHtml + '</div>' +
+                '</div>';
+            }).join('');
+        }
+
+        function selectThemePreset(presetKey) {
+            selectedThemePreset = presetKey;
+            renderThemeGrid();
+            renderColorPickers();
+        }
+
+        function renderColorPickers() {
+            const container = document.getElementById('colorPickerGrid');
+            if (!container) return;
+            container.innerHTML = DOMAINS_META.map(function(item) {
+                const currentColor = getActiveColorForDomain(item.key);
+                return '<div class="color-picker-row">' +
+                    '<span class="color-picker-label">' + item.label + '</span>' +
+                    '<div class="color-picker-input-group">' +
+                        '<span class="color-picker-hex" id="hex_' + item.key + '">' + currentColor.toUpperCase() + '</span>' +
+                        '<input type="color" class="color-input" id="picker_' + item.key + '" value="' + currentColor + '" onchange="onColorPicked(\'' + item.key + '\', this.value)" oninput="onColorInput(\'' + item.key + '\', this.value)">' +
+                    '</div>' +
+                '</div>';
+            }).join('');
+        }
+
+        function onColorInput(domain, hexValue) {
+            const hexEl = document.getElementById('hex_' + domain);
+            if (hexEl) hexEl.innerText = hexValue.toUpperCase();
+        }
+
+        function onColorPicked(domain, hexValue) {
+            customColorsMap[domain] = hexValue;
+            selectedThemePreset = 'custom';
+            renderThemeGrid();
+            const hexEl = document.getElementById('hex_' + domain);
+            if (hexEl) hexEl.innerText = hexValue.toUpperCase();
+        }
+
+        function resetCustomColors() {
+            const basePreset = PRESET_PALETTES.classic;
+            DOMAINS_META.forEach(function(item) {
+                customColorsMap[item.key] = basePreset.colors[item.key];
+            });
+            renderThemeGrid();
+            renderColorPickers();
+        }
 
         let allEntities = [];
         let currentDomain = 'ALL';
@@ -1075,7 +1460,8 @@ class WebSetupServer(
 
         function updateSelectedCount() {
             const count = selectedEntityIds.size;
-            document.getElementById('selectedCount').innerText = count + ' selected';
+            const badge = document.getElementById('selectedCountBadge');
+            if (badge) badge.innerText = count + ' selected';
             const selectedTab = document.getElementById('selectedTab');
             if (selectedTab) selectedTab.innerText = 'Selected (' + count + ')';
         }
@@ -1191,6 +1577,8 @@ class WebSetupServer(
                 token: token,
                 pin: pin,
                 layout: layout,
+                themePreset: selectedThemePreset,
+                customThemeColors: customColorsMap,
                 pinnedEntities: pinnedList
             };
 
@@ -1215,6 +1603,9 @@ class WebSetupServer(
 
         // Initialize credentials and automatically load entities if URL and PIN are present
         restoreSavedCredentials();
+        renderThemeGrid();
+        renderColorPickers();
+        updateSelectedCount();
         const autoUrl = document.getElementById('haUrl').value.trim();
         const autoPin = document.getElementById('pairingPin').value.trim();
         if (autoUrl && autoPin) {

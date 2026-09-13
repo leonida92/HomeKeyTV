@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.homekey.tv.data.api.HAWebSocketClient
 import com.homekey.tv.data.local.PreferencesManager
 import com.homekey.tv.data.models.ConnectionStatus
+import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.PinnedAppConfig
 import com.homekey.tv.data.models.PinnedEntityConfig
@@ -43,6 +44,8 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     val serverUrl: StateFlow<String> = prefs.serverUrl
     val accessToken: StateFlow<String> = prefs.accessToken
     val haEnabled: StateFlow<Boolean> = prefs.haEnabled
+    val themePreset: StateFlow<String> = prefs.themePreset
+    val activePalette: StateFlow<DomainColorPalette> = prefs.activePalette
     
     private val _overlayOpenEpoch = MutableStateFlow(0L)
     val overlayOpenEpoch: StateFlow<Long> = _overlayOpenEpoch.asStateFlow()

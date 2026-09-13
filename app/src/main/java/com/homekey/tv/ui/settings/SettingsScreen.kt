@@ -86,18 +86,23 @@ fun SettingsScreen(
     val recentAppsEnabled by viewModel.recentAppsEnabled.collectAsState()
     val recentAppsCount by viewModel.recentAppsCount.collectAsState()
     val haEnabled by viewModel.haEnabled.collectAsState()
+    val themePreset by viewModel.themePreset.collectAsState()
+    val customThemeColors by viewModel.customThemeColors.collectAsState()
+    val activePalette by viewModel.activePalette.collectAsState()
     val appVersion = viewModel.appVersion
 
-    var selectedTab by remember { mutableIntStateOf(0) } // 0: Phone Setup, 1: Layout Position, 2: Button Remap, 3: Installed Apps, 4: Updates
+    var selectedTab by remember { mutableIntStateOf(0) } // 0: Phone Setup, 1: Layout & Popups, 2: Themes, 3: Button Remap, 4: Installed Apps, 5: Updates
 
     val tab0FocusRequester = remember { FocusRequester() }
     val tab1FocusRequester = remember { FocusRequester() }
     val tab2FocusRequester = remember { FocusRequester() }
     val tab3FocusRequester = remember { FocusRequester() }
     val tab4FocusRequester = remember { FocusRequester() }
+    val tab5FocusRequester = remember { FocusRequester() }
     val haToggleFocusRequester = remember { FocusRequester() }
     val updateActionButtonFocusRequester = remember { FocusRequester() }
     val firstDockChoiceFocusRequester = remember { FocusRequester() }
+    val firstThemeChoiceFocusRequester = remember { FocusRequester() }
     val firstAppFocusRequester = remember { FocusRequester() }
     val recentAppsToggleFocusRequester = remember { FocusRequester() }
     var requestButtonRemapContentFocus by remember { mutableStateOf(false) }
@@ -119,9 +124,10 @@ fun SettingsScreen(
             when (tab) {
                 0 -> haToggleFocusRequester.requestFocus()
                 1 -> firstDockChoiceFocusRequester.requestFocus()
-                2 -> requestButtonRemapContentFocus = true
-                3 -> recentAppsToggleFocusRequester.requestFocus()
-                4 -> updateActionButtonFocusRequester.requestFocus()
+                2 -> firstThemeChoiceFocusRequester.requestFocus()
+                3 -> requestButtonRemapContentFocus = true
+                4 -> recentAppsToggleFocusRequester.requestFocus()
+                5 -> updateActionButtonFocusRequester.requestFocus()
             }
         } catch (_: Exception) {}
         requestTabContentFocus = null
@@ -223,7 +229,7 @@ fun SettingsScreen(
                     onSelect = { selectedTab = 1 }
                 )
                 SettingsTabItem(
-                    title = "Button Remap",
+                    title = "Themes",
                     isSelected = selectedTab == 2,
                     focusRequester = tab2FocusRequester,
                     onLeft = { try { tab1FocusRequester.requestFocus() } catch (_: Exception) {} },
@@ -231,12 +237,13 @@ fun SettingsScreen(
                     onUp = { /* Stay on tab bar */ },
                     onDown = {
                         selectedTab = 2
-                        requestButtonRemapContentFocus = true
+                        requestTabContentFocus = 2
+                        try { firstThemeChoiceFocusRequester.requestFocus() } catch (_: Exception) {}
                     },
                     onSelect = { selectedTab = 2 }
                 )
                 SettingsTabItem(
-                    title = "Installed Apps (${pinnedApps.size} in dock)",
+                    title = "Button Remap",
                     isSelected = selectedTab == 3,
                     focusRequester = tab3FocusRequester,
                     onLeft = { try { tab2FocusRequester.requestFocus() } catch (_: Exception) {} },
@@ -244,24 +251,37 @@ fun SettingsScreen(
                     onUp = { /* Stay on tab bar */ },
                     onDown = {
                         selectedTab = 3
-                        requestTabContentFocus = 3
-                        try { recentAppsToggleFocusRequester.requestFocus() } catch (_: Exception) {}
+                        requestButtonRemapContentFocus = true
                     },
                     onSelect = { selectedTab = 3 }
                 )
                 SettingsTabItem(
-                    title = "Updates",
+                    title = "Installed Apps (${pinnedApps.size} in dock)",
                     isSelected = selectedTab == 4,
                     focusRequester = tab4FocusRequester,
                     onLeft = { try { tab3FocusRequester.requestFocus() } catch (_: Exception) {} },
-                    onRight = { /* Stop at last tab: consume right */ },
+                    onRight = { try { tab5FocusRequester.requestFocus() } catch (_: Exception) {} },
                     onUp = { /* Stay on tab bar */ },
                     onDown = {
                         selectedTab = 4
                         requestTabContentFocus = 4
-                        try { updateActionButtonFocusRequester.requestFocus() } catch (_: Exception) {}
+                        try { recentAppsToggleFocusRequester.requestFocus() } catch (_: Exception) {}
                     },
                     onSelect = { selectedTab = 4 }
+                )
+                SettingsTabItem(
+                    title = "Updates",
+                    isSelected = selectedTab == 5,
+                    focusRequester = tab5FocusRequester,
+                    onLeft = { try { tab4FocusRequester.requestFocus() } catch (_: Exception) {} },
+                    onRight = { /* Stop at last tab: consume right */ },
+                    onUp = { /* Stay on tab bar */ },
+                    onDown = {
+                        selectedTab = 5
+                        requestTabContentFocus = 5
+                        try { updateActionButtonFocusRequester.requestFocus() } catch (_: Exception) {}
+                    },
+                    onSelect = { selectedTab = 5 }
                 )
             }
 
@@ -289,7 +309,16 @@ fun SettingsScreen(
                         onSelectCameraCompactSize = { viewModel.setCameraCompactSize(it) },
                         onUp = { tab1FocusRequester.requestFocus() }
                     )
-                    2 -> {
+                    2 -> ThemesView(
+                        currentPreset = themePreset,
+                        customColors = customThemeColors,
+                        activePalette = activePalette,
+                        firstChoiceFocusRequester = firstThemeChoiceFocusRequester,
+                        onSelectPreset = { viewModel.setThemePreset(it) },
+                        onSelectCustomColor = { domain, hex -> viewModel.setCustomDomainColor(domain, hex) },
+                        onUp = { tab2FocusRequester.requestFocus() }
+                    )
+                    3 -> {
                         // Collect the (alphabetised, off-main) entity list only while this tab is
                         // visible, so the rest of Settings is not recomposed by HA state events.
                         val remapEntities by viewModel.sortedEntities.collectAsState()
@@ -302,7 +331,7 @@ fun SettingsScreen(
                             haEntities = remapEntities,
                             requestContentFocus = requestButtonRemapContentFocus,
                             onResetContentFocus = { requestButtonRemapContentFocus = false },
-                            onUp = { tab2FocusRequester.requestFocus() },
+                            onUp = { tab3FocusRequester.requestFocus() },
                             onOpenAccessibilitySettings = {
                                 val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
                                     flags = Intent.FLAG_ACTIVITY_NEW_TASK
@@ -316,7 +345,7 @@ fun SettingsScreen(
                             onRemoveRemap = { viewModel.removeButtonRemap(it) }
                         )
                     }
-                    3 -> InstalledAppsView(
+                    4 -> InstalledAppsView(
                         installedApps = installedApps,
                         appIcons = appIcons,
                         pinnedApps = pinnedApps,
@@ -326,10 +355,10 @@ fun SettingsScreen(
                         toggleFocusRequester = recentAppsToggleFocusRequester,
                         firstAppFocusRequester = firstAppFocusRequester,
                         onToggleRecentApps = { viewModel.setRecentAppsEnabled(!recentAppsEnabled) },
-                        onUpToTab = { tab3FocusRequester.requestFocus() },
+                        onUpToTab = { tab4FocusRequester.requestFocus() },
                         onTogglePinnedApp = { pkg, name -> viewModel.togglePinnedApp(pkg, name) }
                     )
-                    4 -> {
+                    5 -> {
                         LaunchedEffect(Unit) {
                             if (updateState is AppUpdateState.Idle) {
                                 viewModel.checkForUpdates()
@@ -344,7 +373,7 @@ fun SettingsScreen(
                             onInstallApk = { viewModel.installApk(it) },
                             onOpenReleaseUrl = { viewModel.openReleaseUrl(it) },
                             onDismiss = { viewModel.resetUpdateState() },
-                            onUp = { tab4FocusRequester.requestFocus() }
+                            onUp = { tab5FocusRequester.requestFocus() }
                         )
                     }
                 }
@@ -692,6 +721,671 @@ fun LayoutChoiceCard(
                     color = if (isSelected) HA_Blue else TV_Text_Secondary
                 )
             }
+        }
+    }
+}
+
+@Composable
+fun ThemesView(
+    currentPreset: String,
+    customColors: Map<String, String>,
+    activePalette: DomainColorPalette,
+    firstChoiceFocusRequester: FocusRequester,
+    onSelectPreset: (String) -> Unit,
+    onSelectCustomColor: (String, String) -> Unit,
+    onUp: () -> Unit
+) {
+    val scrollState = rememberScrollState()
+    var colorPickerDomainTarget by remember { mutableStateOf<String?>(null) }
+    var colorPickerDomainName by remember { mutableStateOf("") }
+    var colorPickerInitialHex by remember { mutableStateOf("#0284C7") }
+    var lastTargetedDomain by remember { mutableStateOf<String?>(null) }
+
+    val presets = listOf(
+        ThemePreset.CLASSIC,
+        ThemePreset.APPLE,
+        ThemePreset.CYBERPUNK,
+        ThemePreset.NORDIC,
+        ThemePreset.MONOCHROME,
+        ThemePreset.CUSTOM
+    )
+
+    val domainList = remember {
+        listOf(
+            Triple("light", "Lights", Icons.Default.Lightbulb),
+            Triple("switch", "Switches & Outlets", Icons.Default.ToggleOn),
+            Triple("climate", "Climate & AC", Icons.Default.Thermostat),
+            Triple("camera", "Camera Feeds", Icons.Default.Videocam),
+            Triple("media_player", "Media Players", Icons.Default.PlayCircle),
+            Triple("cover", "Covers & Blinds", Icons.Default.Curtains),
+            Triple("fan", "Fans & Purifiers", Icons.Default.Air),
+            Triple("vacuum", "Robot Vacuums", Icons.Default.CleaningServices),
+            Triple("scene", "Scenes & Scripts", Icons.Default.AutoAwesome),
+            Triple("sensor", "Sensors", Icons.Default.Sensors),
+            Triple("off_background", "Off-State Background", Icons.Default.DarkMode),
+            Triple("icon_color", "Active Icon Color", Icons.Default.Palette)
+        )
+    }
+
+    val domainFocusRequesters = remember {
+        domainList.associate { it.first to FocusRequester() }
+    }
+
+    LaunchedEffect(colorPickerDomainTarget) {
+        if (colorPickerDomainTarget == null && lastTargetedDomain != null) {
+            delay(50)
+            try {
+                domainFocusRequesters[lastTargetedDomain]?.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(scrollState)
+                .padding(end = 10.dp, bottom = 28.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
+        ) {
+        // Section 1: Presets
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text(
+                text = "THEME PRESETS",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = HA_Blue
+            )
+            Text(
+                text = "Select an active color palette for your dock tiles and status indicators.",
+                fontSize = 12.sp,
+                color = TV_Text_Secondary
+            )
+
+            // 2 rows of 3 presets
+            for (rowIdx in 0..1) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(130.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    for (colIdx in 0..2) {
+                        val index = rowIdx * 3 + colIdx
+                        val preset = presets[index]
+                        val isSelected = currentPreset.equals(preset.id, ignoreCase = true)
+                        val palette = if (preset == ThemePreset.CUSTOM) {
+                            DomainColorPalette.CLASSIC.withOverrides(customColors)
+                        } else {
+                            DomainColorPalette.forPreset(preset)
+                        }
+
+                        ThemePresetCard(
+                            preset = preset,
+                            palette = palette,
+                            isSelected = isSelected,
+                            modifier = Modifier.weight(1f),
+                            focusRequester = if (index == 0) firstChoiceFocusRequester else null,
+                            onUp = if (rowIdx == 0) onUp else null,
+                            onClick = { onSelectPreset(preset.id) }
+                        )
+                    }
+                }
+            }
+        }
+
+        // Section 2: Domain Colors
+        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "DOMAIN COLOR PALETTE",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = HA_Blue
+                    )
+                    Text(
+                        text = if (currentPreset.equals("custom", ignoreCase = true))
+                            "Custom palette is active. Click any domain below to change its color."
+                        else
+                            "Viewing colors for ${ThemePreset.fromId(currentPreset).displayName}. Click any domain to customize.",
+                        fontSize = 12.sp,
+                        color = TV_Text_Secondary
+                    )
+                }
+
+                if (!currentPreset.equals("custom", ignoreCase = true)) {
+                    Text(
+                        text = "Preset Active",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = TV_Text_Secondary,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(Color(0x22FFFFFF))
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            for (i in domainList.indices step 2) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
+                ) {
+                    val first = domainList[i]
+                    val firstColor = activePalette.getColorForDomain(first.first)
+                    val firstHex = activePalette.getColorHexForDomain(first.first)
+                    DomainColorCard(
+                        title = first.second,
+                        icon = first.third,
+                        color = firstColor,
+                        hex = firstHex,
+                        modifier = Modifier.weight(1f),
+                        focusRequester = domainFocusRequesters[first.first],
+                        onClick = {
+                            if (!currentPreset.equals("custom", ignoreCase = true)) {
+                                onSelectPreset("custom")
+                            }
+                            lastTargetedDomain = first.first
+                            colorPickerDomainTarget = first.first
+                            colorPickerDomainName = first.second
+                            colorPickerInitialHex = firstHex
+                        }
+                    )
+
+                    if (i + 1 < domainList.size) {
+                        val second = domainList[i + 1]
+                        val secondColor = activePalette.getColorForDomain(second.first)
+                        val secondHex = activePalette.getColorHexForDomain(second.first)
+                        DomainColorCard(
+                            title = second.second,
+                            icon = second.third,
+                            color = secondColor,
+                            hex = secondHex,
+                            modifier = Modifier.weight(1f),
+                            focusRequester = domainFocusRequesters[second.first],
+                            onClick = {
+                                if (!currentPreset.equals("custom", ignoreCase = true)) {
+                                    onSelectPreset("custom")
+                                }
+                                lastTargetedDomain = second.first
+                                colorPickerDomainTarget = second.first
+                                colorPickerDomainName = second.second
+                                colorPickerInitialHex = secondHex
+                            }
+                        )
+                    } else {
+                        Spacer(modifier = Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+
+    if (colorPickerDomainTarget != null) {
+        TVColorPickerDialog(
+            domainName = colorPickerDomainName,
+            currentHex = colorPickerInitialHex,
+            onSelectColor = { hex ->
+                colorPickerDomainTarget?.let { dom ->
+                    onSelectCustomColor(dom, hex)
+                }
+                colorPickerDomainTarget = null
+            },
+            onDismiss = { colorPickerDomainTarget = null }
+        )
+    }
+    }
+}
+
+@Composable
+fun ThemePresetCard(
+    preset: ThemePreset,
+    palette: DomainColorPalette,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
+    onUp: (() -> Unit)? = null,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.04f else 1.0f,
+        animationSpec = tween(durationMillis = 80, easing = FastOutSlowInEasing),
+        label = "preset_scale"
+    )
+
+    val focusModifier = if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
+
+    Box(
+        modifier = modifier
+            .then(focusModifier)
+            .fillMaxHeight()
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (isFocused) TV_Surface_Focused else Color(0xFF1E293B))
+            .border(
+                width = if (isFocused) 2.5.dp else if (isSelected) 2.dp else 1.dp,
+                color = if (isFocused) TV_Border_Focused else if (isSelected) HA_Blue else Color(0x33475569),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .onPreviewKeyEvent { keyEvent ->
+                val code = keyEvent.nativeKeyEvent.keyCode
+                if (keyEvent.type == KeyEventType.KeyUp) {
+                    if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                        onClick()
+                        return@onPreviewKeyEvent true
+                    }
+                } else if (keyEvent.type == KeyEventType.KeyDown) {
+                    if (code == KeyEvent.KEYCODE_DPAD_UP && onUp != null) {
+                        onUp()
+                        return@onPreviewKeyEvent true
+                    }
+                }
+                false
+            }
+            .focusable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .padding(14.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = preset.displayName,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isFocused || isSelected) Color.White else Color(0xFFE2E8F0)
+                )
+                if (isSelected) {
+                    Box(
+                        modifier = Modifier
+                            .size(18.dp)
+                            .clip(CircleShape)
+                            .background(HA_Blue),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Selected",
+                            tint = Color.White,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+
+            Text(
+                text = preset.description,
+                fontSize = 11.sp,
+                color = TV_Text_Secondary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                val previewColors = listOf(
+                    palette.getColorForDomain("light"),
+                    palette.getColorForDomain("switch"),
+                    palette.getColorForDomain("climate"),
+                    palette.getColorForDomain("camera"),
+                    palette.getOffBackgroundColor(),
+                    palette.getIconColor()
+                )
+                previewColors.forEach { color ->
+                    Box(
+                        modifier = Modifier
+                            .size(14.dp)
+                            .clip(CircleShape)
+                            .background(color)
+                            .border(1.dp, Color(0x44FFFFFF), CircleShape)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun DomainColorCard(
+    title: String,
+    icon: ImageVector,
+    color: Color,
+    hex: String,
+    modifier: Modifier = Modifier,
+    focusRequester: FocusRequester? = null,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.03f else 1.0f,
+        animationSpec = tween(durationMillis = 80, easing = FastOutSlowInEasing),
+        label = "domain_card_scale"
+    )
+
+    val focusModifier = if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
+
+    Box(
+        modifier = modifier
+            .then(focusModifier)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isFocused) TV_Surface_Focused else Color(0xFF1E293B))
+            .border(
+                width = if (isFocused) 2.2.dp else 1.dp,
+                color = if (isFocused) TV_Border_Focused else Color(0x33475569),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .onPreviewKeyEvent { keyEvent ->
+                val code = keyEvent.nativeKeyEvent.keyCode
+                if (keyEvent.type == KeyEventType.KeyUp) {
+                    if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                        onClick()
+                        return@onPreviewKeyEvent true
+                    }
+                }
+                false
+            }
+            .focusable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .padding(horizontal = 14.dp, vertical = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(color.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = icon,
+                        contentDescription = null,
+                        tint = color,
+                        modifier = Modifier.size(18.dp)
+                    )
+                }
+                Text(
+                    text = title,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = if (isFocused) Color.White else Color(0xFFE2E8F0)
+                )
+            }
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = hex.uppercase(),
+                    fontSize = 11.sp,
+                    color = TV_Text_Secondary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Box(
+                    modifier = Modifier
+                        .size(20.dp)
+                        .clip(CircleShape)
+                        .background(color)
+                        .border(1.5.dp, if (isFocused) Color.White else Color(0x66FFFFFF), CircleShape)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun TVColorPickerDialog(
+    domainName: String,
+    currentHex: String,
+    onSelectColor: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val swatches = listOf(
+        // Row 1: Warm / Ambers / Reds
+        "#FFC043", "#F59E0B", "#EA580C", "#FF453A", "#EF4444", "#DC2626",
+        // Row 2: Pinks / Purples / Violets
+        "#FF2D55", "#EC4899", "#D946EF", "#BF5AF2", "#9333EA", "#7C3AED",
+        // Row 3: Indigos / Blues / Cyans
+        "#6366F1", "#3B82F6", "#007AFF", "#0284C7", "#00F0FF", "#06B6D4",
+        // Row 4: Teals / Greens / Earth
+        "#0D9488", "#10B981", "#059669", "#34C759", "#D4A373", "#BC6C25",
+        // Row 5: Grayscale & Neutrals
+        "#FFFFFF", "#E2E8F0", "#94A3B8", "#475569", "#18181B", "#000000"
+    )
+
+    val initialSwatchIndex = swatches.indexOfFirst { it.equals(currentHex, ignoreCase = true) }.let {
+        if (it >= 0) it else 0
+    }
+    val swatchFocusRequesters = remember { List(swatches.size) { FocusRequester() } }
+
+    LaunchedEffect(Unit) {
+        delay(60)
+        try {
+            swatchFocusRequesters[initialSwatchIndex].requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xCC000000))
+            .onPreviewKeyEvent { keyEvent ->
+                val code = keyEvent.nativeKeyEvent.keyCode
+                if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE) {
+                    if (keyEvent.type == KeyEventType.KeyUp) {
+                        onDismiss()
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                false
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(480.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(Color(0xFF1E293B))
+                .border(1.dp, Color(0x44FFFFFF), RoundedCornerShape(20.dp))
+                .padding(24.dp)
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Choose Color",
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = domainName,
+                            fontSize = 12.sp,
+                            color = HA_Blue
+                        )
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = currentHex.uppercase(),
+                            fontSize = 12.sp,
+                            color = TV_Text_Secondary
+                        )
+                        Box(
+                            modifier = Modifier
+                                .size(22.dp)
+                                .clip(CircleShape)
+                                .background(DomainColorPalette.parseHexColor(currentHex))
+                                .border(1.5.dp, Color.White, CircleShape)
+                        )
+                    }
+                }
+
+                // 5 rows of 6 color swatches
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    for (rowIdx in 0..4) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            for (colIdx in 0..5) {
+                                val swatchIndex = rowIdx * 6 + colIdx
+                                val hex = swatches[swatchIndex]
+                                val swatchColor = DomainColorPalette.parseHexColor(hex)
+                                val isCurrent = hex.equals(currentHex, ignoreCase = true)
+
+                                ColorSwatchButton(
+                                    color = swatchColor,
+                                    hex = hex,
+                                    isCurrent = isCurrent,
+                                    focusRequester = swatchFocusRequesters[swatchIndex],
+                                    onUp = if (rowIdx == 0) { { /* Block escaping UP to tab row */ } } else null,
+                                    onDown = if (rowIdx == 4) { { /* Block escaping DOWN */ } } else null,
+                                    onLeft = if (colIdx == 0) { { /* Block escaping LEFT */ } } else null,
+                                    onRight = if (colIdx == 5) { { /* Block escaping RIGHT */ } } else null,
+                                    onClick = { onSelectColor(hex) }
+                                )
+                            }
+                        }
+                    }
+                }
+
+                Text(
+                    text = "Press BACK to cancel",
+                    fontSize = 11.sp,
+                    color = TV_Text_Secondary,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun ColorSwatchButton(
+    color: Color,
+    hex: String,
+    isCurrent: Boolean,
+    focusRequester: FocusRequester? = null,
+    onUp: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
+    onLeft: (() -> Unit)? = null,
+    onRight: (() -> Unit)? = null,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.25f else 1.0f,
+        animationSpec = tween(durationMillis = 70, easing = FastOutSlowInEasing),
+        label = "swatch_scale"
+    )
+
+    val focusMod = if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
+
+    Box(
+        modifier = focusMod
+            .size(46.dp)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(CircleShape)
+            .background(color)
+            .border(
+                width = if (isFocused) 3.dp else if (isCurrent) 2.dp else 1.dp,
+                color = if (isFocused) Color.White else if (isCurrent) Color.White.copy(alpha = 0.8f) else Color(0x44FFFFFF),
+                shape = CircleShape
+            )
+            .onPreviewKeyEvent { keyEvent ->
+                val code = keyEvent.nativeKeyEvent.keyCode
+                if (keyEvent.type == KeyEventType.KeyUp) {
+                    if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                        onClick()
+                        return@onPreviewKeyEvent true
+                    }
+                } else if (keyEvent.type == KeyEventType.KeyDown) {
+                    when (code) {
+                        KeyEvent.KEYCODE_DPAD_UP -> if (onUp != null) { onUp(); return@onPreviewKeyEvent true }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> if (onDown != null) { onDown(); return@onPreviewKeyEvent true }
+                        KeyEvent.KEYCODE_DPAD_LEFT -> if (onLeft != null) { onLeft(); return@onPreviewKeyEvent true }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> if (onRight != null) { onRight(); return@onPreviewKeyEvent true }
+                    }
+                }
+                false
+            }
+            .focusable(interactionSource = interactionSource)
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (isCurrent) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = if (hex == "#FFFFFF" || hex == "#E2E8F0") Color.Black else Color.White,
+                modifier = Modifier.size(16.dp)
+            )
         }
     }
 }

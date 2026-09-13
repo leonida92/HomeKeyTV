@@ -44,7 +44,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
+import com.homekey.tv.data.models.LocalThemePalette
 import com.homekey.tv.ui.theme.*
 import com.homekey.tv.viewmodel.DockItem
 import com.homekey.tv.viewmodel.PanelViewModel
@@ -53,7 +55,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-
 // Long-press (hold DPAD center/OK) opens the light/climate control dialog.
 private const val DIALOG_LONG_PRESS_MS = 550L
 
@@ -90,6 +91,7 @@ fun DockOverlayScreen(
     val allEntities by viewModel.allEntities.collectAsState()
     val activeDialogEntity by viewModel.activeDialogEntity.collectAsState()
     val popupStyle by viewModel.popupStyle.collectAsState()
+    val activePalette by viewModel.activePalette.collectAsState()
     val isReorderMode by viewModel.isReorderMode.collectAsState()
     val selectedReorderEntityId by viewModel.selectedReorderEntityId.collectAsState()
     val overlayOpenEpoch by viewModel.overlayOpenEpoch.collectAsState()
@@ -197,10 +199,11 @@ fun DockOverlayScreen(
     }
 
     // Completely transparent root overlay (TV display shows behind dock)
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Transparent)
+    CompositionLocalProvider(LocalThemePalette provides activePalette) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Transparent)
             .onPreviewKeyEvent { keyEvent ->
                 val native = keyEvent.nativeKeyEvent
                 val isCenter = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
@@ -708,6 +711,7 @@ fun DockOverlayScreen(
         }
     }
 }
+}
 
 @Composable
 private fun MinimalEntityPopupContent(
@@ -798,6 +802,12 @@ fun FloatingLabelBadge(
     val name = badgeState.name
     val state = badgeState.state
 
+    val palette = LocalThemePalette.current
+    val offColor = palette.getOffBackgroundColor()
+    val isOffDark = DomainColorPalette.isColorDark(offColor)
+    val badgeTextColor = if (isOffDark) Color.White else Color(0xFF0F172A)
+    val badgeStateColor = palette.getColorForDomain("switch")
+
     AnimatedVisibility(
         visible = name != null,
         enter = fadeIn(tween(60)),
@@ -806,10 +816,10 @@ fun FloatingLabelBadge(
         Box(
             modifier = Modifier
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color(0xFF0F172A))
+                .background(offColor)
                 .border(
-                    width = 1.2.dp,
-                    color = if (isReorderMode) HA_Yellow_On else Color(0xFF475569),
+                    width = if (isReorderMode) 1.2.dp else 0.dp,
+                    color = if (isReorderMode) HA_Yellow_On else Color.Transparent,
                     shape = RoundedCornerShape(12.dp)
                 )
                 .padding(horizontal = 14.dp, vertical = 5.dp)
@@ -844,27 +854,27 @@ fun FloatingLabelBadge(
                         text = name ?: "",
                         fontSize = 14.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White
+                        color = badgeTextColor
                     )
                     if (!state.isNullOrBlank()) {
                         Text(
                             text = "•  ${state.uppercase()}",
                             fontSize = 12.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = HA_Blue
+                            color = badgeStateColor
                         )
                     }
                     if (badgeState.humidity != null) {
                         Text(
                             text = "•",
                             fontSize = 12.sp,
-                            color = Color(0x66FFFFFF)
+                            color = if (isOffDark) Color(0x66FFFFFF) else Color(0x66000000)
                         )
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
                                 imageVector = Icons.Default.WaterDrop,
                                 contentDescription = "Humidity",
-                                tint = Color(0xFF38BDF8),
+                                tint = badgeStateColor,
                                 modifier = Modifier.size(12.dp)
                             )
                             Spacer(modifier = Modifier.width(3.dp))
@@ -872,7 +882,7 @@ fun FloatingLabelBadge(
                                 text = "${badgeState.humidity!!.toInt()}%",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
-                                color = Color(0xFF38BDF8)
+                                color = badgeStateColor
                             )
                         }
                     }
@@ -1370,16 +1380,37 @@ fun DockTile(
         label = "dock_scale"
     )
 
+    val palette = LocalThemePalette.current
+    val offColor = palette.getOffBackgroundColor()
+    val isOffDark = DomainColorPalette.isColorDark(offColor)
+    val focusedOffColor = remember(offColor, isOffDark) {
+        if (isOffDark) {
+            Color(
+                red = (offColor.red + 0.08f).coerceAtMost(1f),
+                green = (offColor.green + 0.08f).coerceAtMost(1f),
+                blue = (offColor.blue + 0.12f).coerceAtMost(1f),
+                alpha = 1f
+            )
+        } else {
+            Color(
+                red = (offColor.red - 0.10f).coerceAtLeast(0f),
+                green = (offColor.green - 0.10f).coerceAtLeast(0f),
+                blue = (offColor.blue - 0.10f).coerceAtLeast(0f),
+                alpha = 1f
+            )
+        }
+    }
+
     val backgroundColor by animateColorAsState(
         targetValue = when {
-            isUnavailable -> Color(0xFF1E293B)
+            isUnavailable -> offColor
             isSelectedForReorder -> Color(0xFFD97706)
             isApp && isFocused -> Color(0xFF2C3852)
-            isApp -> Color(0xFF1E293B)
-            isFocused && isOn -> getActiveColor(entity?.domain ?: "")
-            isFocused && !isOn -> Color(0xFF2C3852)
-            isOn -> getActiveColor(entity?.domain ?: "")
-            else -> Color(0xFF1E293B)
+            isApp -> offColor
+            isFocused && isOn -> getActiveColor(entity?.domain ?: "", palette)
+            isFocused && !isOn -> focusedOffColor
+            isOn -> getActiveColor(entity?.domain ?: "", palette)
+            else -> offColor
         },
         animationSpec = tween(durationMillis = 80),
         label = "tile_bg"
@@ -1388,10 +1419,8 @@ fun DockTile(
     val borderColor by animateColorAsState(
         targetValue = when {
             isSelectedForReorder -> HA_Yellow_On
-            isSelfActive -> TV_Border_Focused
             isFocused -> Color.White
-            isOn -> Color(0xFF94A3B8)
-            else -> Color(0xFF475569)
+            else -> Color.Transparent
         },
         animationSpec = tween(durationMillis = 80),
         label = "tile_border"
@@ -1414,7 +1443,7 @@ fun DockTile(
             .clip(RoundedCornerShape(16.dp))
             .background(backgroundColor)
             .border(
-                width = if (isSelectedForReorder) 3.5.dp else if (isSelfActive) 2.8.dp else if (isFocused) 2.6.dp else 1.2.dp,
+                width = if (isSelectedForReorder) 3.5.dp else if (isFocused) 2.6.dp else 0.dp,
                 color = borderColor,
                 shape = RoundedCornerShape(16.dp)
             )
@@ -1531,10 +1560,23 @@ fun DockTile(
             } else {
                 resolveDockIcon(item.customIcon, entity?.icon, entity?.domain ?: "")
             }
+            val activeIconTint = palette.getIconColor()
+            val offIconTint = remember(isOffDark) {
+                if (isOffDark) Color(0xFF94A3B8) else Color(0xFF475569)
+            }
+            val focusedOffIconTint = remember(isOffDark) {
+                if (isOffDark) Color.White else Color(0xFF0F172A)
+            }
+
             Icon(
                 imageVector = icon,
                 contentDescription = name,
-                tint = if (isOn || isFocused || isSelectedForReorder) Color.White else Color(0xFF94A3B8),
+                tint = when {
+                    isSelectedForReorder -> Color.White
+                    isOn -> activeIconTint
+                    isFocused -> focusedOffIconTint
+                    else -> offIconTint
+                },
                 modifier = Modifier.size(30.dp)
             )
         }
@@ -1622,6 +1664,27 @@ fun DockReorderTile(
         label = "reorder_scale"
     )
 
+    val palette = LocalThemePalette.current
+    val offColor = palette.getOffBackgroundColor()
+    val isOffDark = DomainColorPalette.isColorDark(offColor)
+    val focusedOffColor = remember(offColor, isOffDark) {
+        if (isOffDark) {
+            Color(
+                red = (offColor.red + 0.08f).coerceAtMost(1f),
+                green = (offColor.green + 0.08f).coerceAtMost(1f),
+                blue = (offColor.blue + 0.12f).coerceAtMost(1f),
+                alpha = 1f
+            )
+        } else {
+            Color(
+                red = (offColor.red - 0.10f).coerceAtLeast(0f),
+                green = (offColor.green - 0.10f).coerceAtLeast(0f),
+                blue = (offColor.blue - 0.10f).coerceAtLeast(0f),
+                alpha = 1f
+            )
+        }
+    }
+
     Box(
         modifier = Modifier
             .size(62.dp)
@@ -1635,12 +1698,12 @@ fun DockReorderTile(
             .clip(RoundedCornerShape(16.dp))
             .background(
                 if (isReorderMode) Color(0xFFD97706)
-                else if (isFocused) Color(0xFF2C3852)
-                else Color(0xFF1E293B)
+                else if (isFocused) focusedOffColor
+                else offColor
             )
             .border(
-                width = if (isReorderMode) 3.dp else if (isFocused) 2.6.dp else 1.2.dp,
-                color = if (isReorderMode) HA_Yellow_On else if (isFocused) Color.White else Color(0xFF475569),
+                width = if (isReorderMode) 3.dp else if (isFocused) 2.6.dp else 0.dp,
+                color = if (isReorderMode) HA_Yellow_On else if (isFocused) Color.White else Color.Transparent,
                 shape = RoundedCornerShape(16.dp)
             )
             .onPreviewKeyEvent { keyEvent ->
@@ -1675,7 +1738,7 @@ fun DockReorderTile(
         Icon(
             imageVector = Icons.Default.SwapHoriz,
             contentDescription = "Reorder",
-            tint = if (isReorderMode || isFocused) Color.White else Color(0xFF94A3B8),
+            tint = if (isReorderMode || isFocused) (if (isOffDark) Color.White else Color(0xFF0F172A)) else (if (isOffDark) Color(0xFF94A3B8) else Color(0xFF475569)),
             modifier = Modifier.size(28.dp)
         )
     }
@@ -1714,6 +1777,27 @@ fun DockSettingsTile(
         label = "settings_scale"
     )
 
+    val palette = LocalThemePalette.current
+    val offColor = palette.getOffBackgroundColor()
+    val isOffDark = DomainColorPalette.isColorDark(offColor)
+    val focusedOffColor = remember(offColor, isOffDark) {
+        if (isOffDark) {
+            Color(
+                red = (offColor.red + 0.08f).coerceAtMost(1f),
+                green = (offColor.green + 0.08f).coerceAtMost(1f),
+                blue = (offColor.blue + 0.12f).coerceAtMost(1f),
+                alpha = 1f
+            )
+        } else {
+            Color(
+                red = (offColor.red - 0.10f).coerceAtLeast(0f),
+                green = (offColor.green - 0.10f).coerceAtLeast(0f),
+                blue = (offColor.blue - 0.10f).coerceAtLeast(0f),
+                alpha = 1f
+            )
+        }
+    }
+
     Box(
         modifier = Modifier
             .size(62.dp)
@@ -1725,10 +1809,10 @@ fun DockSettingsTile(
             .blur(if (isOtherItemActive) 6.dp else 0.dp)
             .focusRequester(focusRequester)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (isFocused) Color(0xFF2C3852) else Color(0xFF1E293B))
+            .background(if (isFocused) focusedOffColor else offColor)
             .border(
-                width = if (isFocused) 2.6.dp else 1.2.dp,
-                color = if (isFocused) Color.White else Color(0xFF475569),
+                width = if (isFocused) 2.6.dp else 0.dp,
+                color = if (isFocused) Color.White else Color.Transparent,
                 shape = RoundedCornerShape(16.dp)
             )
             .onPreviewKeyEvent { keyEvent ->
@@ -1770,24 +1854,14 @@ fun DockSettingsTile(
         Icon(
             imageVector = Icons.Default.Settings,
             contentDescription = "Settings",
-            tint = if (isFocused) Color.White else Color(0xFF94A3B8),
+            tint = if (isFocused) (if (isOffDark) Color.White else Color(0xFF0F172A)) else (if (isOffDark) Color(0xFF94A3B8) else Color(0xFF475569)),
             modifier = Modifier.size(28.dp)
         )
     }
 }
 
-private fun getActiveColor(domain: String): Color {
-    return when (domain) {
-        "light" -> Color(0xFFF59E0B) // Warm Amber
-        "switch", "input_boolean" -> Color(0xFF0284C7) // Sky Blue
-        "climate" -> Color(0xFFEA580C) // Orange
-        "scene", "script" -> Color(0xFF9333EA) // Purple
-        "media_player" -> Color(0xFF0D9488) // Teal
-        "cover" -> Color(0xFF059669) // Emerald
-        "fan" -> Color(0xFF0891B2) // Cyan
-        "vacuum" -> Color(0xFF78716C) // Stone
-        else -> Color(0xFF0284C7)
-    }
+private fun getActiveColor(domain: String, palette: DomainColorPalette = DomainColorPalette.CLASSIC): Color {
+    return palette.getColorForDomain(domain)
 }
 
 private val iconVectorCache = java.util.concurrent.ConcurrentHashMap<String, ImageVector>()

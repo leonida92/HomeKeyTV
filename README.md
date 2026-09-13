@@ -66,10 +66,19 @@
 
 - **Instant Phone Web Setup (Port 8124)**:
   - Built-in lightweight local web server with QR code for instant pairing on mobile or desktop browsers.
+  - Collapsible cards/menus for clean navigation on phone screens.
   - Search, filter, and multi-select entities from your Home Assistant instance.
   - Custom Entity Renaming: Set custom display names directly in the web UI.
   - Custom Icon Picker: Choose from an extensive Material icon gallery.
+  - Theme Presets & Native Color Pickers: Switch between 5 presets (Classic, Cupertino Glow, Cyberpunk Neon, Nordic Calm, Monochrome Luxe) or customize individual domain colors with live hex preview.
   - Automatic credential persistence in browser storage for instant, hassle-free updates.
+
+- **Theme Presets & Domain Color Customizer**:
+  - 5 distinctive built-in themes plus full Custom Palette mode.
+  - Customizable domain colors for Lights, Switches, Climate, Cameras, Media, Covers, Fans, Vacuums, Scenes, and Sensors.
+  - Customizable Off-State Background and Active Icon Color with contrast-adaptive rendering.
+  - Dedicated camera feed domain styling with active detection when online.
+  - D-pad friendly 30-color swatch picker dialog on TV and native HTML5 color pickers on the web setup page.
 
 - **In-App GitHub Update Checker**:
   - Direct integration with GitHub Releases to check for latest updates.
@@ -113,7 +122,7 @@
    ```
 3. Install the Release APK:
    ```bash
-   adb install -r HomeKeyTV-v1.6.3.apk
+   adb install -r HomeKeyTV-v1.6.6.apk
    ```
 
 ### Option 2: Sideload via File Manager
@@ -166,7 +175,7 @@ cd HomeKeyTV
 ```
 
 The compiled release APK will be located at:
-`app/build/outputs/apk/release/HomeKeyTV-v1.6.3.apk`
+`app/build/outputs/apk/release/HomeKeyTV-v1.6.6.apk`
 
 ---
 

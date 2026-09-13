@@ -6,8 +6,10 @@ import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.homekey.tv.data.models.ButtonRemapConfig
+import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.PinnedAppConfig
 import com.homekey.tv.data.models.PinnedEntityConfig
+import com.homekey.tv.data.models.ThemePreset
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -72,6 +74,15 @@ class PreferencesManager(context: Context) {
 
     private val _haEnabled = MutableStateFlow(prefs.getBoolean(KEY_HA_ENABLED, true))
     val haEnabled: StateFlow<Boolean> = _haEnabled.asStateFlow()
+
+    private val _themePreset = MutableStateFlow(prefs.getString(KEY_THEME_PRESET, "classic") ?: "classic")
+    val themePreset: StateFlow<String> = _themePreset.asStateFlow()
+
+    private val _customThemeColors = MutableStateFlow(loadCustomThemeColors())
+    val customThemeColors: StateFlow<Map<String, String>> = _customThemeColors.asStateFlow()
+
+    private val _activePalette = MutableStateFlow(calculateActivePalette(_themePreset.value, _customThemeColors.value))
+    val activePalette: StateFlow<DomainColorPalette> = _activePalette.asStateFlow()
 
     val isConfigured: Boolean
         get() = haEnabled.value && serverUrl.value.isNotBlank() && accessToken.value.isNotBlank()
@@ -233,6 +244,49 @@ class PreferencesManager(context: Context) {
         _haEnabled.value = enabled
     }
 
+    fun setThemePreset(presetId: String) {
+        val normalized = ThemePreset.fromId(presetId).id
+        prefs.edit().putString(KEY_THEME_PRESET, normalized).apply()
+        _themePreset.value = normalized
+        _activePalette.value = calculateActivePalette(normalized, _customThemeColors.value)
+    }
+
+    fun setCustomDomainColor(domain: String, hex: String) {
+        val current = _customThemeColors.value.toMutableMap()
+        current[domain] = hex
+        val serialized = json.encodeToString(current)
+        prefs.edit().putString(KEY_CUSTOM_THEME_COLORS, serialized).apply()
+        _customThemeColors.value = current
+        _activePalette.value = calculateActivePalette(_themePreset.value, current)
+    }
+
+    fun setCustomDomainColors(colors: Map<String, String>) {
+        val current = _customThemeColors.value.toMutableMap()
+        current.putAll(colors)
+        val serialized = json.encodeToString(current)
+        prefs.edit().putString(KEY_CUSTOM_THEME_COLORS, serialized).apply()
+        _customThemeColors.value = current
+        _activePalette.value = calculateActivePalette(_themePreset.value, current)
+    }
+
+    private fun loadCustomThemeColors(): Map<String, String> {
+        val raw = prefs.getString(KEY_CUSTOM_THEME_COLORS, null) ?: return emptyMap()
+        return try {
+            json.decodeFromString<Map<String, String>>(raw)
+        } catch (_: Exception) {
+            emptyMap()
+        }
+    }
+
+    private fun calculateActivePalette(presetId: String, customColors: Map<String, String>): DomainColorPalette {
+        val preset = ThemePreset.fromId(presetId)
+        return if (preset == ThemePreset.CUSTOM) {
+            DomainColorPalette.CLASSIC.withOverrides(customColors)
+        } else {
+            DomainColorPalette.forPreset(preset)
+        }
+    }
+
     private fun loadRecentApps(): List<String> {
         val raw = prefs.getString(KEY_RECENT_APPS_LIST, null) ?: return emptyList()
         return try {
@@ -332,6 +386,8 @@ class PreferencesManager(context: Context) {
         private const val KEY_PANEL_LAYOUT = "ha_panel_layout"
         private const val KEY_PAIRING_PIN = "ha_pairing_pin"
         const val KEY_HA_ENABLED = "ha_integration_enabled"
+        const val KEY_THEME_PRESET = "ha_theme_preset"
+        const val KEY_CUSTOM_THEME_COLORS = "ha_custom_theme_colors"
         const val KEY_POPUP_STYLE = "ha_popup_style"
         const val KEY_RECENT_APPS_ENABLED = "ha_recent_apps_enabled"
         const val KEY_RECENT_APPS_COUNT = "ha_recent_apps_count"

@@ -28,7 +28,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
+import com.homekey.tv.data.models.LocalThemePalette
 import com.homekey.tv.ui.theme.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -48,6 +50,11 @@ fun ClimateDialog(
     onSetPresetMode: (String) -> Unit = {},
     onDismiss: () -> Unit
 ) {
+    val palette = LocalThemePalette.current
+    val offColor = palette.getOffBackgroundColor()
+    val isOffDark = DomainColorPalette.isColorDark(offColor)
+    val textColor = if (isOffDark) Color.White else Color(0xFF0F172A)
+
     val initialTemp = entity.targetTemperature ?: 21.0f
     var targetTemp by remember { mutableFloatStateOf(initialTemp) }
 
@@ -82,12 +89,12 @@ fun ClimateDialog(
     val currentMode = entity.state.lowercase()
     val activeColor = when (currentMode) {
         "cool" -> Color(0xFF38BDF8)
-        "heat" -> Color(0xFFFF7043)
+        "heat" -> palette.getColorForDomain("climate")
         "heat_cool", "auto" -> Color(0xFF34D399)
         "dry" -> Color(0xFFFBBF24)
         "fan_only" -> Color(0xFF2DD4BF)
-        "off" -> Color(0xFF94A3B8)
-        else -> Color(0xFFFF7043)
+        "off" -> if (isOffDark) Color(0xFF94A3B8) else Color(0xFF64748B)
+        else -> palette.getColorForDomain("climate")
     }
 
     val initialFocusRequester = remember { FocusRequester() }
@@ -103,8 +110,7 @@ fun ClimateDialog(
         modifier = Modifier
             .width(550.dp)
             .clip(RoundedCornerShape(24.dp))
-            .background(Color(0xFF1E293B))
-            .border(2.dp, TV_Border_Focused, RoundedCornerShape(20.dp))
+            .background(offColor)
             .padding(horizontal = 24.dp, vertical = 20.dp)
     ) {
         Column(
@@ -141,7 +147,7 @@ fun ClimateDialog(
                             text = entity.friendlyName,
                             fontSize = 18.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color.White,
+                            color = textColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -173,7 +179,7 @@ fun ClimateDialog(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(18.dp))
-                        .background(Color(0xFF0F172A))
+                        .background(if (isOffDark) Color(0xFF0F172A) else Color(0x1A000000))
                         .padding(horizontal = 20.dp, vertical = 14.dp)
                 ) {
                     Column(
@@ -465,8 +471,8 @@ private fun ClimateModeButton(
             .clip(RoundedCornerShape(12.dp))
             .background(bgColor)
             .border(
-                width = if (isFocused) 2.dp else if (isSelected) 1.dp else 0.dp,
-                color = if (isFocused) Color.White else if (isSelected) modeColor.copy(alpha = 0.5f) else Color.Transparent,
+                width = if (isFocused) 2.dp else 0.dp,
+                color = if (isFocused) Color.White else Color.Transparent,
                 shape = RoundedCornerShape(12.dp)
             )
             .clickable(

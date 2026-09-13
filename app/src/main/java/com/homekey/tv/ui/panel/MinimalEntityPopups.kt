@@ -34,7 +34,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
+import com.homekey.tv.data.models.LocalThemePalette
 import com.homekey.tv.ui.theme.*
 import kotlin.math.roundToInt
 
@@ -336,12 +338,13 @@ fun MinimalClimatePopup(
             enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
             exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom)
         ) {
+            val palette = LocalThemePalette.current
+            val offColor = palette.getOffBackgroundColor()
             Column(
                 modifier = Modifier
                     .padding(bottom = 8.dp)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color(0xF0182234))
-                    .border(1.5.dp, TV_Border_Focused, RoundedCornerShape(14.dp))
+                    .background(offColor)
                     .padding(6.dp),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
@@ -1063,13 +1066,14 @@ fun MinimalMediaPopup(
 private fun MinimalBarContainer(
     content: @Composable RowScope.() -> Unit
 ) {
+    val palette = LocalThemePalette.current
+    val offColor = palette.getOffBackgroundColor()
     Row(
         modifier = Modifier
             .wrapContentWidth()
             .height(58.dp)
             .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xF0182234))
-            .border(2.dp, TV_Border_Focused, RoundedCornerShape(18.dp))
+            .background(offColor)
             .padding(horizontal = 14.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center,
@@ -1091,13 +1095,14 @@ private fun MinimalCardDivider() {
 private fun MinimalVerticalCardContainer(
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val palette = LocalThemePalette.current
+    val offColor = palette.getOffBackgroundColor()
     Column(
         modifier = Modifier
             .width(240.dp)
             .wrapContentHeight()
             .clip(RoundedCornerShape(18.dp))
-            .background(Color(0xF0182234))
-            .border(2.dp, TV_Border_Focused, RoundedCornerShape(18.dp))
+            .background(offColor)
             .padding(14.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -1121,10 +1126,13 @@ private fun MinimalChip(
         label = "chip_scale"
     )
 
+    val palette = LocalThemePalette.current
+    val activeAccent = palette.getColorForDomain("climate")
+
     val bgColor by animateColorAsState(
         targetValue = when {
             isFocused -> TV_Surface_Focused
-            isSelected -> HA_Blue
+            isSelected -> activeAccent
             else -> Color(0x332C3852)
         },
         label = "chip_bg"
@@ -1133,8 +1141,7 @@ private fun MinimalChip(
     val borderColor by animateColorAsState(
         targetValue = when {
             isFocused -> TV_Border_Focused
-            isSelected -> Color(0xFF38BDF8)
-            else -> Color(0x22475569)
+            else -> Color.Transparent
         },
         label = "chip_border"
     )
@@ -1145,7 +1152,7 @@ private fun MinimalChip(
             .height(34.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(bgColor)
-            .border(if (isFocused) 2.dp else 1.dp, borderColor, RoundedCornerShape(10.dp))
+            .border(if (isFocused) 2.dp else 0.dp, borderColor, RoundedCornerShape(10.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -1155,11 +1162,12 @@ private fun MinimalChip(
             .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center
     ) {
+        val chipTextColor = if (isSelected && !DomainColorPalette.isColorDark(activeAccent)) Color(0xFF0F172A) else if (isSelected || isFocused) Color.White else TV_Text_Secondary
         Text(
             text = text,
             fontSize = 11.sp,
             fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Medium,
-            color = if (isSelected || isFocused) Color.White else TV_Text_Secondary
+            color = chipTextColor
         )
     }
 }
@@ -1187,8 +1195,8 @@ private fun MinimalIconButton(
             .clip(CircleShape)
             .background(if (isFocused) TV_Surface_Focused else Color(0x221E293B))
             .border(
-                width = if (isFocused) 2.dp else 1.dp,
-                color = if (isFocused) TV_Border_Focused else Color(0x22475569),
+                width = if (isFocused) 2.dp else 0.dp,
+                color = if (isFocused) TV_Border_Focused else Color.Transparent,
                 shape = CircleShape
             )
             .clickable(
@@ -1237,7 +1245,7 @@ private fun MinimalModeDropdownButton(
         targetValue = when {
             isFocused -> TV_Border_Focused
             isOpen -> Color(0xFF38BDF8)
-            else -> Color(0x22475569)
+            else -> Color.Transparent
         },
         label = "mode_btn_border"
     )
@@ -1248,7 +1256,7 @@ private fun MinimalModeDropdownButton(
             .height(34.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(bgColor)
-            .border(if (isFocused) 2.dp else 1.dp, borderColor, RoundedCornerShape(10.dp))
+            .border(if (isFocused) 2.dp else 0.dp, borderColor, RoundedCornerShape(10.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -1309,7 +1317,7 @@ private fun MinimalOffButton(
         targetValue = when {
             isFocused -> TV_Border_Focused
             isOff -> Color(0xFFEF4444)
-            else -> Color(0x22475569)
+            else -> Color.Transparent
         },
         label = "off_btn_border"
     )
@@ -1329,7 +1337,7 @@ private fun MinimalOffButton(
             .height(34.dp)
             .clip(RoundedCornerShape(10.dp))
             .background(bgColor)
-            .border(if (isFocused) 2.dp else 1.dp, borderColor, RoundedCornerShape(10.dp))
+            .border(if (isFocused) 2.dp else 0.dp, borderColor, RoundedCornerShape(10.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -1400,7 +1408,7 @@ private fun MinimalModeMenuItem(
             .height(36.dp)
             .clip(RoundedCornerShape(8.dp))
             .background(bgColor)
-            .border(if (isFocused) 2.dp else if (isSelected) 1.dp else 0.dp, borderColor, RoundedCornerShape(8.dp))
+            .border(if (isFocused) 2.dp else 0.dp, borderColor, RoundedCornerShape(8.dp))
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,

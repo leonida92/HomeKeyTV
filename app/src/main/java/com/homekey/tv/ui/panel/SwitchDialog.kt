@@ -26,7 +26,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
+import com.homekey.tv.data.models.LocalThemePalette
 import com.homekey.tv.ui.theme.*
 
 @Composable
@@ -37,6 +39,12 @@ fun SwitchDialog(
     onTurnOff: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = LocalThemePalette.current
+    val activeColor = palette.getColorForDomain(entity.domain)
+    val offColor = palette.getOffBackgroundColor()
+    val isOffDark = DomainColorPalette.isColorDark(offColor)
+    val textColor = if (isOffDark) Color.White else Color(0xFF0F172A)
+
     val initialFocusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         try {
@@ -47,7 +55,6 @@ fun SwitchDialog(
     BackHandler(onBack = onDismiss)
 
     val isOn = entity.isOn
-    val activeColor = if (entity.domain == "light") HA_Yellow_On else Color(0xFF4CAF50)
     val stateText = if (isOn) "ON" else "OFF"
     val icon = if (entity.domain == "light") Icons.Default.Lightbulb else Icons.Default.PowerSettingsNew
 
@@ -55,8 +62,7 @@ fun SwitchDialog(
         modifier = Modifier
             .width(420.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF1E293B))
-            .border(2.dp, TV_Border_Focused, RoundedCornerShape(20.dp))
+            .background(offColor)
             .padding(24.dp)
     ) {
         Column(
@@ -73,13 +79,13 @@ fun SwitchDialog(
                     text = entity.friendlyName,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = textColor,
                     modifier = Modifier.weight(1f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor)
                 }
             }
 
@@ -90,14 +96,14 @@ fun SwitchDialog(
                 modifier = Modifier
                     .size(80.dp)
                     .clip(CircleShape)
-                    .background(if (isOn) activeColor.copy(alpha = 0.2f) else Color(0x33334155))
-                    .border(2.dp, if (isOn) activeColor else Color(0x33475569), CircleShape),
+                    .background(if (isOn) activeColor.copy(alpha = 0.2f) else (if (isOffDark) Color(0x33334155) else Color(0x22CBD5E1)))
+                    .border(if (isOn) 2.dp else 0.dp, if (isOn) activeColor else Color.Transparent, CircleShape),
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
                     imageVector = icon,
                     contentDescription = null,
-                    tint = if (isOn) activeColor else Color(0xFF64748B),
+                    tint = if (isOn) activeColor else (if (isOffDark) Color(0xFF64748B) else Color(0xFF94A3B8)),
                     modifier = Modifier.size(44.dp)
                 )
             }
@@ -121,10 +127,10 @@ fun SwitchDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(14.dp))
-                    .background(if (isCardFocused) Color(0xFF2C3852) else Color(0xFF0F172A))
+                    .background(if (isCardFocused) Color(0xFF2C3852) else (if (isOffDark) Color(0xFF0F172A) else Color(0x22000000)))
                     .border(
-                        width = if (isCardFocused) 2.dp else 1.dp,
-                        color = if (isCardFocused) Color.White else Color(0x33475569),
+                        width = if (isCardFocused) 2.dp else 0.dp,
+                        color = if (isCardFocused) Color.White else Color.Transparent,
                         shape = RoundedCornerShape(14.dp)
                     )
                     .focusRequester(initialFocusRequester)
@@ -174,30 +180,31 @@ fun SwitchDialog(
                 Button(
                     onClick = onTurnOff,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (!isOn) Color(0xFF334155) else Color(0x33334155)
+                        containerColor = if (!isOn) (if (isOffDark) Color(0xFF334155) else Color(0xFFCBD5E1)) else (if (isOffDark) Color(0x33334155) else Color(0x1ACBD5E1))
                     ),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
                         text = "Turn Off",
-                        color = if (!isOn) Color.White else TV_Text_Secondary,
+                        color = if (!isOn) (if (isOffDark) Color.White else Color(0xFF0F172A)) else TV_Text_Secondary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium
                     )
                 }
 
+                val onBtnTextColor = if (DomainColorPalette.isColorDark(activeColor)) Color.White else Color.Black
                 Button(
                     onClick = onTurnOn,
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isOn) activeColor.copy(alpha = 0.85f) else Color(0x33334155)
+                        containerColor = if (isOn) activeColor.copy(alpha = 0.85f) else (if (isOffDark) Color(0x33334155) else Color(0x1ACBD5E1))
                     ),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(
                         text = "Turn On",
-                        color = if (isOn) Color.Black else TV_Text_Secondary,
+                        color = if (isOn) onBtnTextColor else TV_Text_Secondary,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.SemiBold
                     )

@@ -21,7 +21,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
+import com.homekey.tv.data.models.LocalThemePalette
 import com.homekey.tv.ui.theme.*
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -37,6 +39,12 @@ fun BrightnessDialog(
     onSetBrightness: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = LocalThemePalette.current
+    val lightColor = palette.getColorForDomain("light")
+    val offColor = palette.getOffBackgroundColor()
+    val isOffDark = DomainColorPalette.isColorDark(offColor)
+    val textColor = if (isOffDark) Color.White else Color(0xFF0F172A)
+
     val initialBrightness = entity.brightness ?: 128
     var brightness by remember { mutableIntStateOf(initialBrightness) }
     val brightnessPercent = ((brightness / 255f) * 100).toInt()
@@ -72,8 +80,7 @@ fun BrightnessDialog(
         modifier = Modifier
             .width(420.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF1E293B))
-            .border(2.dp, TV_Border_Focused, RoundedCornerShape(20.dp))
+            .background(offColor)
             .padding(24.dp)
     ) {
         Column(
@@ -89,10 +96,10 @@ fun BrightnessDialog(
                     text = entity.friendlyName,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    color = textColor
                 )
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor)
                 }
             }
 
@@ -102,7 +109,7 @@ fun BrightnessDialog(
                     text = "$brightnessPercent%",
                     fontSize = 36.sp,
                     fontWeight = FontWeight.ExtraBold,
-                    color = HA_Yellow_On
+                    color = lightColor
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
@@ -121,9 +128,9 @@ fun BrightnessDialog(
                     },
                     valueRange = 1f..255f,
                     colors = SliderDefaults.colors(
-                        thumbColor = HA_Yellow_On,
-                        activeTrackColor = HA_Yellow_On,
-                        inactiveTrackColor = Color(0x33FFFFFF)
+                        thumbColor = lightColor,
+                        activeTrackColor = lightColor,
+                        inactiveTrackColor = if (isOffDark) Color(0x33FFFFFF) else Color(0x22000000)
                     ),
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -139,6 +146,7 @@ fun BrightnessDialog(
                         brightnessPercent in (pct - 10)..(pct + 10)
                     } ?: 100
                     listOf(25, 50, 75, 100).forEach { pct ->
+                        val isPresetActive = brightnessPercent in (pct - 10)..(pct + 10)
                         Button(
                             onClick = {
                                 val value = ((pct / 100f) * 255).toInt()
@@ -148,14 +156,15 @@ fun BrightnessDialog(
                                 sendBrightness(value)
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (brightnessPercent in (pct - 10)..(pct + 10)) HA_Blue else Color(0x4D334155)
+                                containerColor = if (isPresetActive) lightColor else (if (isOffDark) Color(0x4D334155) else Color(0x33CBD5E1))
                             ),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .padding(2.dp)
                                 .then(if (pct == defaultFocusPct) Modifier.focusRequester(initialFocusRequester) else Modifier)
                         ) {
-                            Text(text = "$pct%", color = Color.White, fontSize = 12.sp)
+                            val presetTextColor = if (isPresetActive && !DomainColorPalette.isColorDark(lightColor)) Color(0xFF0F172A) else Color.White
+                            Text(text = "$pct%", color = presetTextColor, fontSize = 12.sp)
                         }
                     }
                 }

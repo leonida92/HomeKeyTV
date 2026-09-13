@@ -50,8 +50,8 @@ fun FocusableIconButton(
             .clip(CircleShape)
             .background(if (isFocused) TV_Surface_Focused else Color(0x331E293B))
             .border(
-                width = if (isFocused) 2.dp else 1.dp,
-                color = if (isFocused) TV_Border_Focused else Color(0x22475569),
+                width = if (isFocused) 2.dp else 0.dp,
+                color = if (isFocused) TV_Border_Focused else Color.Transparent,
                 shape = CircleShape
             )
             .onPreviewKeyEvent { keyEvent ->

@@ -33,7 +33,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
+import com.homekey.tv.data.models.LocalThemePalette
 import com.homekey.tv.ui.theme.*
 import kotlinx.coroutines.*
 import okhttp3.OkHttpClient
@@ -61,6 +63,11 @@ fun CameraDialog(
     compactSize: String = PreferencesManager.CAMERA_COMPACT_SIZE_MEDIUM,
     onDismiss: () -> Unit
 ) {
+    val palette = LocalThemePalette.current
+    val cameraColor = palette.getColorForDomain("camera")
+    val offColor = palette.getOffBackgroundColor()
+    val isOffDark = DomainColorPalette.isColorDark(offColor)
+    val textColor = if (isOffDark) Color.White else Color(0xFF0F172A)
     var streamStatus by remember { mutableStateOf(StreamStatus.CONNECTING) }
     var currentBitmap by remember { mutableStateOf<Bitmap?>(null) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
@@ -257,8 +264,7 @@ fun CameraDialog(
                 .width(animatedCardWidth)
                 .height(animatedCardHeight)
                 .clip(RoundedCornerShape(18.dp))
-                .background(Color(0xF0182234))
-                .border(2.dp, TV_Border_Focused, RoundedCornerShape(18.dp))
+                .background(offColor)
                 .padding(12.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween
@@ -277,13 +283,13 @@ fun CameraDialog(
                         modifier = Modifier
                             .size(28.dp)
                             .clip(CircleShape)
-                            .background(Color(0x3300BCD4)),
+                            .background(cameraColor.copy(alpha = 0.2f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.Videocam,
                             contentDescription = null,
-                            tint = Color(0xFF00BCD4),
+                            tint = cameraColor,
                             modifier = Modifier.size(16.dp)
                         )
                     }
@@ -294,7 +300,7 @@ fun CameraDialog(
                         text = entity.friendlyName,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold,
-                        color = TV_Text_Primary,
+                        color = textColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -334,10 +340,10 @@ fun CameraDialog(
                             text = when (streamStatus) {
                                 StreamStatus.LIVE -> "LIVE"
                                 StreamStatus.SNAPSHOT -> "SNAPSHOT"
-                                StreamStatus.CONNECTING -> "CONNECTING"
+                                StreamStatus.CONNECTING -> "CONNECTING..."
                                 StreamStatus.ERROR -> "OFFLINE"
                             },
-                            fontSize = 10.sp,
+                            fontSize = 9.sp,
                             fontWeight = FontWeight.Bold,
                             color = when (streamStatus) {
                                 StreamStatus.LIVE -> Color(0xFF4CAF50)
@@ -348,14 +354,14 @@ fun CameraDialog(
                         )
                     }
 
-                    Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
                     FocusableIconButton(
                         icon = Icons.Default.Close,
                         description = "Close",
                         onClick = onDismiss,
                         modifier = Modifier
-                            .size(32.dp)
+                            .size(28.dp)
                             .focusRequester(closeFocusRequester)
                     )
                 }
@@ -369,8 +375,7 @@ fun CameraDialog(
                     .width(animatedVideoWidth)
                     .height(animatedVideoHeight)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(Color.Black)
-                    .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(10.dp)),
+                    .background(Color.Black),
                 contentAlignment = Alignment.Center
             ) {
                 if (currentBitmap != null) {
@@ -388,7 +393,7 @@ fun CameraDialog(
                         verticalArrangement = Arrangement.Center
                     ) {
                         CircularProgressIndicator(
-                            color = Color(0xFF00BCD4),
+                            color = cameraColor,
                             modifier = Modifier.size(32.dp),
                             strokeWidth = 2.5.dp
                         )
@@ -434,8 +439,7 @@ fun CameraDialog(
                     .widthIn(min = 480.dp, max = 880.dp)
                     .heightIn(min = 320.dp, max = 580.dp)
                     .clip(RoundedCornerShape(20.dp))
-                    .background(Color(0xFF1E293B))
-                    .border(2.dp, TV_Border_Focused, RoundedCornerShape(20.dp))
+                    .background(offColor)
                     .padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.SpaceBetween
@@ -453,122 +457,121 @@ fun CameraDialog(
                         Box(
                             modifier = Modifier
                                 .size(36.dp)
-                            .clip(CircleShape)
-                            .background(Color(0x3300BCD4)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Videocam,
-                            contentDescription = null,
-                            tint = Color(0xFF00BCD4),
-                            modifier = Modifier.size(22.dp)
-                        )
+                                .clip(CircleShape)
+                                .background(cameraColor.copy(alpha = 0.2f)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Videocam,
+                                contentDescription = null,
+                                tint = cameraColor,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        Column {
+                            Text(
+                                text = entity.friendlyName,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = textColor,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = entity.entityId,
+                                fontSize = 11.sp,
+                                color = TV_Text_Secondary,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
 
-                    Spacer(modifier = Modifier.width(12.dp))
+                    Spacer(modifier = Modifier.width(16.dp))
 
-                    Column {
-                        Text(
-                            text = entity.friendlyName,
-                            fontSize = 17.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TV_Text_Primary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = entity.entityId,
-                            fontSize = 11.sp,
-                            color = TV_Text_Secondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                // Status Pill
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(20.dp))
-                        .background(
-                            when (streamStatus) {
-                                StreamStatus.LIVE -> Color(0x334CAF50)
-                                StreamStatus.SNAPSHOT -> Color(0x33FFB74D)
-                                StreamStatus.CONNECTING -> Color(0x3342A5F5)
-                                StreamStatus.ERROR -> Color(0x33EF5350)
-                            }
-                        )
-                        .padding(horizontal = 10.dp, vertical = 5.dp)
-                ) {
-                    Box(
+                    // Status Pill
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
+                            .clip(RoundedCornerShape(20.dp))
                             .background(
                                 when (streamStatus) {
-                                    StreamStatus.LIVE -> Color(0xFF4CAF50).copy(alpha = pulseAlpha)
-                                    StreamStatus.SNAPSHOT -> Color(0xFFFFB74D)
-                                    StreamStatus.CONNECTING -> Color(0xFF42A5F5)
-                                    StreamStatus.ERROR -> Color(0xFFEF5350)
+                                    StreamStatus.LIVE -> Color(0x334CAF50)
+                                    StreamStatus.SNAPSHOT -> Color(0x33FFB74D)
+                                    StreamStatus.CONNECTING -> Color(0x3342A5F5)
+                                    StreamStatus.ERROR -> Color(0x33EF5350)
                                 }
                             )
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = when (streamStatus) {
-                            StreamStatus.LIVE -> "LIVE"
-                            StreamStatus.SNAPSHOT -> "SNAPSHOT"
-                            StreamStatus.CONNECTING -> "CONNECTING..."
-                            StreamStatus.ERROR -> "OFFLINE"
-                        },
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = when (streamStatus) {
-                            StreamStatus.LIVE -> Color(0xFF4CAF50)
-                            StreamStatus.SNAPSHOT -> Color(0xFFFFB74D)
-                            StreamStatus.CONNECTING -> Color(0xFF42A5F5)
-                            StreamStatus.ERROR -> Color(0xFFEF5350)
-                        }
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            // Main Video Viewport (auto-adapts aspect ratio dynamically)
-            Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(Color.Black)
-                    .border(1.dp, Color(0x22FFFFFF), RoundedCornerShape(14.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                if (currentBitmap != null) {
-                    Image(
-                        bitmap = currentBitmap!!.asImageBitmap(),
-                        contentDescription = entity.friendlyName,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .aspectRatio(detectedAspectRatio, matchHeightConstraintsFirst = true)
-                    )
-                }
-
-                if (streamStatus == StreamStatus.CONNECTING && currentBitmap == null) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
+                            .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
-                        CircularProgressIndicator(
-                            color = Color(0xFF00BCD4),
-                            modifier = Modifier.size(42.dp),
-                            strokeWidth = 3.dp
+                        Box(
+                            modifier = Modifier
+                                .size(8.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    when (streamStatus) {
+                                        StreamStatus.LIVE -> Color(0xFF4CAF50).copy(alpha = pulseAlpha)
+                                        StreamStatus.SNAPSHOT -> Color(0xFFFFB74D)
+                                        StreamStatus.CONNECTING -> Color(0xFF42A5F5)
+                                        StreamStatus.ERROR -> Color(0xFFEF5350)
+                                    }
+                                )
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = when (streamStatus) {
+                                StreamStatus.LIVE -> "LIVE"
+                                StreamStatus.SNAPSHOT -> "SNAPSHOT"
+                                StreamStatus.CONNECTING -> "CONNECTING..."
+                                StreamStatus.ERROR -> "OFFLINE"
+                            },
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = when (streamStatus) {
+                                StreamStatus.LIVE -> Color(0xFF4CAF50)
+                                StreamStatus.SNAPSHOT -> Color(0xFFFFB74D)
+                                StreamStatus.CONNECTING -> Color(0xFF42A5F5)
+                                StreamStatus.ERROR -> Color(0xFFEF5350)
+                            }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                // Main Video Viewport (auto-adapts aspect ratio dynamically)
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.Black),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (currentBitmap != null) {
+                        Image(
+                            bitmap = currentBitmap!!.asImageBitmap(),
+                            contentDescription = entity.friendlyName,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .aspectRatio(detectedAspectRatio, matchHeightConstraintsFirst = true)
+                        )
+                    }
+
+                    if (streamStatus == StreamStatus.CONNECTING && currentBitmap == null) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.Center
+                        ) {
+                            CircularProgressIndicator(
+                                color = cameraColor,
+                                modifier = Modifier.size(42.dp),
+                                strokeWidth = 3.dp
+                            )
                         Spacer(modifier = Modifier.height(12.dp))
                         Text(
                             text = "Connecting to camera stream...",

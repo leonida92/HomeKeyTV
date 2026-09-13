@@ -31,7 +31,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
+import com.homekey.tv.data.models.LocalThemePalette
 import com.homekey.tv.ui.theme.*
 import kotlin.math.roundToInt
 
@@ -48,6 +50,12 @@ fun MediaPlayerDialog(
     onTurnOff: () -> Unit,
     onDismiss: () -> Unit
 ) {
+    val palette = LocalThemePalette.current
+    val activeColor = palette.getColorForDomain("media_player")
+    val offColor = palette.getOffBackgroundColor()
+    val isOffDark = DomainColorPalette.isColorDark(offColor)
+    val textColor = if (isOffDark) Color.White else Color(0xFF0F172A)
+
     val initialFocusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         try {
@@ -66,14 +74,11 @@ fun MediaPlayerDialog(
     val mediaTitle = entity.mediaTitle
     val mediaArtist = entity.mediaArtist
 
-    val activeColor = Color(0xFF0D9488) // Teal
-
     Box(
         modifier = Modifier
             .width(500.dp)
             .clip(RoundedCornerShape(20.dp))
-            .background(Color(0xFF1E293B))
-            .border(2.dp, TV_Border_Focused, RoundedCornerShape(20.dp))
+            .background(offColor)
             .padding(24.dp)
     ) {
         Column(
@@ -94,7 +99,7 @@ fun MediaPlayerDialog(
                         text = entity.friendlyName,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = textColor,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -106,7 +111,7 @@ fun MediaPlayerDialog(
                     )
                 }
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White)
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = textColor)
                 }
             }
 
@@ -115,8 +120,7 @@ fun MediaPlayerDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(12.dp))
-                    .background(Color(0x330F172A))
-                    .border(1.dp, Color(0x33475569), RoundedCornerShape(12.dp))
+                    .background(if (isOffDark) Color(0x330F172A) else Color(0x1A000000))
                     .padding(14.dp)
             ) {
                 Row(
@@ -127,8 +131,8 @@ fun MediaPlayerDialog(
                         modifier = Modifier
                             .size(54.dp)
                             .clip(CircleShape)
-                            .background(if (isPlaying) activeColor.copy(alpha = 0.2f) else Color(0x22334155))
-                            .border(2.dp, if (isPlaying) activeColor else Color(0x33475569), CircleShape),
+                            .background(if (isPlaying) activeColor.copy(alpha = 0.2f) else (if (isOffDark) Color(0x22334155) else Color(0x22CBD5E1)))
+                            .border(if (isPlaying) 2.dp else 0.dp, if (isPlaying) activeColor else Color.Transparent, CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
@@ -265,10 +269,10 @@ fun MediaPlayerDialog(
                         .fillMaxWidth()
                         .height(38.dp)
                         .clip(RoundedCornerShape(10.dp))
-                        .background(Color(0x330F172A))
+                        .background(if (isOffDark) Color(0x330F172A) else Color(0x1A000000))
                         .border(
-                            2.dp,
-                            if (isVolFocused) TV_Border_Focused else Color(0x33475569),
+                            if (isVolFocused) 2.dp else 0.dp,
+                            if (isVolFocused) TV_Border_Focused else Color.Transparent,
                             RoundedCornerShape(10.dp)
                         )
                         .onPreviewKeyEvent { keyEvent ->
@@ -372,8 +376,11 @@ private fun MediaActionButton(
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
 
+    val palette = LocalThemePalette.current
+    val primaryColor = palette.getColorForDomain("media_player")
+
     val defaultBg = when {
-        isPrimary -> Color(0xFF0D9488) // Teal
+        isPrimary -> primaryColor
         isDestructive -> Color(0x33EF4444)
         else -> Color(0x22FFFFFF)
     }
@@ -383,7 +390,7 @@ private fun MediaActionButton(
             .clip(RoundedCornerShape(10.dp))
             .background(if (isFocused) TV_Surface_Focused else defaultBg)
             .border(
-                1.dp,
+                if (isFocused) 1.5.dp else 0.dp,
                 if (isFocused) TV_Border_Focused else Color.Transparent,
                 RoundedCornerShape(10.dp)
             )

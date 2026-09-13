@@ -80,7 +80,12 @@ data class HAEntityState(
         get() = attributes["target_temp_step"]?.jsonPrimitive?.contentOrNull?.toFloatOrNull() ?: 0.5f
 
     val isOn: Boolean
-        get() = !isUnavailable && !state.equals("off", ignoreCase = true) &&
+        get() {
+            if (isUnavailable) return false
+            if (domain == "camera") {
+                return !state.equals("off", ignoreCase = true)
+            }
+            return !state.equals("off", ignoreCase = true) &&
                 !state.equals("closed", ignoreCase = true) &&
                 !state.equals("locked", ignoreCase = true) &&
                 !state.equals("idle", ignoreCase = true) &&
@@ -88,6 +93,7 @@ data class HAEntityState(
                 !state.equals("docked", ignoreCase = true) &&
                 !state.equals("standby", ignoreCase = true) &&
                 !state.equals("loading", ignoreCase = true) // placeholder before first state event
+        }
 
     val isUnavailable: Boolean
         get() = state.equals("unavailable", ignoreCase = true) || state.equals("unknown", ignoreCase = true)
