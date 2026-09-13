@@ -701,11 +701,14 @@ class WebSetupServer(
                     <div class="modal-cat-tab" onclick="filterModalCat('light')">Lighting</div>
                     <div class="modal-cat-tab" onclick="filterModalCat('room')">Rooms & Furniture</div>
                     <div class="modal-cat-tab" onclick="filterModalCat('climate')">Climate & Air</div>
-                    <div class="modal-cat-tab" onclick="filterModalCat('media')">Media & Audio</div>
                     <div class="modal-cat-tab" onclick="filterModalCat('cover')">Doors & Covers</div>
-                    <div class="modal-cat-tab" onclick="filterModalCat('security')">Security & Locks</div>
+                    <div class="modal-cat-tab" onclick="filterModalCat('security')">Security & Access</div>
                     <div class="modal-cat-tab" onclick="filterModalCat('power')">Power & Energy</div>
                     <div class="modal-cat-tab" onclick="filterModalCat('appliance')">Appliances</div>
+                    <div class="modal-cat-tab" onclick="filterModalCat('media')">Media & Audio</div>
+                    <div class="modal-cat-tab" onclick="filterModalCat('vehicle')">Vehicles</div>
+                    <div class="modal-cat-tab" onclick="filterModalCat('outdoor')">Outdoor & Garden</div>
+                    <div class="modal-cat-tab" onclick="filterModalCat('sensor')">Sensors & Automations</div>
                 </div>
                 <div id="iconGridContainer" class="icon-grid"></div>
                 <button type="button" class="quick-btn" style="margin-top:8px; align-self:flex-start; padding:6px 14px;" onclick="resetIconOverride()">Reset to Default Icon (Auto)</button>
@@ -716,62 +719,104 @@ class WebSetupServer(
     <script>
         const ICON_GALLERY = [
             // Lighting
-            { id: 'lightbulb', label: 'Lightbulb', cat: 'light', svg: '<path d="M12 2a7 7 0 0 0-7 7c0 2.38 1.19 4.47 3 5.74V17a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-2.26c1.81-1.27 3-3.36 3-5.74a7 7 0 0 0-7-7zm-3 19a1 1 0 0 0 1 1h4a1 1 0 0 0 1-1v-1H9v1z"/>' },
-            { id: 'lamp', label: 'Desk Lamp', cat: 'light', svg: '<path d="M8 2h8l3 7H5l3-7zm4 8v10m-4 0h8"/>' },
-            { id: 'ceiling_light', label: 'Ceiling Light', cat: 'light', svg: '<path d="M12 2v4m-6 5 6-5 6 5M8 11h8a4 4 0 0 1-8 0z"/>' },
-            { id: 'strip', label: 'LED Strip', cat: 'light', svg: '<path d="M3 10h18v4H3zm3 2h2m4 0h2m4 0h2"/>' },
-            { id: 'sunny', label: 'Sun / Bright', cat: 'light', svg: '<circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72 1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>' },
-            { id: 'nightlight', label: 'Night Light', cat: 'light', svg: '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>' },
-            { id: 'spotlight', label: 'Spotlight', cat: 'light', svg: '<path d="M12 3a9 9 0 0 0-9 9l3 3 12-12-6-6zM3 21l6-6"/>' },
+            { id: 'lightbulb', label: 'Lightbulb', cat: 'light', svg: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-1 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>' },
+            { id: 'lamp', label: 'Desk Lamp', cat: 'light', svg: '<path d="M9 2h6l3 7H6l3-7z"/><path d="M12 9v11"/><path d="M8 20h8"/>' },
+            { id: 'ceiling_light', label: 'Ceiling Light', cat: 'light', svg: '<path d="M12 2v5"/><path d="M6 12a6 6 0 0 0 12 0H6z"/><path d="M9 12v1a3 3 0 0 0 6 0v-1"/>' },
+            { id: 'strip', label: 'LED Strip', cat: 'light', svg: '<rect x="2" y="9" width="20" height="6" rx="2"/><circle cx="6" cy="12" r="1"/><circle cx="10" cy="12" r="1"/><circle cx="14" cy="12" r="1"/><circle cx="18" cy="12" r="1"/>' },
+            { id: 'spotlight', label: 'Spotlight', cat: 'light', svg: '<path d="m14 2-8 11h6l-2 9 10-12h-6l2-8z"/>' },
+            { id: 'sunny', label: 'Sun / Bright', cat: 'light', svg: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/>' },
+            { id: 'nightlight', label: 'Night Light', cat: 'light', svg: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/>' },
 
             // Rooms & Furniture
-            { id: 'sofa', label: 'Sofa / Couch', cat: 'room', svg: '<path d="M20 9V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2a3 3 0 0 0-3 3v5a1 1 0 0 0 1 1h1v2h2v-2h14v2h2v-2h1a1 1 0 0 0 1-1v-5a3 3 0 0 0-3-3zM4 14v-2a1 1 0 0 1 1-1h1v3H4zm16 0h-2v-3h1a1 1 0 0 1 1 1v2z"/>' },
-            { id: 'bed', label: 'Bed / Bedroom', cat: 'room', svg: '<path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v3"/>' },
-            { id: 'chair', label: 'Chair', cat: 'room', svg: '<path d="M7 3h10v9H7zm0 9h10v4H7zm5 4v5m-4 0h8"/>' },
-            { id: 'table', label: 'Table / Desk', cat: 'room', svg: '<path d="M4 6h16v3H4zm2 3v12m12-12v12"/>' },
-            { id: 'kitchen', label: 'Kitchen / Dining', cat: 'room', svg: '<path d="M18 2v20M2 2v6a3 3 0 0 0 3 3h1v11M6 2v6m-4-6v6"/>' },
-            { id: 'bath', label: 'Bathroom', cat: 'room', svg: '<path d="M2 12h20v4a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5v-4zm2 0V6a2 2 0 0 1 2-2h1"/>' },
+            { id: 'sofa', label: 'Sofa / Couch', cat: 'room', svg: '<path d="M20 9V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v2"/><path d="M2 11v5a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-5a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2z"/><path d="M4 18v2"/><path d="M20 18v2"/>' },
+            { id: 'bed', label: 'Bed / Bedroom', cat: 'room', svg: '<path d="M2 4v16"/><path d="M2 8h18a2 2 0 0 1 2 2v10"/><path d="M2 17h20"/><path d="M6 8v4"/>' },
+            { id: 'chair', label: 'Chair', cat: 'room', svg: '<path d="M7 4v8h10V4a2 2 0 0 0-2-2H9a2 2 0 0 0-2 2z"/><path d="M5 12h14a2 2 0 0 1 2 2v2H3v-2a2 2 0 0 1 2-2z"/><path d="M6 16v5"/><path d="M18 16v5"/>' },
+            { id: 'table', label: 'Dining Table', cat: 'room', svg: '<path d="M3 7h18"/><path d="M4 7l2 14"/><path d="M20 7l-2 14"/><path d="M7 14h10"/>' },
+            { id: 'desk', label: 'Desk / Office', cat: 'room', svg: '<rect x="3" y="6" width="18" height="4" rx="1"/><path d="M5 10v10"/><path d="M19 10v10"/><path d="M14 10v10"/><path d="M14 14h5"/><path d="M14 17h5"/>' },
+            { id: 'kitchen', label: 'Kitchen', cat: 'room', svg: '<rect x="4" y="2" width="16" height="20" rx="2"/><path d="M4 10h16"/><path d="M9 6v2"/><path d="M9 14v4"/>' },
+            { id: 'bath', label: 'Bathtub', cat: 'room', svg: '<path d="M2 12h20v4a5 5 0 0 1-5 5H7a5 5 0 0 1-5-5v-4z"/><path d="M4 12V5a2 2 0 0 1 2-2h2"/>' },
+            { id: 'shower', label: 'Shower', cat: 'room', svg: '<path d="M4 4h7a4 4 0 0 1 4 4v2"/><path d="M12 14l-1 2"/><path d="M15 14l-1 2"/><path d="M18 14l-1 2"/><path d="M11 10h8l-1 4h-6z"/>' },
 
             // Climate & Air
-            { id: 'fan', label: 'Fan / Air', cat: 'climate', svg: '<path d="M12 12c2-2 5-1 6 1s-1 5-3 5c-1 0-2-1-3-3zm0 0c-2-2-1-5 1-6s5 1 5 3c0 1-1 2-3 3zm0 0c-2 2-5 1-6-1s1-5 3-5c1 0 2 1 3 3zm0 0c2 2 1 5-1 6s-5-1-5-3c0-1 1-2 3-3z"/>' },
-            { id: 'ac', label: 'AC / Cold', cat: 'climate', svg: '<path d="M12 2v20M2 12h20M4.93 4.93l14.14 14.14M4.93 19.07l14.14-14.14"/>' },
-            { id: 'heater', label: 'Heater / Fire', cat: 'climate', svg: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3 2.5.5 4 2.5 4 4.5a3.5 3.5 0 0 1-7 0c0-1.78 1.4-3.27 2.5-4.5 1.5 2 2.5 3 2.5 4.5zM12 22a7.5 7.5 0 0 0 7.5-7.5c0-4-3-7.5-7.5-12.5C7.5 7 4.5 10.5 4.5 14.5A7.5 7.5 0 0 0 12 22z"/>' },
+            { id: 'ac', label: 'AC / Cold', cat: 'climate', svg: '<path d="M12 2v20"/><path d="M2 12h20"/><path d="m4.93 4.93 14.14 14.14"/><path d="m19.07 4.93-14.14 14.14"/><path d="M8 4l4 4 4-4"/><path d="M8 20l4-4 4 4"/>' },
+            { id: 'fan', label: 'Fan / Air', cat: 'climate', svg: '<path d="M12 12c2-2 5-1 6 1s-1 5-3 5c-1 0-2-1-3-3z"/><path d="M12 12c-2-2-1-5 1-6s5 1 5 3c0 1-1 2-3 3z"/><path d="M12 12c-2 2-5 1-6-1s1-5 3-5c1 0 2 1 3 3z"/><path d="M12 12c2 2 1 5-1 6s-5-1-5-3c0-1 1-2 3-3z"/>' },
+            { id: 'heater', label: 'Heater / Fire', cat: 'climate', svg: '<path d="M12 2c1 3 4 5 4 9a6 6 0 0 1-12 0c0-3 2-6 4-8 1 2 2 3 4-1z"/>' },
             { id: 'thermostat', label: 'Thermostat', cat: 'climate', svg: '<path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/>' },
+            { id: 'fireplace', label: 'Fireplace', cat: 'climate', svg: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M7 21v-8a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v8"/><path d="M12 15a1.5 1.5 0 0 1 1.5 1.5c0 1-.8 1.5-1.5 2.5-.7-1-1.5-1.5-1.5-2.5A1.5 1.5 0 0 1 12 15z"/>' },
+
+            // Doors, Windows & Covers
+            { id: 'door', label: 'Front Door', cat: 'cover', svg: '<path d="M4 21h16"/><path d="M6 21V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v17"/><circle cx="14" cy="12" r="1"/>' },
+            { id: 'door_sliding', label: 'Sliding Door', cat: 'cover', svg: '<path d="M3 21h18"/><path d="M4 21V4a1 1 0 0 1 1-1h7v18"/><path d="M12 3h7a1 1 0 0 1 1 1v17"/><path d="M9 12v2"/><path d="M15 12v2"/>' },
+            { id: 'garage', label: 'Garage Door', cat: 'cover', svg: '<path d="M3 21h18"/><path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/><path d="M8 9h8"/><path d="M8 13h8"/><path d="M8 17h8"/>' },
+            { id: 'window', label: 'Window', cat: 'cover', svg: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18"/><path d="M3 12h18"/>' },
+            { id: 'curtains', label: 'Curtains', cat: 'cover', svg: '<path d="M2 3h20"/><path d="M4 3v17c1-2 2-3 4-3s3 1 4 3V3"/><path d="M20 3v17c-1-2-2-3-4-3s-3 1-4 3V3"/>' },
+            { id: 'blinds', label: 'Blinds', cat: 'cover', svg: '<path d="M3 3h18"/><path d="M4 7h16"/><path d="M4 11h16"/><path d="M4 15h16"/><path d="M12 15v5"/><path d="M19 3v13"/>' },
+            { id: 'roller_shade', label: 'Roller Shade', cat: 'cover', svg: '<rect x="3" y="3" width="18" height="4" rx="1"/><path d="M5 7v9a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7"/><path d="M12 18v3"/>' },
+
+            // Security & Access
+            { id: 'lock', label: 'Lock', cat: 'security', svg: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>' },
+            { id: 'lock_open', label: 'Unlock', cat: 'security', svg: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>' },
+            { id: 'key', label: 'Key', cat: 'security', svg: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 8.3-8.3h3v3l-2 2v2l-2 2"/>' },
+            { id: 'shield', label: 'Security Shield', cat: 'security', svg: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>' },
+            { id: 'camera', label: 'CCTV Camera', cat: 'security', svg: '<path d="m22 7-6 4v2l6 4V7z"/><rect x="2" y="6" width="14" height="12" rx="2"/>' },
+            { id: 'doorbell', label: 'Doorbell', cat: 'security', svg: '<rect x="6" y="3" width="12" height="18" rx="3"/><circle cx="12" cy="13" r="2.5"/><path d="M12 7h.01"/>' },
+            { id: 'alarm', label: 'Alarm / Siren', cat: 'security', svg: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="m5 3-2 2"/><path d="m19 3 2 2"/>' },
+
+            // Power & Energy
+            { id: 'power', label: 'Power Switch', cat: 'power', svg: '<path d="M18.36 6.64a9 9 0 1 1-12.73 0"/><path d="M12 2v10"/>' },
+            { id: 'socket', label: 'Power Socket', cat: 'power', svg: '<circle cx="12" cy="12" r="10"/><line x1="9" y1="9.5" x2="9" y2="14.5"/><line x1="15" y1="9.5" x2="15" y2="14.5"/><circle cx="12" cy="16.5" r="1"/>' },
+            { id: 'plug', label: 'Power Plug', cat: 'power', svg: '<path d="M6 3v6"/><path d="M18 3v6"/><path d="M4 9h16v3a8 8 0 0 1-7 7.93V22h-2v-2.07A8 8 0 0 1 4 12V9z"/>' },
+            { id: 'bolt', label: 'Energy / Electricity', cat: 'power', svg: '<polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>' },
+            { id: 'battery', label: 'Battery', cat: 'power', svg: '<rect x="2" y="7" width="16" height="10" rx="2"/><line x1="20" y1="11" x2="20" y2="13"/><line x1="6" y1="12" x2="10" y2="12"/><line x1="10" y1="10" x2="14" y2="14"/>' },
+            { id: 'solar', label: 'Solar Power', cat: 'power', svg: '<path d="M3 14h18l-3 7H6l-3-7z"/><path d="M8 14l1 7"/><path d="M16 14l-1 7"/><path d="M12 3v5"/><path d="m5 6 3 2"/><path d="m19 6-3 2"/>' },
+
+            // Appliances
+            { id: 'vacuum', label: 'Robot Vacuum', cat: 'appliance', svg: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v3"/><path d="M12 18v3"/>' },
+            { id: 'coffee', label: 'Coffee Maker', cat: 'appliance', svg: '<path d="M6 2h12v4H6z"/><path d="M6 6v14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V6"/><path d="M10 13h4"/><path d="M9 16h6"/>' },
+            { id: 'laundry', label: 'Washing Machine', cat: 'appliance', svg: '<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="13" r="5"/><circle cx="12" cy="13" r="2"/><circle cx="8" cy="6" r="1"/><circle cx="12" cy="6" r="1"/>' },
+            { id: 'microwave', label: 'Microwave', cat: 'appliance', svg: '<rect x="2" y="4" width="20" height="16" rx="2"/><rect x="5" y="7" width="10" height="10" rx="1"/><line x1="18" y1="8" x2="18" y2="8.01"/><line x1="18" y1="12" x2="18" y2="12.01"/><line x1="18" y1="16" x2="18" y2="16.01"/>' },
+            { id: 'blender', label: 'Blender', cat: 'appliance', svg: '<path d="M8 2h8l-1 11H9L8 2z"/><rect x="6" y="17" width="12" height="5" rx="1"/><path d="M9 13v4"/><path d="M15 13v4"/>' },
+            { id: 'iron', label: 'Iron', cat: 'appliance', svg: '<path d="M2 18h18a2 2 0 0 0 2-2c0-4-4-7-9-7H7l-5 9z"/><path d="M5 9V6a2 2 0 0 1 2-2h8"/>' },
+            { id: 'grill', label: 'Outdoor Grill', cat: 'appliance', svg: '<path d="M4 10a8 8 0 0 0 16 0H4z"/><path d="M7 10v4"/><path d="M12 10v4"/><path d="M17 10v4"/><path d="M7 14l-3 8"/><path d="M17 14l3 8"/>' },
 
             // Media & Audio
             { id: 'tv', label: 'TV / Display', cat: 'media', svg: '<rect x="2" y="7" width="20" height="13" rx="2"/><path d="m17 2-5 5-5-5"/>' },
-            { id: 'monitor', label: 'Monitor', cat: 'media', svg: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8m-4-4v4"/>' },
-            { id: 'laptop', label: 'Laptop', cat: 'media', svg: '<path d="M20 16V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11m-4 4h24"/>' },
+            { id: 'monitor', label: 'Monitor / PC', cat: 'media', svg: '<rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/>' },
+            { id: 'laptop', label: 'Laptop', cat: 'media', svg: '<path d="M20 16V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11"/><path d="M2 20h20"/>' },
+            { id: 'smartphone', label: 'Smartphone', cat: 'media', svg: '<rect x="6" y="2" width="12" height="20" rx="2"/><circle cx="12" cy="18" r="1"/>' },
+            { id: 'tablet', label: 'Tablet', cat: 'media', svg: '<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="18" r="1"/>' },
             { id: 'speaker', label: 'Speaker', cat: 'media', svg: '<rect x="4" y="2" width="16" height="20" rx="2"/><circle cx="12" cy="14" r="4"/><circle cx="12" cy="6" r="1.5"/>' },
-            { id: 'music', label: 'Music Note', cat: 'media', svg: '<path d="M9 18V5l12-2v13M9 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0zm12-2a3 3 0 1 1-6 0 3 3 0 0 1 6 0z"/>' },
+            { id: 'speaker_group', label: 'Speaker Group', cat: 'media', svg: '<rect x="8" y="2" width="13" height="16" rx="2"/><circle cx="14.5" cy="11" r="3"/><circle cx="14.5" cy="5" r="1"/><path d="M4 6v14a2 2 0 0 0 2 2h10"/>' },
             { id: 'headphones', label: 'Headphones', cat: 'media', svg: '<path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H4a1 1 0 0 1-1-1v-6a9 9 0 0 1 18 0v6a1 1 0 0 1-1 1h-2a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>' },
+            { id: 'music', label: 'Music Note', cat: 'media', svg: '<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>' },
+            { id: 'radio', label: 'Radio', cat: 'media', svg: '<rect x="2" y="8" width="20" height="14" rx="2"/><circle cx="16" cy="15" r="3"/><path d="M6 12h4"/><path d="M6 16h4"/><path d="m4 8 10-6"/>' },
+            { id: 'mic', label: 'Microphone', cat: 'media', svg: '<rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10a7 7 0 0 0 14 0"/><line x1="12" y1="17" x2="12" y2="22"/><line x1="8" y1="22" x2="16" y2="22"/>' },
+            { id: 'gamepad', label: 'Gamepad', cat: 'media', svg: '<path d="M6 12h4m-2-2v4M15 11h.01M18 13h.01M17.32 5H6.68A4.68 4.68 0 0 0 2 9.68v4.64A4.68 4.68 0 0 0 6.68 19l2.4-2h5.84l2.4 2A4.68 4.68 0 0 0 22 14.32V9.68A4.68 4.68 0 0 0 17.32 5z"/>' },
 
-            // Doors, Windows & Curtains
-            { id: 'curtains', label: 'Curtains', cat: 'cover', svg: '<path d="M2 2h20v2H2zm2 2v18h4c0-4 2-8 2-18zm14 0c0 10 2 14 2 18h-4V4z"/>' },
-            { id: 'window', label: 'Window', cat: 'cover', svg: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 3v18M3 12h18"/>' },
-            { id: 'door', label: 'Front Door', cat: 'cover', svg: '<path d="M4 21h16M6 21V3h12v18M14 11h2"/>' },
-            { id: 'garage', label: 'Garage Door', cat: 'cover', svg: '<path d="M2 20h20M4 20V5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v15M4 8h16M4 12h16M4 16h16"/>' },
+            // Vehicles
+            { id: 'car', label: 'Car / Vehicle', cat: 'vehicle', svg: '<path d="M5 17a2 2 0 1 0 4 0 2 2 0 0 0-4 0zm10 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0z"/><path d="M3 9l2-5h14l2 5v7H3V9zm0 0h18"/>' },
+            { id: 'electric_car', label: 'Electric Car', cat: 'vehicle', svg: '<path d="M5 17a2 2 0 1 0 4 0 2 2 0 0 0-4 0zm10 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0z"/><path d="M3 9l2-5h14l2 5v7H3V9zm0 0h18"/><path d="M12 2v3"/><path d="M10 3.5l4 0"/>' },
+            { id: 'ev_station', label: 'EV Charger', cat: 'vehicle', svg: '<rect x="3" y="3" width="10" height="18" rx="2"/><path d="M6 7h4"/><path d="M13 10h3a2 2 0 0 1 2 2v5a2 2 0 0 0 2 2 2 2 0 0 0 2-2v-7l-2-2"/>' },
+            { id: 'bike', label: 'Bicycle', cat: 'vehicle', svg: '<circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M15 6a1 1 0 1 0 0-2 1 1 0 0 0 0 2zm-3 11.5L9 9h3l3 4.5"/><path d="m14 9-3-5H8"/>' },
+            { id: 'motorcycle', label: 'Motorcycle', cat: 'vehicle', svg: '<circle cx="5" cy="16" r="3"/><circle cx="19" cy="16" r="3"/><path d="M12 16h3l3-7h-4l-3 4H8l-3 3"/><path d="M13 6h3"/>' },
 
-            // Security & Locks
-            { id: 'lock', label: 'Lock', cat: 'security', svg: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/>' },
-            { id: 'lock_open', label: 'Unlock', cat: 'security', svg: '<rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 9.9-1"/>' },
-            { id: 'shield', label: 'Security Shield', cat: 'security', svg: '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>' },
-            { id: 'camera', label: 'CCTV Camera', cat: 'security', svg: '<path d="m22 7-6 4v2l6 4V7z"/><rect x="2" y="6" width="14" height="12" rx="2"/>' },
+            // Outdoor & Garden
+            { id: 'yard', label: 'Garden / Plants', cat: 'outdoor', svg: '<path d="M12 22V8"/><path d="M5 12H2a10 10 0 0 1 10-10"/><path d="M19 12h3a10 10 0 0 0-10-10"/><path d="M12 14c2.5-3 5-3 8-3"/><path d="M12 14c-2.5-3-5-3-8-3"/>' },
+            { id: 'balcony', label: 'Balcony', cat: 'outdoor', svg: '<path d="M4 10V4a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v6"/><path d="M2 10h20v10a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V10z"/><path d="M6 10v11"/><path d="M10 10v11"/><path d="M14 10v11"/><path d="M18 10v11"/>' },
+            { id: 'pool', label: 'Swimming Pool', cat: 'outdoor', svg: '<path d="M2 15c2 0 3-1 5-1s3 1 5 1 3-1 5-1 3 1 5 1"/><path d="M2 19c2 0 3-1 5-1s3 1 5 1 3-1 5-1 3 1 5 1"/><path d="M15 5a2 2 0 1 0 0-4 2 2 0 0 0 0 4zm2 2-3 5h4l2-3"/>' },
+            { id: 'deck', label: 'Patio / Deck', cat: 'outdoor', svg: '<path d="M12 2v6"/><path d="m4 8 8-6 8 6"/><path d="M4 8v13"/><path d="M20 8v13"/><path d="M8 12h8"/><path d="M8 16h8"/>' },
+            { id: 'fence', label: 'Gate / Fence', cat: 'outdoor', svg: '<path d="M4 6 6 4l2 2v14H4z"/><path d="M10 6 12 4l2 2v14h-4z"/><path d="M16 6 18 4l2 2v14h-4z"/><path d="M2 10h20"/><path d="M2 16h20"/>' },
+            { id: 'hot_tub', label: 'Hot Tub', cat: 'outdoor', svg: '<path d="M2 14h20v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5z"/><path d="M6 5c1 1 1 2 0 3"/><path d="M12 5c1 1 1 2 0 3"/><path d="M18 5c1 1 1 2 0 3"/>' },
 
-            // Power & Sockets
-            { id: 'plug', label: 'Power Plug', cat: 'power', svg: '<path d="M6 3v6M18 3v6M4 9h16v3a8 8 0 0 1-7 7.93V22h-2v-2.07A8 8 0 0 1 4 12V9z"/>' },
-            { id: 'socket', label: 'Power Socket', cat: 'power', svg: '<circle cx="12" cy="12" r="10"/><circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>' },
-            { id: 'power', label: 'Power Switch', cat: 'power', svg: '<path d="M18.36 6.64a9 9 0 1 1-12.73 0M12 2v10"/>' },
-
-            // Appliances & Fun
-            { id: 'vacuum', label: 'Robot Vacuum', cat: 'appliance', svg: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3"/><path d="M12 3v6"/>' },
-            { id: 'coffee', label: 'Coffee Maker', cat: 'appliance', svg: '<path d="M18 8h1a4 4 0 0 1 0 8h-1M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8zm4-6v3m4-3v3m4-3v3"/>' },
-            { id: 'gamepad', label: 'Gamepad', cat: 'appliance', svg: '<path d="M6 12h4m-2-2v4M15 11h.01M18 13h.01M17.32 5H6.68A4.68 4.68 0 0 0 2 9.68v4.64A4.68 4.68 0 0 0 6.68 19l2.4-2h5.84l2.4 2A4.68 4.68 0 0 0 22 14.32V9.68A4.68 4.68 0 0 0 17.32 5z"/>' },
-            { id: 'car', label: 'Car / Vehicle', cat: 'appliance', svg: '<path d="M5 17a2 2 0 1 0 4 0 2 2 0 0 0-4 0zm10 0a2 2 0 1 0 4 0 2 2 0 0 0-4 0zM3 9l2-5h14l2 5v7H3V9zm0 0h18"/>' },
-            { id: 'palette', label: 'Scene / Color', cat: 'appliance', svg: '<circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><path d="M12 2C6.5 2 2 6.5 2 12c0 3.6 2.4 6.6 6 7.6 1 .3 1.5-.6 1.5-1.2v-1.9c0-1.7 1.3-3 3-3h2.5c4.1 0 7.5-3.4 7.5-7.5C22 4.5 17.5 2 12 2z"/>' },
-            { id: 'play', label: 'Script / Play', cat: 'appliance', svg: '<polygon points="5 3 19 12 5 21 5 3"/>' },
-            { id: 'wifi', label: 'WiFi Router', cat: 'appliance', svg: '<path d="M5 12.55a11 11 0 0 1 14.08 0M1.42 9a16 16 0 0 1 21.16 0M8.53 16.11a6 6 0 0 1 6.95 0M12 20h.01"/>' },
-            { id: 'sensor', label: 'Sensor', cat: 'appliance', svg: '<path d="M2 12h3l3-9 4 18 3-9h7"/>' }
+            // Sensors & Automations
+            { id: 'sensor', label: 'Motion Sensor', cat: 'sensor', svg: '<path d="M2 12h3l3-9 4 18 3-9h7"/>' },
+            { id: 'water', label: 'Water / Leak', cat: 'sensor', svg: '<path d="M12 2.69l5.66 5.66a8 8 0 1 1-11.31 0z"/>' },
+            { id: 'co2', label: 'CO2 / Smoke', cat: 'sensor', svg: '<circle cx="12" cy="12" r="9"/><path d="M9 10a2 2 0 0 0-2 2v0a2 2 0 0 2 2h1"/><path d="M15 10v4h2v-4h-2z"/>' },
+            { id: 'timer', label: 'Timer / Clock', cat: 'sensor', svg: '<circle cx="12" cy="14" r="8"/><path d="M12 10v4l3 2"/><path d="M10 2h4"/>' },
+            { id: 'wifi', label: 'WiFi Router', cat: 'sensor', svg: '<path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/>' },
+            { id: 'palette', label: 'Scene / Color', cat: 'sensor', svg: '<circle cx="13.5" cy="6.5" r="1.5"/><circle cx="17.5" cy="10.5" r="1.5"/><circle cx="8.5" cy="7.5" r="1.5"/><path d="M12 2C6.5 2 2 6.5 2 12c0 3.6 2.4 6.6 6 7.6 1 .3 1.5-.6 1.5-1.2v-1.9c0-1.7 1.3-3 3-3h2.5c4.1 0 7.5-3.4 7.5-7.5C22 4.5 17.5 2 12 2z"/>' },
+            { id: 'play', label: 'Script / Play', cat: 'sensor', svg: '<polygon points="5 3 19 12 5 21 5 3"/>' },
+            { id: 'pets', label: 'Pets', cat: 'sensor', svg: '<circle cx="4.5" cy="9.5" r="2"/><circle cx="9" cy="5.5" r="2"/><circle cx="15" cy="5.5" r="2"/><circle cx="19.5" cy="9.5" r="2"/><path d="M12 12c-3 0-5 2-5 5 0 2 2 3 5 3s5-1 5-3c0-3-2-5-5-5z"/>' }
         ];
 
         let allEntities = [];
@@ -795,7 +840,7 @@ class WebSetupServer(
             }
             // Domain fallback
             switch(fallbackDomain) {
-                case 'light': return ICON_GALLERY[0];
+                case 'light': return ICON_GALLERY.find(function(i) { return i.id === 'lightbulb'; });
                 case 'climate': return ICON_GALLERY.find(function(i) { return i.id === 'thermostat'; });
                 case 'media_player': return ICON_GALLERY.find(function(i) { return i.id === 'tv'; });
                 case 'cover': return ICON_GALLERY.find(function(i) { return i.id === 'curtains'; });
@@ -804,6 +849,8 @@ class WebSetupServer(
                 case 'vacuum': return ICON_GALLERY.find(function(i) { return i.id === 'vacuum'; });
                 case 'scene': return ICON_GALLERY.find(function(i) { return i.id === 'palette'; });
                 case 'script': return ICON_GALLERY.find(function(i) { return i.id === 'play'; });
+                case 'sensor':
+                case 'binary_sensor': return ICON_GALLERY.find(function(i) { return i.id === 'sensor'; });
                 default: return ICON_GALLERY.find(function(i) { return i.id === 'power'; });
             }
         }

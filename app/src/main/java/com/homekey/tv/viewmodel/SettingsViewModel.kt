@@ -43,9 +43,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val updateManager = UpdateManager(application)
 
     val appVersion: String = try {
-        application.packageManager.getPackageInfo(application.packageName, 0).versionName ?: "1.6.2"
+        application.packageManager.getPackageInfo(application.packageName, 0).versionName ?: "1.6.3"
     } catch (_: Exception) {
-        "1.6.2"
+        "1.6.3"
     }
 
     private val _updateState = MutableStateFlow<AppUpdateState>(AppUpdateState.Idle)

@@ -2,6 +2,7 @@ package com.homekey.tv
 
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.OptimisticToggle
+import androidx.compose.material.icons.filled.*
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -630,5 +631,117 @@ class HAModelTest {
         val dockHaDisabled = buildDockItemsMock(entities, pinned, apps, haEnabled = false)
         assertEquals(1, dockHaDisabled.size)
         assertEquals("app:com.google.android.youtube.tv", dockHaDisabled[0])
+    }
+
+    @Test
+    fun testIconGalleryDockMapping() {
+        val mappings = mapOf(
+            // Lighting
+            "lightbulb" to androidx.compose.material.icons.Icons.Default.Lightbulb,
+            "lamp" to androidx.compose.material.icons.Icons.Default.WbIncandescent,
+            "ceiling_light" to androidx.compose.material.icons.Icons.Default.Light,
+            "strip" to androidx.compose.material.icons.Icons.Default.Fluorescent,
+            "spotlight" to androidx.compose.material.icons.Icons.Default.FlashOn,
+            "sunny" to androidx.compose.material.icons.Icons.Default.WbSunny,
+            "nightlight" to androidx.compose.material.icons.Icons.Default.Nightlight,
+
+            // Rooms & Furniture
+            "sofa" to androidx.compose.material.icons.Icons.Default.Weekend,
+            "bed" to androidx.compose.material.icons.Icons.Default.Bed,
+            "chair" to androidx.compose.material.icons.Icons.Default.Chair,
+            "table" to androidx.compose.material.icons.Icons.Default.TableRestaurant,
+            "desk" to androidx.compose.material.icons.Icons.Default.Desk,
+            "kitchen" to androidx.compose.material.icons.Icons.Default.Kitchen,
+            "bath" to androidx.compose.material.icons.Icons.Default.Bathtub,
+            "shower" to androidx.compose.material.icons.Icons.Default.Shower,
+
+            // Climate & Air
+            "ac" to androidx.compose.material.icons.Icons.Default.AcUnit,
+            "fan" to androidx.compose.material.icons.Icons.Default.Air,
+            "heater" to androidx.compose.material.icons.Icons.Default.Whatshot,
+            "thermostat" to androidx.compose.material.icons.Icons.Default.Thermostat,
+            "fireplace" to androidx.compose.material.icons.Icons.Default.Fireplace,
+
+            // Doors, Windows & Covers
+            "door" to androidx.compose.material.icons.Icons.Default.DoorFront,
+            "door_sliding" to androidx.compose.material.icons.Icons.Default.DoorSliding,
+            "garage" to androidx.compose.material.icons.Icons.Default.Garage,
+            "window" to androidx.compose.material.icons.Icons.Default.Window,
+            "curtains" to androidx.compose.material.icons.Icons.Default.Curtains,
+            "blinds" to androidx.compose.material.icons.Icons.Default.Blinds,
+            "roller_shade" to androidx.compose.material.icons.Icons.Default.RollerShades,
+
+            // Security & Access
+            "lock" to androidx.compose.material.icons.Icons.Default.Lock,
+            "lock_open" to androidx.compose.material.icons.Icons.Default.LockOpen,
+            "key" to androidx.compose.material.icons.Icons.Default.Key,
+            "shield" to androidx.compose.material.icons.Icons.Default.Shield,
+            "camera" to androidx.compose.material.icons.Icons.Default.Videocam,
+            "doorbell" to androidx.compose.material.icons.Icons.Default.Doorbell,
+            "alarm" to androidx.compose.material.icons.Icons.Default.Alarm,
+
+            // Power & Energy
+            "power" to androidx.compose.material.icons.Icons.Default.PowerSettingsNew,
+            "socket" to androidx.compose.material.icons.Icons.Default.Outlet,
+            "plug" to androidx.compose.material.icons.Icons.Default.Power,
+            "bolt" to androidx.compose.material.icons.Icons.Default.Bolt,
+            "battery" to androidx.compose.material.icons.Icons.Default.BatteryChargingFull,
+            "solar" to androidx.compose.material.icons.Icons.Default.SolarPower,
+
+            // Appliances
+            "vacuum" to androidx.compose.material.icons.Icons.Default.SmartToy,
+            "coffee" to androidx.compose.material.icons.Icons.Default.CoffeeMaker,
+            "laundry" to androidx.compose.material.icons.Icons.Default.LocalLaundryService,
+            "microwave" to androidx.compose.material.icons.Icons.Default.Microwave,
+            "blender" to androidx.compose.material.icons.Icons.Default.Blender,
+            "iron" to androidx.compose.material.icons.Icons.Default.Iron,
+            "grill" to androidx.compose.material.icons.Icons.Default.OutdoorGrill,
+
+            // Media & Audio
+            "tv" to androidx.compose.material.icons.Icons.Default.Tv,
+            "monitor" to androidx.compose.material.icons.Icons.Default.DesktopWindows,
+            "laptop" to androidx.compose.material.icons.Icons.Default.Laptop,
+            "smartphone" to androidx.compose.material.icons.Icons.Default.Smartphone,
+            "tablet" to androidx.compose.material.icons.Icons.Default.Tablet,
+            "speaker" to androidx.compose.material.icons.Icons.Default.Speaker,
+            "speaker_group" to androidx.compose.material.icons.Icons.Default.SpeakerGroup,
+            "headphones" to androidx.compose.material.icons.Icons.Default.Headphones,
+            "music" to androidx.compose.material.icons.Icons.Default.MusicNote,
+            "radio" to androidx.compose.material.icons.Icons.Default.Radio,
+            "mic" to androidx.compose.material.icons.Icons.Default.Mic,
+            "gamepad" to androidx.compose.material.icons.Icons.Default.SportsEsports,
+
+            // Vehicles
+            "car" to androidx.compose.material.icons.Icons.Default.DirectionsCar,
+            "electric_car" to androidx.compose.material.icons.Icons.Default.ElectricCar,
+            "ev_station" to androidx.compose.material.icons.Icons.Default.EvStation,
+            "bike" to androidx.compose.material.icons.Icons.Default.PedalBike,
+            "motorcycle" to androidx.compose.material.icons.Icons.Default.TwoWheeler,
+
+            // Outdoor & Garden
+            "yard" to androidx.compose.material.icons.Icons.Default.Yard,
+            "balcony" to androidx.compose.material.icons.Icons.Default.Balcony,
+            "pool" to androidx.compose.material.icons.Icons.Default.Pool,
+            "deck" to androidx.compose.material.icons.Icons.Default.Deck,
+            "fence" to androidx.compose.material.icons.Icons.Default.Fence,
+            "hot_tub" to androidx.compose.material.icons.Icons.Default.HotTub,
+
+            // Sensors & Automations
+            "sensor" to androidx.compose.material.icons.Icons.Default.Sensors,
+            "water" to androidx.compose.material.icons.Icons.Default.WaterDrop,
+            "co2" to androidx.compose.material.icons.Icons.Default.Co2,
+            "timer" to androidx.compose.material.icons.Icons.Default.Timer,
+            "wifi" to androidx.compose.material.icons.Icons.Default.Wifi,
+            "palette" to androidx.compose.material.icons.Icons.Default.Palette,
+            "play" to androidx.compose.material.icons.Icons.Default.PlayArrow,
+            "pets" to androidx.compose.material.icons.Icons.Default.Pets
+        )
+
+        assertEquals(78, mappings.size)
+
+        for ((id, expectedIcon) in mappings) {
+            val resolved = com.homekey.tv.ui.panel.resolveDockIcon(id, null, "custom_unknown_domain")
+            assertEquals("Icon id '$id' must resolve to expected ${expectedIcon.name} but got ${resolved.name}", expectedIcon, resolved)
+        }
     }
 }
