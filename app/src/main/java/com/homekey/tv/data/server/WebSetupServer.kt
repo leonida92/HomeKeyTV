@@ -1179,3 +1179,43 @@ class WebSetupServer(
         """.trimIndent()
     }
 }
+
+object WebSetupServerManager {
+    private const val TAG = "WebSetupServerManager"
+    private var server: WebSetupServer? = null
+
+    @Synchronized
+    fun start(prefs: PreferencesManager, onConfigUpdated: () -> Unit = {}) {
+        if (!prefs.haEnabled.value) {
+            Log.d(TAG, "HA integration is disabled, not starting WebSetupServer")
+            stop()
+            return
+        }
+        if (server?.isAlive == true) {
+            Log.d(TAG, "WebSetupServer already running on port 8124")
+            return
+        }
+        try {
+            server = WebSetupServer(8124, prefs, onConfigUpdated)
+            server?.start()
+            Log.d(TAG, "WebSetupServer started on port 8124")
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to start WebSetupServer on port 8124", e)
+        }
+    }
+
+    @Synchronized
+    fun stop() {
+        try {
+            if (server != null) {
+                server?.stop()
+                server = null
+                Log.d(TAG, "WebSetupServer stopped")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error stopping WebSetupServer", e)
+        }
+    }
+
+    fun isRunning(): Boolean = server?.isAlive == true
+}

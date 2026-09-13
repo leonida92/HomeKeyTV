@@ -85,6 +85,7 @@ fun SettingsScreen(
     val updateState by viewModel.updateState.collectAsState()
     val recentAppsEnabled by viewModel.recentAppsEnabled.collectAsState()
     val recentAppsCount by viewModel.recentAppsCount.collectAsState()
+    val haEnabled by viewModel.haEnabled.collectAsState()
     val appVersion = viewModel.appVersion
 
     var selectedTab by remember { mutableIntStateOf(0) } // 0: Phone Setup, 1: Layout Position, 2: Button Remap, 3: Installed Apps, 4: Updates
@@ -94,6 +95,7 @@ fun SettingsScreen(
     val tab2FocusRequester = remember { FocusRequester() }
     val tab3FocusRequester = remember { FocusRequester() }
     val tab4FocusRequester = remember { FocusRequester() }
+    val haToggleFocusRequester = remember { FocusRequester() }
     val updateActionButtonFocusRequester = remember { FocusRequester() }
     val firstDockChoiceFocusRequester = remember { FocusRequester() }
     val firstAppFocusRequester = remember { FocusRequester() }
@@ -115,6 +117,7 @@ fun SettingsScreen(
         delay(60)
         try {
             when (tab) {
+                0 -> haToggleFocusRequester.requestFocus()
                 1 -> firstDockChoiceFocusRequester.requestFocus()
                 2 -> requestButtonRemapContentFocus = true
                 3 -> recentAppsToggleFocusRequester.requestFocus()
@@ -166,7 +169,8 @@ fun SettingsScreen(
                             .size(8.dp)
                             .clip(CircleShape)
                             .background(
-                                when (connectionStatus) {
+                                if (!haEnabled) Color(0xFF64748B)
+                                else when (connectionStatus) {
                                     ConnectionStatus.AUTHENTICATED -> HA_Green_On
                                     ConnectionStatus.CONNECTING -> HA_Yellow_On
                                     else -> HA_Red_Off
@@ -174,7 +178,8 @@ fun SettingsScreen(
                             )
                     )
                     Text(
-                        text = when (connectionStatus) {
+                        text = if (!haEnabled) "Disabled"
+                        else when (connectionStatus) {
                             ConnectionStatus.AUTHENTICATED -> "Connected ($entityCount entities)"
                             ConnectionStatus.CONNECTING -> "Connecting..."
                             else -> "Disconnected"
@@ -196,7 +201,11 @@ fun SettingsScreen(
                     onLeft = { /* Stop at first tab: consume left */ },
                     onRight = { try { tab1FocusRequester.requestFocus() } catch (_: Exception) {} },
                     onUp = { /* Stay on tab bar */ },
-                    onDown = { /* Consume down on tab 0 so focus stays on tab bar */ },
+                    onDown = {
+                        selectedTab = 0
+                        requestTabContentFocus = 0
+                        try { haToggleFocusRequester.requestFocus() } catch (_: Exception) {}
+                    },
                     onSelect = { selectedTab = 0 }
                 )
                 SettingsTabItem(
@@ -261,10 +270,14 @@ fun SettingsScreen(
             // Tab Content
             Box(modifier = Modifier.weight(1f)) {
                 when (selectedTab) {
-                    0 -> QRSetupView(
+                    0 -> PhoneSetupView(
+                        haEnabled = haEnabled,
+                        onToggleHaEnabled = { viewModel.setHaEnabled(!haEnabled) },
+                        toggleFocusRequester = haToggleFocusRequester,
                         setupUrl = setupUrl,
                         qrBitmap = qrBitmap,
-                        pairingPin = pairingPin
+                        pairingPin = pairingPin,
+                        onUpToTab = { tab0FocusRequester.requestFocus() }
                     )
                     1 -> LayoutStyleView(
                         currentLayout = panelLayout,
@@ -684,120 +697,292 @@ fun LayoutChoiceCard(
 }
 
 @Composable
-fun QRSetupView(
+fun PhoneSetupView(
+    haEnabled: Boolean,
+    onToggleHaEnabled: () -> Unit,
+    toggleFocusRequester: FocusRequester,
     setupUrl: String?,
     qrBitmap: Bitmap?,
-    pairingPin: String
+    pairingPin: String,
+    onUpToTab: () -> Unit
 ) {
-    Row(
+    Column(
         modifier = Modifier.fillMaxSize(),
-        horizontalArrangement = Arrangement.spacedBy(24.dp)
+        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        Box(
-            modifier = Modifier
-                .weight(1f)
-                .fillMaxHeight()
-                .clip(RoundedCornerShape(16.dp))
-                .background(Color(0xFF1E293B))
-                .border(1.dp, Color(0x33475569), RoundedCornerShape(16.dp))
-                .padding(24.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            if (qrBitmap != null) {
-                Image(
-                    bitmap = qrBitmap.asImageBitmap(),
-                    contentDescription = "QR Code Setup",
+        HaIntegrationToggleCard(
+            enabled = haEnabled,
+            onToggle = onToggleHaEnabled,
+            toggleFocusRequester = toggleFocusRequester,
+            onUp = onUpToTab
+        )
+
+        if (haEnabled) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                horizontalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
+                Box(
                     modifier = Modifier
-                        .size(260.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                )
-            } else {
-                CircularProgressIndicator(color = HA_Blue)
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Color(0xFF1E293B))
+                        .border(1.dp, Color(0x33475569), RoundedCornerShape(16.dp))
+                        .padding(20.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (qrBitmap != null) {
+                        Image(
+                            bitmap = qrBitmap.asImageBitmap(),
+                            contentDescription = "QR Code Setup",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                    } else {
+                        CircularProgressIndicator(color = HA_Blue)
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1.2f)
+                        .fillMaxHeight(),
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text(
+                            text = "Instant Phone Setup",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+
+                        Text(
+                            text = "1. Connect your phone to the same Wi-Fi network.\n" +
+                                    "2. Scan the QR code or open the link below in your mobile browser.\n" +
+                                    "3. Enter the Pairing PIN shown here, plus your Home Assistant URL and Token (once).",
+                            fontSize = 13.sp,
+                            color = TV_Text_Secondary,
+                            lineHeight = 19.sp
+                        )
+
+                        if (setupUrl != null) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF1E293B))
+                                    .border(1.dp, Color(0x33475569), RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 14.dp, vertical = 8.dp)
+                            ) {
+                                Text(
+                                    text = setupUrl,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = HA_Blue
+                                )
+                            }
+                        }
+
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(14.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Pairing PIN",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TV_Text_Secondary
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(10.dp))
+                                    .background(Color(0xFF0B1120))
+                                    .border(1.dp, HA_Yellow_On, RoundedCornerShape(10.dp))
+                                    .padding(horizontal = 18.dp, vertical = 6.dp)
+                            ) {
+                                Text(
+                                    text = pairingPin,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = HA_Yellow_On,
+                                    letterSpacing = 8.sp
+                                )
+                            }
+                        }
+                    }
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Info, contentDescription = null, tint = TV_Text_Secondary, modifier = Modifier.size(16.dp))
+                        Text(
+                            text = "Web setup server running locally on port 8124",
+                            fontSize = 11.sp,
+                            color = TV_Text_Secondary
+                        )
+                    }
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(Color(0xFF1E293B))
+                    .border(1.dp, Color(0x33475569), RoundedCornerShape(16.dp))
+                    .padding(24.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(CircleShape)
+                            .background(Color(0x2264748B)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PowerSettingsNew,
+                            contentDescription = null,
+                            tint = Color(0xFF94A3B8),
+                            modifier = Modifier.size(28.dp)
+                        )
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            text = "Home Assistant Integration Disabled",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Home Assistant entities are hidden from the dock, and the web setup server is stopped to conserve TV performance.\nEnable this toggle anytime you want to configure entities or connect to Home Assistant.",
+                            fontSize = 13.sp,
+                            color = TV_Text_Secondary,
+                            lineHeight = 18.sp
+                        )
+                    }
+                }
             }
         }
+    }
+}
 
-        Column(
-            modifier = Modifier
-                .weight(1.2f)
-                .fillMaxHeight(),
-            verticalArrangement = Arrangement.SpaceBetween
+@Composable
+fun HaIntegrationToggleCard(
+    enabled: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier,
+    toggleFocusRequester: FocusRequester? = null,
+    onUp: (() -> Unit)? = null
+) {
+    val toggleInteractionSource = remember { MutableInteractionSource() }
+    val isToggleFocused by toggleInteractionSource.collectIsFocusedAsState()
+
+    val toggleScale by animateFloatAsState(
+        targetValue = if (isToggleFocused) 1.015f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
+        label = "ha_toggle_scale"
+    )
+
+    val toggleFocusMod = if (toggleFocusRequester != null) Modifier.focusRequester(toggleFocusRequester) else Modifier
+
+    Row(
+        modifier = modifier
+            .then(toggleFocusMod)
+            .fillMaxWidth()
+            .scale(toggleScale)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isToggleFocused) TV_Surface_Focused else Color(0xFF1E293B))
+            .border(
+                width = if (isToggleFocused) 2.dp else 1.dp,
+                color = if (isToggleFocused) TV_Border_Focused else Color(0x33475569),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .onPreviewKeyEvent { keyEvent ->
+                val code = keyEvent.nativeKeyEvent.keyCode
+                if (keyEvent.type == KeyEventType.KeyUp) {
+                    if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                        onToggle()
+                        return@onPreviewKeyEvent true
+                    }
+                    if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                        return@onPreviewKeyEvent true
+                    }
+                } else if (keyEvent.type == KeyEventType.KeyDown) {
+                    if (code == KeyEvent.KEYCODE_DPAD_UP && onUp != null) {
+                        onUp()
+                        return@onPreviewKeyEvent true
+                    }
+                    if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                        return@onPreviewKeyEvent true
+                    }
+                }
+                false
+            }
+            .clickable(
+                interactionSource = toggleInteractionSource,
+                indication = null,
+                onClick = onToggle
+            )
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(14.dp),
+            modifier = Modifier.weight(1f)
         ) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(if (enabled) HA_Blue else Color(0x33FFFFFF)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Home,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+            Column {
                 Text(
-                    text = "Instant Phone Setup",
-                    fontSize = 20.sp,
+                    text = "Enable Home Assistant Integration",
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
-
                 Text(
-                    text = "1. Connect your phone to the same Wi-Fi network.\n" +
-                            "2. Scan the QR code or open the link below in your mobile browser.\n" +
-                            "3. Enter the Pairing PIN shown here, plus your Home Assistant URL and Token (once).",
-                    fontSize = 13.sp,
-                    color = TV_Text_Secondary,
-                    lineHeight = 20.sp
-                )
-
-                if (setupUrl != null) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF1E293B))
-                            .border(1.dp, Color(0x33475569), RoundedCornerShape(10.dp))
-                            .padding(horizontal = 14.dp, vertical = 10.dp)
-                    ) {
-                        Text(
-                            text = setupUrl,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = HA_Blue
-                        )
-                    }
-                }
-
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(14.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text(
-                        text = "Pairing PIN",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = TV_Text_Secondary
-                    )
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color(0xFF0B1120))
-                            .border(1.dp, HA_Yellow_On, RoundedCornerShape(10.dp))
-                            .padding(horizontal = 18.dp, vertical = 8.dp)
-                    ) {
-                        Text(
-                            text = pairingPin,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = HA_Yellow_On,
-                            letterSpacing = 8.sp
-                        )
-                    }
-                }
-            }
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(Icons.Default.Info, contentDescription = null, tint = TV_Text_Secondary, modifier = Modifier.size(16.dp))
-                Text(
-                    text = "Web setup server running locally on port 8124",
-                    fontSize = 11.sp,
+                    text = if (enabled) "Home Assistant entities and controls are active on your dock"
+                           else "Integration is disabled; web server is stopped and HA entities are hidden",
+                    fontSize = 12.sp,
                     color = TV_Text_Secondary
                 )
             }
         }
+
+        Switch(
+            checked = enabled,
+            onCheckedChange = null,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White,
+                checkedTrackColor = HA_Blue,
+                uncheckedThumbColor = Color(0xFF94A3B8),
+                uncheckedTrackColor = Color(0xFF334155)
+            )
+        )
     }
 }
 

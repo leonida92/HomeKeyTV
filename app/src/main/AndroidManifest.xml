@@ -73,10 +73,10 @@
             </intent-filter>
         </activity>
 
-        <!-- Settings & Phone Setup Activity (only launched from within this app) -->
+        <!-- Settings & Phone Setup Activity -->
         <activity
             android:name=".ui.SettingsActivity"
-            android:exported="false"
+            android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/Theme.HomeAssistantTV"
             android:label="Settings" />

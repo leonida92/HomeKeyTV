@@ -18,6 +18,7 @@ import com.homekey.tv.data.models.ConnectionStatus
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.InstalledAppInfo
 import com.homekey.tv.data.models.PinnedAppConfig
+import com.homekey.tv.data.server.WebSetupServerManager
 import com.homekey.tv.service.LocalAdbManager
 import com.homekey.tv.service.RemoteButtonRemapService
 import com.homekey.tv.util.NetworkUtils
@@ -42,14 +43,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val updateManager = UpdateManager(application)
 
     val appVersion: String = try {
-        application.packageManager.getPackageInfo(application.packageName, 0).versionName ?: "1.6.1"
+        application.packageManager.getPackageInfo(application.packageName, 0).versionName ?: "1.6.2"
     } catch (_: Exception) {
-        "1.6.1"
+        "1.6.2"
     }
 
     private val _updateState = MutableStateFlow<AppUpdateState>(AppUpdateState.Idle)
     val updateState: StateFlow<AppUpdateState> = _updateState.asStateFlow()
 
+    val haEnabled: StateFlow<Boolean> = prefs.haEnabled
     val serverUrl: StateFlow<String> = prefs.serverUrl
     val accessToken: StateFlow<String> = prefs.accessToken
     val panelLayout: StateFlow<String> = prefs.panelLayout
@@ -101,8 +103,28 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val qrCodeBitmap: StateFlow<Bitmap?> = _qrCodeBitmap.asStateFlow()
 
     init {
-        loadSetupQr()
+        if (prefs.haEnabled.value) {
+            loadSetupQr()
+        }
         loadInstalledApps()
+    }
+
+    fun setHaEnabled(enabled: Boolean) {
+        prefs.setHaEnabled(enabled)
+        if (enabled) {
+            WebSetupServerManager.start(prefs) {
+                if (prefs.isConfigured && prefs.haEnabled.value) {
+                    wsClient.connect(prefs.serverUrl.value, prefs.accessToken.value)
+                }
+            }
+            if (prefs.isConfigured) {
+                wsClient.connect(prefs.serverUrl.value, prefs.accessToken.value)
+            }
+            loadSetupQr()
+        } else {
+            WebSetupServerManager.stop()
+            wsClient.disconnect()
+        }
     }
 
     fun loadSetupQr() {

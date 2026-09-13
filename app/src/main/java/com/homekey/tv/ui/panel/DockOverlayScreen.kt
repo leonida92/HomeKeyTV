@@ -300,7 +300,7 @@ fun DockOverlayScreen(
                                 onUnfocused = { label -> badgeState.clear(label) },
                                 modifier = Modifier
                                     .align(Alignment.CenterStart)
-                                    .padding(start = 100.dp)
+                                    .padding(start = 92.dp)
                             )
                         }
                     } else if (showRecentApps) {
@@ -440,7 +440,7 @@ fun DockOverlayScreen(
                                 onUnfocused = { label -> badgeState.clear(label) },
                                 modifier = Modifier
                                     .align(Alignment.CenterEnd)
-                                    .padding(end = 100.dp)
+                                    .padding(end = 92.dp)
                             )
                         }
                     } else if (showRecentApps) {
@@ -504,7 +504,7 @@ fun DockOverlayScreen(
                         Column(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(bottom = 20.dp),
+                                .padding(bottom = 12.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             if (isMinimalActive && activeDialogEntity != null) {
@@ -550,7 +550,7 @@ fun DockOverlayScreen(
                             )
 
                             if (showRecentApps) {
-                                Spacer(modifier = Modifier.height(12.dp))
+                                Spacer(modifier = Modifier.height(4.dp))
                                 RecentAppsSatellite(
                                     recentApps = displayRecentApps,
                                     focusRequesters = recentAppsFocusRequesters,
@@ -576,7 +576,7 @@ fun DockOverlayScreen(
                         Column(
                             modifier = Modifier
                                 .align(Alignment.BottomCenter)
-                                .padding(bottom = 36.dp),
+                                .padding(bottom = 28.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             FloatingLabelBadge(
@@ -1919,10 +1919,11 @@ fun RecentAppsSatellite(
     Box(
         modifier = modifier
             .graphicsLayer { alpha = satelliteAlpha }
-            .blur(if (isDialogActive) 6.dp else 0.dp)
+            .then(if (isDialogActive) Modifier.blur(6.dp) else Modifier)
     ) {
         if (isVertical) {
             Column(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -2020,6 +2021,7 @@ fun RecentAppsSatellite(
             }
         } else {
             Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {

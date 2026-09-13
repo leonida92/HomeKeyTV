@@ -70,8 +70,11 @@ class PreferencesManager(context: Context) {
     private val _recentApps = MutableStateFlow(loadRecentApps())
     val recentApps: StateFlow<List<String>> = _recentApps.asStateFlow()
 
+    private val _haEnabled = MutableStateFlow(prefs.getBoolean(KEY_HA_ENABLED, true))
+    val haEnabled: StateFlow<Boolean> = _haEnabled.asStateFlow()
+
     val isConfigured: Boolean
-        get() = serverUrl.value.isNotBlank() && accessToken.value.isNotBlank()
+        get() = haEnabled.value && serverUrl.value.isNotBlank() && accessToken.value.isNotBlank()
 
     fun setPopupStyle(style: String) {
         val normalized = normalizePopupStyle(style)
@@ -225,6 +228,11 @@ class PreferencesManager(context: Context) {
         _recentAppsCount.value = clamped
     }
 
+    fun setHaEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_HA_ENABLED, enabled).apply()
+        _haEnabled.value = enabled
+    }
+
     private fun loadRecentApps(): List<String> {
         val raw = prefs.getString(KEY_RECENT_APPS_LIST, null) ?: return emptyList()
         return try {
@@ -323,6 +331,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_BUTTON_REMAPS = "ha_button_remaps"
         private const val KEY_PANEL_LAYOUT = "ha_panel_layout"
         private const val KEY_PAIRING_PIN = "ha_pairing_pin"
+        const val KEY_HA_ENABLED = "ha_integration_enabled"
         const val KEY_POPUP_STYLE = "ha_popup_style"
         const val KEY_RECENT_APPS_ENABLED = "ha_recent_apps_enabled"
         const val KEY_RECENT_APPS_COUNT = "ha_recent_apps_count"

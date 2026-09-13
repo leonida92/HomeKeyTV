@@ -12,6 +12,7 @@ import com.homekey.tv.data.models.PinnedAppConfig
 import com.homekey.tv.data.models.PinnedEntityConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 
 data class DockItem(
     val id: String, // entityId or "app:pkg"
@@ -41,6 +42,7 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     val recentApps: StateFlow<List<String>> = prefs.recentApps
     val serverUrl: StateFlow<String> = prefs.serverUrl
     val accessToken: StateFlow<String> = prefs.accessToken
+    val haEnabled: StateFlow<Boolean> = prefs.haEnabled
     
     private val _overlayOpenEpoch = MutableStateFlow(0L)
     val overlayOpenEpoch: StateFlow<Long> = _overlayOpenEpoch.asStateFlow()
@@ -67,8 +69,8 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
 
     // Reactive config flag: changes whenever the server URL/token prefs change (e.g. after the
     // phone-setup server saves a config), so the dock can react without a manual re-check.
-    val isConfigured: StateFlow<Boolean> = combine(prefs.serverUrl, prefs.accessToken) { url, token ->
-        url.isNotBlank() && token.isNotBlank()
+    val isConfigured: StateFlow<Boolean> = combine(prefs.serverUrl, prefs.accessToken, prefs.haEnabled) { url, token, haEnabled ->
+        haEnabled && url.isNotBlank() && token.isNotBlank()
     }.stateIn(viewModelScope, SharingStarted.Eagerly, prefs.isConfigured)
 
     // Display items: unified list of pinned HA entities and pinned apps.
@@ -80,9 +82,10 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     val displayEntities: StateFlow<List<DockItem>> = combine(
         allEntities,
         pinnedConfigs,
-        pinnedApps
-    ) { entities, pinned, apps ->
-        buildDockItems(entities, pinned, apps)
+        pinnedApps,
+        prefs.haEnabled
+    ) { entities, pinned, apps, haEnabled ->
+        buildDockItems(entities, if (haEnabled) pinned else emptyList(), apps)
     }
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
@@ -125,9 +128,20 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         connectToHomeAssistant()
+        viewModelScope.launch {
+            prefs.haEnabled.collect { enabled ->
+                if (enabled) {
+                    connectToHomeAssistant()
+                } else {
+                    closeEntityDialog()
+                    wsClient.disconnect()
+                }
+            }
+        }
     }
 
     fun connectToHomeAssistant() {
+        if (!prefs.haEnabled.value) return
         val url = prefs.serverUrl.value
         val token = prefs.accessToken.value
         if (url.isNotBlank() && token.isNotBlank()) {

@@ -587,4 +587,48 @@ class HAModelTest {
         assertEquals(1, singlePinnedDock.size)
         assertEquals("light.lamp_5", singlePinnedDock[0])
     }
+
+    @Test
+    fun testDockItemsWithHaDisabled() {
+        fun buildDockItemsMock(
+            entities: Map<String, HAEntityState>,
+            pinned: List<com.homekey.tv.data.models.PinnedEntityConfig>,
+            apps: List<com.homekey.tv.data.models.PinnedAppConfig>,
+            haEnabled: Boolean
+        ): List<String> {
+            val result = mutableListOf<String>()
+            val effectivePinned = if (haEnabled) pinned else emptyList()
+            if (effectivePinned.isNotEmpty() || apps.isNotEmpty()) {
+                for (p in effectivePinned.sortedBy { it.order }) {
+                    val entity = entities[p.entityId] ?: HAEntityState(entityId = p.entityId, state = "loading")
+                    result.add(entity.entityId)
+                }
+                for (app in apps.sortedBy { it.order }) {
+                    result.add("app:${app.packageName}")
+                }
+            }
+            return result
+        }
+
+        val entities = mapOf(
+            "light.living_room" to HAEntityState(entityId = "light.living_room", state = "on")
+        )
+        val pinned = listOf(
+            com.homekey.tv.data.models.PinnedEntityConfig(entityId = "light.living_room", order = 0)
+        )
+        val apps = listOf(
+            com.homekey.tv.data.models.PinnedAppConfig(packageName = "com.google.android.youtube.tv", appName = "YouTube", order = 0)
+        )
+
+        // When HA is enabled, both HA entity and app are present
+        val dockHaEnabled = buildDockItemsMock(entities, pinned, apps, haEnabled = true)
+        assertEquals(2, dockHaEnabled.size)
+        assertEquals("light.living_room", dockHaEnabled[0])
+        assertEquals("app:com.google.android.youtube.tv", dockHaEnabled[1])
+
+        // When HA is disabled, HA entity is omitted and only app remains
+        val dockHaDisabled = buildDockItemsMock(entities, pinned, apps, haEnabled = false)
+        assertEquals(1, dockHaDisabled.size)
+        assertEquals("app:com.google.android.youtube.tv", dockHaDisabled[0])
+    }
 }
