@@ -39,6 +39,17 @@
   - Solid, high-contrast tiles and badges designed for TV readability over any background or active video stream.
   - Interactive popup dialogs for light brightness adjustment (0–100%), switches/booleans, and climate controls (temperature and HVAC modes).
   - Pin installed Android TV apps directly alongside Home Assistant entities.
+  - **Smart Reorder Visibility**: Reorder button automatically hides when 1 or fewer items are pinned, keeping the dock interface clean and uncluttered.
+  - **Side Dock Inset Badges**: Entity label badges in Left and Right dock modes are positioned at the top and inset inward to prevent visual overlapping with dock items.
+
+- **Recent Apps Satellite Dock**:
+  - Display up to 5 recently used Android TV apps in a satellite row or column adjacent to the primary dock.
+  - Configurable app count (1 to 5) via Settings > Installed Apps.
+  - Full-bleed circular icon styling with smooth 1.15x scale focus animation.
+  - Fluid bidirectional D-pad navigation:
+    - In Bottom Dock mode: press DPAD DOWN to move from dock items into the recent apps row; press DPAD UP to return.
+    - In Side Dock modes: centered vertical column easily accessible via D-pad.
+  - **Clean Empty Dock State**: When no entities are pinned, displays only recent apps along with a matching circular Settings shortcut, or a direct "Configure from settings" card if recent apps are disabled.
 
 - **Smart Home Media & TV Controls**:
   - Interactive `MediaPlayerDialog` modal for active media players: volume control bar with D-pad Left/Right control and Mute toggle, input source carousel, transport playback buttons (Play/Pause, Prev, Next), and power toggle.
@@ -102,7 +113,7 @@
    ```
 3. Install the Release APK:
    ```bash
-   adb install -r HomeKeyTV-v1.4.2.apk
+   adb install -r HomeKeyTV-v1.6.0.apk
    ```
 
 ### Option 2: Sideload via File Manager
@@ -155,7 +166,7 @@ cd HomeKeyTV
 ```
 
 The compiled release APK will be located at:
-`app/build/outputs/apk/release/HomeKeyTV-v1.4.2.apk`
+`app/build/outputs/apk/release/HomeKeyTV-v1.6.0.apk`
 
 ---
 

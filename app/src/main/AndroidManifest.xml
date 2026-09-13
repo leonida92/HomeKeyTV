@@ -57,6 +57,8 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:theme="@style/Theme.HomeAssistantTV.Overlay"
+            android:icon="@drawable/ic_launcher"
+            android:banner="@drawable/banner"
             android:windowSoftInputMode="adjustNothing">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -66,7 +68,7 @@
 
             <!-- Custom Action for Remote Shortcut / Button Remapping -->
             <intent-filter>
-                <action android:name="com.homeassistant.tv.OPEN_PANEL" />
+                <action android:name="com.homekey.tv.OPEN_PANEL" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
         </activity>
