@@ -97,7 +97,7 @@ fun DockOverlayScreen(
     val recentAppsCount by viewModel.recentAppsCount.collectAsState()
     val recentApps by viewModel.recentApps.collectAsState()
     val displayRecentApps = remember(recentApps, recentAppsCount) { recentApps.take(recentAppsCount) }
-    val showRecentApps = recentAppsEnabled && displayRecentApps.isNotEmpty() && !isReorderMode && activeDialogEntity == null
+    val showRecentApps = recentAppsEnabled && displayRecentApps.isNotEmpty() && !isReorderMode
 
     val recentAppsFocusRequesters = remember { List(5) { FocusRequester() } }
     val firstFocusRequester = remember { FocusRequester() }
@@ -282,7 +282,7 @@ fun DockOverlayScreen(
                             }
                         }
 
-                        if (showRecentApps) {
+                        if (showRecentApps && activeDialogEntity == null) {
                             RecentAppsSatellite(
                                 recentApps = displayRecentApps,
                                 focusRequesters = recentAppsFocusRequesters,
@@ -422,7 +422,7 @@ fun DockOverlayScreen(
                             )
                         }
 
-                        if (showRecentApps) {
+                        if (showRecentApps && activeDialogEntity == null) {
                             RecentAppsSatellite(
                                 recentApps = displayRecentApps,
                                 focusRequesters = recentAppsFocusRequesters,
@@ -536,7 +536,7 @@ fun DockOverlayScreen(
                                 settingsFocusRequester = settingsFocusRequester,
                                 reorderFocusRequester = reorderFocusRequester,
                                 itemFocusRequesters = itemFocusRequesters,
-                                onDirectionToRecent = if (showRecentApps) handleDirectionToRecent else null,
+                                onDirectionToRecent = if (showRecentApps && !isDialogActive) handleDirectionToRecent else null,
                                 directionToRecentKeyCode = KeyEvent.KEYCODE_DPAD_DOWN,
                                 onItemFocusedId = { id -> lastFocusedItemId = id },
                                 onFocused = { name, state, humidity -> badgeState.update(name, state, humidity) },
@@ -555,6 +555,7 @@ fun DockOverlayScreen(
                                     recentApps = displayRecentApps,
                                     focusRequesters = recentAppsFocusRequesters,
                                     isVertical = false,
+                                    isDialogActive = isDialogActive,
                                     onLaunchApp = { pkg ->
                                         viewModel.launchApp(pkg)
                                         onDismiss()
@@ -1893,6 +1894,7 @@ fun RecentAppsSatellite(
     recentApps: List<String>,
     focusRequesters: List<FocusRequester>,
     isVertical: Boolean,
+    isDialogActive: Boolean = false,
     onLaunchApp: (String) -> Unit,
     onExitToDock: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1908,196 +1910,210 @@ fun RecentAppsSatellite(
 
     val actualSettingsRequester = settingsFocusRequester ?: remember { FocusRequester() }
 
-    if (isVertical) {
-        Column(
-            modifier = modifier,
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            displayApps.forEachIndexed { index, packageName ->
-                val requester = focusRequesters.getOrElse(index) { remember { FocusRequester() } }
-                RecentAppCircleItem(
-                    packageName = packageName,
-                    focusRequester = requester,
-                    onClick = { onLaunchApp(packageName) },
-                    onFocused = onFocused,
-                    onUnfocused = onUnfocused,
-                    onPreviewKey = { keyEvent ->
-                        if (keyEvent.type == KeyEventType.KeyDown) {
-                            val native = keyEvent.nativeKeyEvent
-                            val isCenter = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                                    native.keyCode == KeyEvent.KEYCODE_ENTER ||
-                                    native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-                            if (isCenter) {
-                                onLaunchApp(packageName)
-                                return@RecentAppCircleItem true
-                            }
-                            if (native.keyCode == exitKeyCode) {
-                                onExitToDock()
-                                return@RecentAppCircleItem true
-                            }
-                            when (native.keyCode) {
-                                KeyEvent.KEYCODE_DPAD_UP -> {
-                                    if (index > 0) {
-                                        try { focusRequesters[index - 1].requestFocus() } catch (_: Exception) {}
-                                    }
-                                    return@RecentAppCircleItem true
-                                }
-                                KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                    if (index < displayApps.size - 1) {
-                                        try { focusRequesters[index + 1].requestFocus() } catch (_: Exception) {}
-                                    } else if (showSettingsButton) {
-                                        try { actualSettingsRequester.requestFocus() } catch (_: Exception) {}
-                                    }
-                                    return@RecentAppCircleItem true
-                                }
-                                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                    // Block escaping away from dock
-                                    return@RecentAppCircleItem true
-                                }
-                            }
-                        }
-                        false
-                    }
-                )
-            }
+    val satelliteAlpha by animateFloatAsState(
+        targetValue = if (isDialogActive) 0.22f else 1.0f,
+        animationSpec = tween(durationMillis = 150),
+        label = "satellite_alpha"
+    )
 
-            if (showSettingsButton) {
-                RecentAppCircleSettingsItem(
-                    focusRequester = actualSettingsRequester,
-                    onClick = { onOpenSettings?.invoke() },
-                    onFocused = { onFocused?.invoke("Settings") },
-                    onUnfocused = { onUnfocused?.invoke("Settings") },
-                    onPreviewKey = { keyEvent ->
-                        if (keyEvent.type == KeyEventType.KeyDown) {
-                            val native = keyEvent.nativeKeyEvent
-                            val isCenter = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                                    native.keyCode == KeyEvent.KEYCODE_ENTER ||
-                                    native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-                            if (isCenter) {
-                                onOpenSettings?.invoke()
-                                return@RecentAppCircleSettingsItem true
-                            }
-                            if (native.keyCode == exitKeyCode) {
-                                onExitToDock()
-                                return@RecentAppCircleSettingsItem true
-                            }
-                            when (native.keyCode) {
-                                KeyEvent.KEYCODE_DPAD_UP -> {
-                                    if (displayApps.isNotEmpty()) {
-                                        try { focusRequesters[displayApps.size - 1].requestFocus() } catch (_: Exception) {}
+    Box(
+        modifier = modifier
+            .graphicsLayer { alpha = satelliteAlpha }
+            .blur(if (isDialogActive) 6.dp else 0.dp)
+    ) {
+        if (isVertical) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                displayApps.forEachIndexed { index, packageName ->
+                    val requester = focusRequesters.getOrElse(index) { remember { FocusRequester() } }
+                    RecentAppCircleItem(
+                        packageName = packageName,
+                        focusRequester = requester,
+                        isDialogActive = isDialogActive,
+                        onClick = { onLaunchApp(packageName) },
+                        onFocused = onFocused,
+                        onUnfocused = onUnfocused,
+                        onPreviewKey = { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown) {
+                                val native = keyEvent.nativeKeyEvent
+                                val isCenter = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                                        native.keyCode == KeyEvent.KEYCODE_ENTER ||
+                                        native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                                if (isCenter) {
+                                    onLaunchApp(packageName)
+                                    return@RecentAppCircleItem true
+                                }
+                                if (native.keyCode == exitKeyCode) {
+                                    onExitToDock()
+                                    return@RecentAppCircleItem true
+                                }
+                                when (native.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_UP -> {
+                                        if (index > 0) {
+                                            try { focusRequesters[index - 1].requestFocus() } catch (_: Exception) {}
+                                        }
+                                        return@RecentAppCircleItem true
                                     }
-                                    return@RecentAppCircleSettingsItem true
-                                }
-                                KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                    // Bottom of list, block escaping
-                                    return@RecentAppCircleSettingsItem true
-                                }
-                                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                    // Block escaping away from dock
-                                    return@RecentAppCircleSettingsItem true
+                                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                        if (index < displayApps.size - 1) {
+                                            try { focusRequesters[index + 1].requestFocus() } catch (_: Exception) {}
+                                        } else if (showSettingsButton) {
+                                            try { actualSettingsRequester.requestFocus() } catch (_: Exception) {}
+                                        }
+                                        return@RecentAppCircleItem true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                        // Block escaping away from dock
+                                        return@RecentAppCircleItem true
+                                    }
                                 }
                             }
+                            false
                         }
-                        false
-                    }
-                )
-            }
-        }
-    } else {
-        Row(
-            modifier = modifier,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            displayApps.forEachIndexed { index, packageName ->
-                val requester = focusRequesters.getOrElse(index) { remember { FocusRequester() } }
-                RecentAppCircleItem(
-                    packageName = packageName,
-                    focusRequester = requester,
-                    onClick = { onLaunchApp(packageName) },
-                    onFocused = onFocused,
-                    onUnfocused = onUnfocused,
-                    onPreviewKey = { keyEvent ->
-                        if (keyEvent.type == KeyEventType.KeyDown) {
-                            val native = keyEvent.nativeKeyEvent
-                            val isCenter = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                                    native.keyCode == KeyEvent.KEYCODE_ENTER ||
-                                    native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-                            if (isCenter) {
-                                onLaunchApp(packageName)
-                                return@RecentAppCircleItem true
-                            }
-                            if (native.keyCode == exitKeyCode) {
-                                onExitToDock()
-                                return@RecentAppCircleItem true
-                            }
-                            when (native.keyCode) {
-                                KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                    if (index > 0) {
-                                        try { focusRequesters[index - 1].requestFocus() } catch (_: Exception) {}
-                                    }
-                                    return@RecentAppCircleItem true
-                                }
-                                KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                    if (index < displayApps.size - 1) {
-                                        try { focusRequesters[index + 1].requestFocus() } catch (_: Exception) {}
-                                    } else if (showSettingsButton) {
-                                        try { actualSettingsRequester.requestFocus() } catch (_: Exception) {}
-                                    }
-                                    return@RecentAppCircleItem true
-                                }
-                                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                    // Block escaping vertically (unless exitKeyCode matched above)
-                                    return@RecentAppCircleItem true
-                                }
-                            }
-                        }
-                        false
-                    }
-                )
-            }
+                    )
+                }
 
-            if (showSettingsButton) {
-                RecentAppCircleSettingsItem(
-                    focusRequester = actualSettingsRequester,
-                    onClick = { onOpenSettings?.invoke() },
-                    onFocused = { onFocused?.invoke("Settings") },
-                    onUnfocused = { onUnfocused?.invoke("Settings") },
-                    onPreviewKey = { keyEvent ->
-                        if (keyEvent.type == KeyEventType.KeyDown) {
-                            val native = keyEvent.nativeKeyEvent
-                            val isCenter = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
-                                    native.keyCode == KeyEvent.KEYCODE_ENTER ||
-                                    native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
-                            if (isCenter) {
-                                onOpenSettings?.invoke()
-                                return@RecentAppCircleSettingsItem true
-                            }
-                            if (native.keyCode == exitKeyCode) {
-                                onExitToDock()
-                                return@RecentAppCircleSettingsItem true
-                            }
-                            when (native.keyCode) {
-                                KeyEvent.KEYCODE_DPAD_LEFT -> {
-                                    if (displayApps.isNotEmpty()) {
-                                        try { focusRequesters[displayApps.size - 1].requestFocus() } catch (_: Exception) {}
+                if (showSettingsButton) {
+                    RecentAppCircleSettingsItem(
+                        focusRequester = actualSettingsRequester,
+                        isDialogActive = isDialogActive,
+                        onClick = { onOpenSettings?.invoke() },
+                        onFocused = { onFocused?.invoke("Settings") },
+                        onUnfocused = { onUnfocused?.invoke("Settings") },
+                        onPreviewKey = { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown) {
+                                val native = keyEvent.nativeKeyEvent
+                                val isCenter = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                                        native.keyCode == KeyEvent.KEYCODE_ENTER ||
+                                        native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                                if (isCenter) {
+                                    onOpenSettings?.invoke()
+                                    return@RecentAppCircleSettingsItem true
+                                }
+                                if (native.keyCode == exitKeyCode) {
+                                    onExitToDock()
+                                    return@RecentAppCircleSettingsItem true
+                                }
+                                when (native.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_UP -> {
+                                        if (displayApps.isNotEmpty()) {
+                                            try { focusRequesters[displayApps.size - 1].requestFocus() } catch (_: Exception) {}
+                                        }
+                                        return@RecentAppCircleSettingsItem true
                                     }
-                                    return@RecentAppCircleSettingsItem true
-                                }
-                                KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                                    // Rightmost item, block escaping
-                                    return@RecentAppCircleSettingsItem true
-                                }
-                                KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
-                                    // Block escaping vertically (unless exitKeyCode matched above)
-                                    return@RecentAppCircleSettingsItem true
+                                    KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                        // Bottom of list, block escaping
+                                        return@RecentAppCircleSettingsItem true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                        // Block escaping away from dock
+                                        return@RecentAppCircleSettingsItem true
+                                    }
                                 }
                             }
+                            false
                         }
-                        false
-                    }
-                )
+                    )
+                }
+            }
+        } else {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                displayApps.forEachIndexed { index, packageName ->
+                    val requester = focusRequesters.getOrElse(index) { remember { FocusRequester() } }
+                    RecentAppCircleItem(
+                        packageName = packageName,
+                        focusRequester = requester,
+                        isDialogActive = isDialogActive,
+                        onClick = { onLaunchApp(packageName) },
+                        onFocused = onFocused,
+                        onUnfocused = onUnfocused,
+                        onPreviewKey = { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown) {
+                                val native = keyEvent.nativeKeyEvent
+                                val isCenter = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                                        native.keyCode == KeyEvent.KEYCODE_ENTER ||
+                                        native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                                if (isCenter) {
+                                    onLaunchApp(packageName)
+                                    return@RecentAppCircleItem true
+                                }
+                                if (native.keyCode == exitKeyCode) {
+                                    onExitToDock()
+                                    return@RecentAppCircleItem true
+                                }
+                                when (native.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                        if (index > 0) {
+                                            try { focusRequesters[index - 1].requestFocus() } catch (_: Exception) {}
+                                        }
+                                        return@RecentAppCircleItem true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                        if (index < displayApps.size - 1) {
+                                            try { focusRequesters[index + 1].requestFocus() } catch (_: Exception) {}
+                                        } else if (showSettingsButton) {
+                                            try { actualSettingsRequester.requestFocus() } catch (_: Exception) {}
+                                        }
+                                        return@RecentAppCircleItem true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                        // Block escaping vertically (unless exitKeyCode matched above)
+                                        return@RecentAppCircleItem true
+                                    }
+                                }
+                            }
+                            false
+                        }
+                    )
+                }
+
+                if (showSettingsButton) {
+                    RecentAppCircleSettingsItem(
+                        focusRequester = actualSettingsRequester,
+                        isDialogActive = isDialogActive,
+                        onClick = { onOpenSettings?.invoke() },
+                        onFocused = { onFocused?.invoke("Settings") },
+                        onUnfocused = { onUnfocused?.invoke("Settings") },
+                        onPreviewKey = { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyDown) {
+                                val native = keyEvent.nativeKeyEvent
+                                val isCenter = native.keyCode == KeyEvent.KEYCODE_DPAD_CENTER ||
+                                        native.keyCode == KeyEvent.KEYCODE_ENTER ||
+                                        native.keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER
+                                if (isCenter) {
+                                    onOpenSettings?.invoke()
+                                    return@RecentAppCircleSettingsItem true
+                                }
+                                if (native.keyCode == exitKeyCode) {
+                                    onExitToDock()
+                                    return@RecentAppCircleSettingsItem true
+                                }
+                                when (native.keyCode) {
+                                    KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                        if (displayApps.isNotEmpty()) {
+                                            try { focusRequesters[displayApps.size - 1].requestFocus() } catch (_: Exception) {}
+                                        }
+                                        return@RecentAppCircleSettingsItem true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                        // Rightmost item, block escaping
+                                        return@RecentAppCircleSettingsItem true
+                                    }
+                                    KeyEvent.KEYCODE_DPAD_UP, KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                        // Block escaping vertically (unless exitKeyCode matched above)
+                                        return@RecentAppCircleSettingsItem true
+                                    }
+                                }
+                            }
+                            false
+                        }
+                    )
+                }
             }
         }
     }
@@ -2106,6 +2122,7 @@ fun RecentAppsSatellite(
 @Composable
 fun RecentAppCircleSettingsItem(
     focusRequester: FocusRequester,
+    isDialogActive: Boolean = false,
     onClick: () -> Unit,
     onFocused: (() -> Unit)? = null,
     onUnfocused: (() -> Unit)? = null,
@@ -2146,8 +2163,12 @@ fun RecentAppCircleSettingsItem(
             .onPreviewKeyEvent { keyEvent ->
                 onPreviewKey(keyEvent)
             }
-            .focusable(interactionSource = interactionSource)
+            .focusable(
+                enabled = !isDialogActive,
+                interactionSource = interactionSource
+            )
             .clickable(
+                enabled = !isDialogActive,
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick
@@ -2167,6 +2188,7 @@ fun RecentAppCircleSettingsItem(
 fun RecentAppCircleItem(
     packageName: String,
     focusRequester: FocusRequester,
+    isDialogActive: Boolean = false,
     onClick: () -> Unit,
     onFocused: ((String) -> Unit)? = null,
     onUnfocused: ((String) -> Unit)? = null,
@@ -2219,8 +2241,12 @@ fun RecentAppCircleItem(
             .onPreviewKeyEvent { keyEvent ->
                 onPreviewKey(keyEvent)
             }
-            .focusable(interactionSource = interactionSource)
+            .focusable(
+                enabled = !isDialogActive,
+                interactionSource = interactionSource
+            )
             .clickable(
+                enabled = !isDialogActive,
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick
