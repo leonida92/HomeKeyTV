@@ -1,6 +1,7 @@
 package com.homekey.tv.service
 
 import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.AccessibilityServiceInfo
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
@@ -32,6 +33,13 @@ class RemoteButtonRemapService : AccessibilityService() {
 
     private lateinit var prefs: PreferencesManager
 
+    private var isVolumeBypassActive = false
+    private val restoreKeyFilterRunnable = Runnable {
+        isVolumeBypassActive = false
+        updateKeyFilterState()
+        Log.d(tag, "Volume bypass window expired: restored key filter state")
+    }
+
     // Timing state is tracked per keyCode. The old implementation used single shared fields for all
     // keys, so pressing two different remapped keys in quick succession was misread as a
     // double-press and the first key's single action was dropped.
@@ -44,6 +52,24 @@ class RemoteButtonRemapService : AccessibilityService() {
 
     private val keyStates = HashMap<Int, KeyState>()
 
+    fun updateKeyFilterState() {
+        val info = serviceInfo ?: return
+        val hasRemaps = ::prefs.isInitialized && prefs.buttonRemaps.value.isNotEmpty()
+        val isLearning = _isLearnModeActive.value
+        val shouldFilter = (hasRemaps || isLearning) && !isVolumeBypassActive
+
+        val currentlyFiltering = (info.flags and AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0
+        if (shouldFilter != currentlyFiltering) {
+            info.flags = if (shouldFilter) {
+                info.flags or AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS
+            } else {
+                info.flags and AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS.inv()
+            }
+            serviceInfo = info
+            Log.d(tag, "updateKeyFilterState: shouldFilter=$shouldFilter (hasRemaps=$hasRemaps, isLearning=$isLearning, isVolumeBypass=$isVolumeBypassActive)")
+        }
+    }
+
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
@@ -55,9 +81,13 @@ class RemoteButtonRemapService : AccessibilityService() {
         val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
         serviceScope = scope
 
-        // Reactively pre-warm or teardown overlay when button remaps change
+        // Initial sync of key filter state
+        updateKeyFilterState()
+
+        // Reactively pre-warm or teardown overlay and sync key filtering when button remaps change
         scope.launch {
             prefs.buttonRemaps.collect { remaps ->
+                updateKeyFilterState()
                 val hasDockRemap = remaps.any { remap ->
                     remap.singlePressAction?.type == "OPEN_DOCK" ||
                         remap.doublePressAction?.type == "OPEN_DOCK" ||
@@ -67,6 +97,24 @@ class RemoteButtonRemapService : AccessibilityService() {
                     DockOverlayManager.prewarm(this@RemoteButtonRemapService)
                 } else if (!DockOverlayManager.isShowing) {
                     DockOverlayManager.teardown()
+                }
+            }
+        }
+
+        // Reactively update key filtering when Learn Mode toggles
+        scope.launch {
+            _isLearnModeActive.collect {
+                updateKeyFilterState()
+            }
+        }
+
+        // Reactively cancel volume bypass if volume fix is disabled
+        scope.launch {
+            prefs.volumeFixEnabled.collect { enabled ->
+                if (!enabled && isVolumeBypassActive) {
+                    handler.removeCallbacks(restoreKeyFilterRunnable)
+                    isVolumeBypassActive = false
+                    updateKeyFilterState()
                 }
             }
         }
@@ -86,6 +134,8 @@ class RemoteButtonRemapService : AccessibilityService() {
         serviceScope?.cancel()
         serviceScope = null
         DockOverlayManager.teardown()
+        handler.removeCallbacks(restoreKeyFilterRunnable)
+        isVolumeBypassActive = false
         keyStates.values.forEach { state ->
             state.singleClickRunnable?.let { handler.removeCallbacks(it) }
             state.longPressRunnable?.let { handler.removeCallbacks(it) }
@@ -140,6 +190,30 @@ class RemoteButtonRemapService : AccessibilityService() {
 
     override fun onKeyEvent(event: KeyEvent): Boolean {
         val keyCode = event.keyCode
+
+        // Volume Buttons Fix: On Xiaomi Mi TV and Android 9 (Pie) devices, the OS input filter
+        // breaks hardware key repeats for volume buttons and may hijack the volume stream to
+        // STREAM_ACCESSIBILITY. When volume keys are pressed and unmapped, temporarily disable
+        // key filtering so native PhoneWindowManager handles continuous repeat ramping, HDMI-CEC,
+        // and audio streams without interference.
+        val isVolumeKey = keyCode in listOf(
+            KeyEvent.KEYCODE_VOLUME_UP,
+            KeyEvent.KEYCODE_VOLUME_DOWN,
+            KeyEvent.KEYCODE_VOLUME_MUTE,
+            KeyEvent.KEYCODE_MUTE
+        )
+        if (isVolumeKey && !_isLearnModeActive.value) {
+            val isCustomMapped = findRemapConfig(keyCode) != null
+            if (!isCustomMapped && ::prefs.isInitialized && prefs.volumeFixEnabled.value) {
+                handler.removeCallbacks(restoreKeyFilterRunnable)
+                if (!isVolumeBypassActive) {
+                    isVolumeBypassActive = true
+                    updateKeyFilterState()
+                }
+                handler.postDelayed(restoreKeyFilterRunnable, VOLUME_BYPASS_TIMEOUT_MS)
+                return false
+            }
+        }
 
         // Fast-path bypass: Navigation and system control keys must NEVER be intercepted or delayed
         // when the dock overlay is not open and learn mode is inactive. This guarantees 0ms latency
@@ -393,6 +467,7 @@ class RemoteButtonRemapService : AccessibilityService() {
     companion object {
         private const val LONG_PRESS_TIMEOUT_MS = 450L
         private const val DOUBLE_PRESS_TIMEOUT_MS = 280L
+        private const val VOLUME_BYPASS_TIMEOUT_MS = 3500L
 
         var instance: RemoteButtonRemapService? = null
             private set
@@ -418,6 +493,7 @@ class RemoteButtonRemapService : AccessibilityService() {
             if (active) {
                 _lastLearnedKeyCode.value = null
             }
+            instance?.updateKeyFilterState()
         }
 
         fun clearLearnedKey() {

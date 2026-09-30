@@ -2,6 +2,7 @@ package com.homekey.tv.data.local
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.os.Build
 import android.util.Log
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
@@ -83,6 +84,11 @@ class PreferencesManager(context: Context) {
 
     private val _activePalette = MutableStateFlow(calculateActivePalette(_themePreset.value, _customThemeColors.value))
     val activePalette: StateFlow<DomainColorPalette> = _activePalette.asStateFlow()
+
+    private val _volumeFixEnabled = MutableStateFlow(
+        prefs.getBoolean(KEY_VOLUME_FIX_ENABLED, Build.VERSION.SDK_INT <= Build.VERSION_CODES.P)
+    )
+    val volumeFixEnabled: StateFlow<Boolean> = _volumeFixEnabled.asStateFlow()
 
     val isConfigured: Boolean
         get() = haEnabled.value && serverUrl.value.isNotBlank() && accessToken.value.isNotBlank()
@@ -244,6 +250,11 @@ class PreferencesManager(context: Context) {
         _haEnabled.value = enabled
     }
 
+    fun setVolumeFixEnabled(enabled: Boolean) {
+        prefs.edit().putBoolean(KEY_VOLUME_FIX_ENABLED, enabled).apply()
+        _volumeFixEnabled.value = enabled
+    }
+
     fun setThemePreset(presetId: String) {
         val normalized = ThemePreset.fromId(presetId).id
         prefs.edit().putString(KEY_THEME_PRESET, normalized).apply()
@@ -394,6 +405,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_RECENT_APPS_LIST = "ha_recent_apps_list"
         const val KEY_CAMERA_POPUP_STYLE = "ha_camera_popup_style"
         const val KEY_CAMERA_COMPACT_SIZE = "ha_camera_compact_size"
+        const val KEY_VOLUME_FIX_ENABLED = "ha_volume_fix_enabled"
         const val POPUP_STYLE_CENTERED = "CENTERED"
         const val POPUP_STYLE_MINIMAL = "MINIMAL"
         const val CAMERA_POPUP_CENTERED = "CENTERED"

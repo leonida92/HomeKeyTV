@@ -88,6 +88,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val pinnedApps: StateFlow<List<PinnedAppConfig>> = prefs.pinnedApps
     val buttonRemaps: StateFlow<List<ButtonRemapConfig>> = prefs.buttonRemaps
     val isAccessibilityEnabled: StateFlow<Boolean> = RemoteButtonRemapService.isServiceRunning
+    val volumeFixEnabled: StateFlow<Boolean> = prefs.volumeFixEnabled
     val learnedKey: StateFlow<Pair<Int, String>?> = RemoteButtonRemapService.lastLearnedKeyCode
 
     private val _adbSetupState = MutableStateFlow<AdbSetupState>(AdbSetupState.Idle)
@@ -284,6 +285,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
     fun removeButtonRemap(keyCode: Int) {
         prefs.removeButtonRemap(keyCode)
+    }
+
+    fun setVolumeFixEnabled(enabled: Boolean) {
+        prefs.setVolumeFixEnabled(enabled)
     }
 
     fun setLearnMode(active: Boolean) {

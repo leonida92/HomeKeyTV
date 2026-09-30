@@ -32,6 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ViewSidebar
+import androidx.compose.material.icons.automirrored.filled.VolumeUp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -80,6 +81,7 @@ fun SettingsScreen(
     val pinnedApps by viewModel.pinnedApps.collectAsState()
     val buttonRemaps by viewModel.buttonRemaps.collectAsState()
     val isAccessibilityEnabled by viewModel.isAccessibilityEnabled.collectAsState()
+    val volumeFixEnabled by viewModel.volumeFixEnabled.collectAsState()
     val adbSetupState by viewModel.adbSetupState.collectAsState()
     val learnedKey by viewModel.learnedKey.collectAsState()
     val updateState by viewModel.updateState.collectAsState()
@@ -324,6 +326,7 @@ fun SettingsScreen(
                         val remapEntities by viewModel.sortedEntities.collectAsState()
                         ButtonRemapView(
                             isAccessibilityEnabled = isAccessibilityEnabled,
+                            volumeFixEnabled = volumeFixEnabled,
                             adbSetupState = adbSetupState,
                             buttonRemaps = buttonRemaps,
                             learnedKey = learnedKey,
@@ -339,6 +342,7 @@ fun SettingsScreen(
                                 context.startActivity(intent)
                             },
                             onEnableViaAdb = { viewModel.enableAccessibilityViaAdb() },
+                            onToggleVolumeFix = { viewModel.setVolumeFixEnabled(!volumeFixEnabled) },
                             onStartLearnMode = { viewModel.setLearnMode(true) },
                             onStopLearnMode = { viewModel.setLearnMode(false) },
                             onSaveRemap = { viewModel.saveOrUpdateButtonRemap(it) },
@@ -1702,6 +1706,7 @@ private fun SetupStep(number: String, text: String) {
 @Composable
 fun ButtonRemapView(
     isAccessibilityEnabled: Boolean,
+    volumeFixEnabled: Boolean,
     adbSetupState: AdbSetupState,
     buttonRemaps: List<ButtonRemapConfig>,
     learnedKey: Pair<Int, String>?,
@@ -1712,6 +1717,7 @@ fun ButtonRemapView(
     onUp: (() -> Unit)? = null,
     onOpenAccessibilitySettings: () -> Unit,
     onEnableViaAdb: () -> Unit,
+    onToggleVolumeFix: () -> Unit,
     onStartLearnMode: () -> Unit,
     onStopLearnMode: () -> Unit,
     onSaveRemap: (ButtonRemapConfig) -> Unit,
@@ -1883,6 +1889,12 @@ fun ButtonRemapView(
                     }
                 }
             }
+
+            // Volume Buttons Fix Card (for Xiaomi / Android 9 TV compatibility)
+            VolumeFixCard(
+                enabled = volumeFixEnabled,
+                onToggle = onToggleVolumeFix
+            )
 
             // Quick Preset Buttons / Learning
             Box(
@@ -2122,7 +2134,112 @@ fun ButtonRemapView(
             }
         }
     }
-}@Composable
+}
+
+@Composable
+fun VolumeFixCard(
+    enabled: Boolean,
+    onToggle: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.015f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
+        label = "volume_fix_scale"
+    )
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(RoundedCornerShape(12.dp))
+            .background(if (isFocused) TV_Surface_Focused else Color(0xFF1E293B))
+            .border(
+                width = if (isFocused) 2.dp else 1.dp,
+                color = if (isFocused) TV_Border_Focused else Color(0x33475569),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .onPreviewKeyEvent { keyEvent ->
+                val code = keyEvent.nativeKeyEvent.keyCode
+                if (keyEvent.type == KeyEventType.KeyUp) {
+                    if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                        onToggle()
+                        return@onPreviewKeyEvent true
+                    }
+                }
+                false
+            }
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onToggle
+            )
+            .focusable(interactionSource = interactionSource)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            modifier = Modifier.weight(1f)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(if (enabled) HA_Blue else Color(0x33FFFFFF)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp)
+                )
+            }
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(
+                    text = "Volume Buttons Fix (Android 9 / Xiaomi)",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+                Text(
+                    text = if (enabled)
+                        "Bypasses key filter on volume press so continuous volume holding ramps smoothly."
+                    else
+                        "Disabled. Enable if holding volume keys on your remote only steps by 1 increment.",
+                    fontSize = 10.sp,
+                    color = TV_Text_Secondary,
+                    lineHeight = 13.sp
+                )
+            }
+        }
+
+        Box(
+            modifier = Modifier
+                .width(42.dp)
+                .height(24.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(if (enabled) HA_Blue else Color(0xFF334155))
+                .padding(3.dp),
+            contentAlignment = if (enabled) Alignment.CenterEnd else Alignment.CenterStart
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .clip(CircleShape)
+                    .background(Color.White)
+            )
+        }
+    }
+}
+
+@Composable
 fun PresetButtonRow(
     name: String,
     onClick: () -> Unit
