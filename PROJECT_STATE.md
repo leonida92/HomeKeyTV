@@ -4,9 +4,9 @@
 
 HomeKey TV is a low-latency Home Assistant TV overlay and smart home dock designed for Android TV (Google TV / Fire OS). Built using Jetpack Compose for TV and Kotlin coroutines, it provides a persistent, instant overlay on top of any running TV application or video stream without interrupting playback.
 
-- **Current Version**: `1.6.7` (`versionCode = 26`)
-- **Current Git Commit**: Tracking `main` (Release `v1.6.7`)
-- **GitHub Release**: `v1.6.7` (Release APK `HomeKeyTV-v1.6.7.apk` attached)
+- **Current Version**: `1.6.8` (`versionCode = 27`)
+- **Current Git Commit**: Tracking `main` (Release `v1.6.8`)
+- **GitHub Release**: `v1.6.8` (Release APK `HomeKeyTV-v1.6.8.apk` attached)
 - **Target Device**: Android TV connected at `192.168.1.50:5555`
 - **Build Status**: All unit tests passing (`./gradlew.bat testDebugUnitTest`), zero vital lint errors (`./gradlew.bat lintVitalRelease`)
 
@@ -48,7 +48,14 @@ HomeKey TV is a low-latency Home Assistant TV overlay and smart home dock design
 
 ### Settings & Web Setup
 - **TV Settings Interface**: Full-screen TV settings with 6 tabs: Phone Setup, Layout & Popups, Themes, Button Remap, Installed Apps, and Updates.
-- **Button Remap Accessibility Service**: `RemoteButtonRemapService` intercepts remote key codes, supporting single-press, double-press, and long-press triggers for overlay display, entity toggles, and app launches.
+- **Button Remap Accessibility Service & Navigation Fixes**:
+  - `RemoteButtonRemapService` intercepts remote key codes, supporting single-press, double-press, and long-press triggers for overlay display, entity toggles, and app launches.
+  - Symmetrical D-pad navigation across Button Remap view: entering Tab 3 directs focus immediately to the left column (`learnButtonFocusRequester` or accessibility action buttons); D-pad UP steps into Volume Fix and Tab 3; D-pad RIGHT jumps directly into the configured remaps column; D-pad LEFT from any configured remap card returns focus back to Learn Remote Button; D-pad UP from top remap returns to Tab 3.
+  - Compact inline `VolumeFixCompactToggle` placed directly in the Accessibility Status Card header, reclaiming vertical screen height and preventing the Remote Buttons card from being cut off.
+- **Compact Recent Apps Toggle & Dock Pinning**:
+  - Squeezed `RecentAppsToggleCard` into a slim single-row card (height reduced from ~160dp down to ~46dp), saving over 110dp of vertical space to ensure an entire extra row of installed apps is visible in the grid without scrolling.
+  - Sized limit chips to 34x28dp with 12sp font and horizontal expand/collapse animation.
+  - Fluid D-pad flow: Tab 4 DOWN -> Toggle -> DOWN -> Apps Grid; RIGHT -> Limit chips (1..5) -> LEFT -> Toggle; UP from top row of apps returns cleanly to the Toggle.
 - **Dynamic Key Filtering & Latency Reduction**: When no button remaps are configured and Learn Mode is inactive, `FLAG_REQUEST_FILTER_KEY_EVENTS` is detached from the Android framework, achieving 0ms added input latency and preventing OS accessibility key interception across the TV UI.
 - **Volume Buttons Fix (Xiaomi / Android 9 TV Compatibility)**: Resolves the AOSP / PatchWall hardware volume repeat bug on Android 9 devices (such as Xiaomi Mi TV). Unmapped volume presses temporarily suspend key filtering for 3.5 seconds, allowing the TV's native `PhoneWindowManager` to execute continuous hardware repeat ramping, HDMI-CEC soundbar volume adjustments, and standard audio stream targeting without dropped repeats.
 - **Embedded Web Setup Server**: Lightweight HTTP server on port 8124 with QR pairing, mobile-friendly collapsible sections, entity search/filter, and native color pickers.
@@ -88,8 +95,8 @@ HomeKey TV is a low-latency Home Assistant TV overlay and smart home dock design
 
 ## 5. Next Implementation Steps & Roadmap
 
-1. **Post-1.6.7 Iteration (v1.6.8 Target)**:
-   - On the first build following the v1.6.7 release commit, bump version to `1.6.8` (`versionCode = 27`).
+1. **Post-1.6.8 Iteration (v1.6.9 Target)**:
+   - On the first build following the v1.6.8 release commit, bump version to `1.6.9` (`versionCode = 28`).
 2. **Feature Backlog**:
    - **Extended Domain Popups**: Add dedicated dialog controls for Covers/Blinds (open/close/stop/tilt slider), Fans (oscillate/speed presets), and Locks (PIN prompt, lock/unlock toggle).
    - **ExoPlayer / HLS Stream Integration**: Provide an optional RTSP/HLS stream viewer for cameras supporting WebRTC/HLS when MJPEG latency is high.

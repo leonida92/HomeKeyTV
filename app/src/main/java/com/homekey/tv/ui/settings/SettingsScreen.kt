@@ -1730,6 +1730,9 @@ fun ButtonRemapView(
     val editMenuFocusRequester = remember { FocusRequester() }
     val remapListFocusRequester = remember { FocusRequester() }
     val learnButtonFocusRequester = remember { FocusRequester() }
+    val volumeFixFocusRequester = remember { FocusRequester() }
+    val openAccessibilityFocusRequester = remember { FocusRequester() }
+    val adbSetupFocusRequester = remember { FocusRequester() }
 
     BackHandler(enabled = selectedKeyForConfig != null) {
         selectedKeyForConfig = null
@@ -1761,8 +1764,8 @@ fun ButtonRemapView(
             try {
                 if (selectedKeyForConfig != null) {
                     editMenuFocusRequester.requestFocus()
-                } else if (buttonRemaps.isNotEmpty()) {
-                    remapListFocusRequester.requestFocus()
+                } else if (!isAccessibilityEnabled) {
+                    openAccessibilityFocusRequester.requestFocus()
                 } else {
                     learnButtonFocusRequester.requestFocus()
                 }
@@ -1801,36 +1804,78 @@ fun ButtonRemapView(
             ) {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(10.dp)
-                                .clip(CircleShape)
-                                .background(if (isAccessibilityEnabled) HA_Green_On else HA_Yellow_On)
-                        )
-                        Text(
-                            text = if (isAccessibilityEnabled) "Remapper Service: ACTIVE" else "Accessibility: DISABLED",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(10.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isAccessibilityEnabled) HA_Green_On else HA_Yellow_On)
+                            )
+                            Text(
+                                text = if (isAccessibilityEnabled) "Remapper Service: ACTIVE" else "Accessibility: DISABLED",
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+
+                        VolumeFixCompactToggle(
+                            enabled = volumeFixEnabled,
+                            onToggle = onToggleVolumeFix,
+                            modifier = Modifier.focusRequester(volumeFixFocusRequester),
+                            onUp = onUp,
+                            onDown = { try { learnButtonFocusRequester.requestFocus() } catch (_: Exception) {} },
+                            onRight = { if (buttonRemaps.isNotEmpty()) { try { remapListFocusRequester.requestFocus() } catch (_: Exception) {} } }
                         )
                     }
 
                     Text(
                         text = if (isAccessibilityEnabled)
-                            "Ready to intercept physical remote keys."
+                            if (volumeFixEnabled) "Ready to remap keys. Volume repeat fix active for Xiaomi / Android 9."
+                            else "Ready to remap keys. Volume keys pass through standard OS filter."
                         else
                             "Enable HomeKey TV under TV Settings > Accessibility or use Local ADB auto-setup.",
                         fontSize = 11.sp,
-                        color = TV_Text_Secondary
+                        color = TV_Text_Secondary,
+                        lineHeight = 14.sp
                     )
 
                     if (!isAccessibilityEnabled) {
                         FocusableButton(
                             text = "Open TV Accessibility Settings",
                             icon = Icons.Default.SettingsAccessibility,
+                            modifier = Modifier
+                                .focusRequester(openAccessibilityFocusRequester)
+                                .onPreviewKeyEvent { keyEvent ->
+                                    if (keyEvent.type == KeyEventType.KeyDown) {
+                                        when (keyEvent.nativeKeyEvent.keyCode) {
+                                            KeyEvent.KEYCODE_DPAD_UP -> {
+                                                if (onUp != null) {
+                                                    onUp()
+                                                    return@onPreviewKeyEvent true
+                                                }
+                                            }
+                                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                try { adbSetupFocusRequester.requestFocus() } catch (_: Exception) {}
+                                                return@onPreviewKeyEvent true
+                                            }
+                                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                                if (buttonRemaps.isNotEmpty()) {
+                                                    try { remapListFocusRequester.requestFocus() } catch (_: Exception) {}
+                                                    return@onPreviewKeyEvent true
+                                                }
+                                            }
+                                        }
+                                    }
+                                    false
+                                },
                             onClick = onOpenAccessibilitySettings
                         )
 
@@ -1840,6 +1885,29 @@ fun ButtonRemapView(
                                 else -> "Auto-Enable via Local ADB"
                             },
                             icon = Icons.Default.Terminal,
+                            modifier = Modifier
+                                .focusRequester(adbSetupFocusRequester)
+                                .onPreviewKeyEvent { keyEvent ->
+                                    if (keyEvent.type == KeyEventType.KeyDown) {
+                                        when (keyEvent.nativeKeyEvent.keyCode) {
+                                            KeyEvent.KEYCODE_DPAD_UP -> {
+                                                try { openAccessibilityFocusRequester.requestFocus() } catch (_: Exception) {}
+                                                return@onPreviewKeyEvent true
+                                            }
+                                            KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                try { learnButtonFocusRequester.requestFocus() } catch (_: Exception) {}
+                                                return@onPreviewKeyEvent true
+                                            }
+                                            KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                                if (buttonRemaps.isNotEmpty()) {
+                                                    try { remapListFocusRequester.requestFocus() } catch (_: Exception) {}
+                                                    return@onPreviewKeyEvent true
+                                                }
+                                            }
+                                        }
+                                    }
+                                    false
+                                },
                             onClick = onEnableViaAdb
                         )
 
@@ -1890,12 +1958,6 @@ fun ButtonRemapView(
                 }
             }
 
-            // Volume Buttons Fix Card (for Xiaomi / Android 9 TV compatibility)
-            VolumeFixCard(
-                enabled = volumeFixEnabled,
-                onToggle = onToggleVolumeFix
-            )
-
             // Quick Preset Buttons / Learning
             Box(
                 modifier = Modifier
@@ -1904,9 +1966,9 @@ fun ButtonRemapView(
                     .clip(RoundedCornerShape(14.dp))
                     .background(Color(0xFF1E293B))
                     .border(1.dp, Color(0x33475569), RoundedCornerShape(14.dp))
-                    .padding(16.dp)
+                    .padding(14.dp)
             ) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text(
                         text = "Remote Buttons",
                         fontSize = 15.sp,
@@ -1917,7 +1979,29 @@ fun ButtonRemapView(
                     FocusableButton(
                         text = if (isLearning) "Press any button on remote..." else "Learn Remote Button (Press Key)",
                         icon = if (isLearning) Icons.Default.HourglassBottom else Icons.Default.Sensors,
-                        modifier = Modifier.focusRequester(learnButtonFocusRequester),
+                        modifier = Modifier
+                            .focusRequester(learnButtonFocusRequester)
+                            .onPreviewKeyEvent { keyEvent ->
+                                if (keyEvent.type == KeyEventType.KeyDown) {
+                                    when (keyEvent.nativeKeyEvent.keyCode) {
+                                        KeyEvent.KEYCODE_DPAD_UP -> {
+                                            if (isAccessibilityEnabled) {
+                                                try { volumeFixFocusRequester.requestFocus() } catch (_: Exception) {}
+                                            } else {
+                                                try { adbSetupFocusRequester.requestFocus() } catch (_: Exception) {}
+                                            }
+                                            return@onPreviewKeyEvent true
+                                        }
+                                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                            if (buttonRemaps.isNotEmpty()) {
+                                                try { remapListFocusRequester.requestFocus() } catch (_: Exception) {}
+                                                return@onPreviewKeyEvent true
+                                            }
+                                        }
+                                    }
+                                }
+                                false
+                            },
                         onClick = {
                             if (isLearning) {
                                 isLearning = false
@@ -1935,34 +2019,51 @@ fun ButtonRemapView(
                         color = TV_Text_Secondary
                     )
 
+                    val onPresetRight = {
+                        if (buttonRemaps.isNotEmpty()) {
+                            try { remapListFocusRequester.requestFocus() } catch (_: Exception) {}
+                        }
+                    }
+
                     LazyColumn(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.weight(1f)
                     ) {
                         item {
-                            PresetButtonRow("Custom Star Button") {
-                                selectedKeyForConfig = Pair(313, "Custom Star Button")
-                            }
+                            PresetButtonRow(
+                                name = "Custom Star Button",
+                                onClick = { selectedKeyForConfig = Pair(313, "Custom Star Button") },
+                                onUp = { try { learnButtonFocusRequester.requestFocus() } catch (_: Exception) {} },
+                                onRight = onPresetRight
+                            )
                         }
                         item {
-                            PresetButtonRow("Netflix Button") {
-                                selectedKeyForConfig = Pair(191, "Netflix Button")
-                            }
+                            PresetButtonRow(
+                                name = "Netflix Button",
+                                onClick = { selectedKeyForConfig = Pair(191, "Netflix Button") },
+                                onRight = onPresetRight
+                            )
                         }
                         item {
-                            PresetButtonRow("YouTube Button") {
-                                selectedKeyForConfig = Pair(190, "YouTube Button")
-                            }
+                            PresetButtonRow(
+                                name = "YouTube Button",
+                                onClick = { selectedKeyForConfig = Pair(190, "YouTube Button") },
+                                onRight = onPresetRight
+                            )
                         }
                         item {
-                            PresetButtonRow("Prime Video Button") {
-                                selectedKeyForConfig = Pair(229, "Prime Video Button")
-                            }
+                            PresetButtonRow(
+                                name = "Prime Video Button",
+                                onClick = { selectedKeyForConfig = Pair(229, "Prime Video Button") },
+                                onRight = onPresetRight
+                            )
                         }
                         item {
-                            PresetButtonRow("Mute Button") {
-                                selectedKeyForConfig = Pair(KeyEvent.KEYCODE_VOLUME_MUTE, "Mute Button")
-                            }
+                            PresetButtonRow(
+                                name = "Mute Button",
+                                onClick = { selectedKeyForConfig = Pair(KeyEvent.KEYCODE_VOLUME_MUTE, "Mute Button") },
+                                onRight = onPresetRight
+                            )
                         }
                     }
                 }
@@ -2125,7 +2226,8 @@ fun ButtonRemapView(
                                     onEdit = { selectedKeyForConfig = Pair(remap.keyCode, remap.keyName) },
                                     onDelete = { onRemoveRemap(remap.keyCode) },
                                     modifier = if (index == 0) Modifier.focusRequester(remapListFocusRequester) else Modifier,
-                                    onUp = if (index == 0) onUp else null
+                                    onUp = if (index == 0) onUp else null,
+                                    onLeft = { try { learnButtonFocusRequester.requestFocus() } catch (_: Exception) {} }
                                 )
                             }
                         }
@@ -2137,30 +2239,32 @@ fun ButtonRemapView(
 }
 
 @Composable
-fun VolumeFixCard(
+fun VolumeFixCompactToggle(
     enabled: Boolean,
     onToggle: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onUp: (() -> Unit)? = null,
+    onDown: (() -> Unit)? = null,
+    onRight: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
 
     val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.015f else 1.0f,
+        targetValue = if (isFocused) 1.05f else 1.0f,
         animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
-        label = "volume_fix_scale"
+        label = "vol_fix_toggle_scale"
     )
 
     Row(
         modifier = modifier
-            .fillMaxWidth()
             .scale(scale)
-            .clip(RoundedCornerShape(12.dp))
-            .background(if (isFocused) TV_Surface_Focused else Color(0xFF1E293B))
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (isFocused) TV_Surface_Focused else Color(0x33334155))
             .border(
                 width = if (isFocused) 2.dp else 1.dp,
-                color = if (isFocused) TV_Border_Focused else Color(0x33475569),
-                shape = RoundedCornerShape(12.dp)
+                color = if (isFocused) TV_Border_Focused else Color(0x44475569),
+                shape = RoundedCornerShape(8.dp)
             )
             .onPreviewKeyEvent { keyEvent ->
                 val code = keyEvent.nativeKeyEvent.keyCode
@@ -2168,6 +2272,27 @@ fun VolumeFixCard(
                     if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
                         onToggle()
                         return@onPreviewKeyEvent true
+                    }
+                } else if (keyEvent.type == KeyEventType.KeyDown) {
+                    when (code) {
+                        KeyEvent.KEYCODE_DPAD_UP -> {
+                            if (onUp != null) {
+                                onUp()
+                                return@onPreviewKeyEvent true
+                            }
+                        }
+                        KeyEvent.KEYCODE_DPAD_DOWN -> {
+                            if (onDown != null) {
+                                onDown()
+                                return@onPreviewKeyEvent true
+                            }
+                        }
+                        KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                            if (onRight != null) {
+                                onRight()
+                                return@onPreviewKeyEvent true
+                            }
+                        }
                     }
                 }
                 false
@@ -2178,71 +2303,37 @@ fun VolumeFixCard(
                 onClick = onToggle
             )
             .focusable(interactionSource = interactionSource)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(32.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (enabled) HA_Blue else Color(0x33FFFFFF)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.VolumeUp,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp)
-                )
-            }
-            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(
-                    text = "Volume Buttons Fix (Android 9 / Xiaomi)",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White
-                )
-                Text(
-                    text = if (enabled)
-                        "Bypasses key filter on volume press so continuous volume holding ramps smoothly."
-                    else
-                        "Disabled. Enable if holding volume keys on your remote only steps by 1 increment.",
-                    fontSize = 10.sp,
-                    color = TV_Text_Secondary,
-                    lineHeight = 13.sp
-                )
-            }
-        }
-
+        Icon(
+            imageVector = Icons.AutoMirrored.Filled.VolumeUp,
+            contentDescription = null,
+            tint = if (enabled) Color(0xFF38BDF8) else TV_Text_Secondary,
+            modifier = Modifier.size(14.dp)
+        )
+        Text(
+            text = if (enabled) "Volume Fix: ON" else "Volume Fix: OFF",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (enabled) Color.White else TV_Text_Secondary
+        )
         Box(
             modifier = Modifier
-                .width(42.dp)
-                .height(24.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(if (enabled) HA_Blue else Color(0xFF334155))
-                .padding(3.dp),
-            contentAlignment = if (enabled) Alignment.CenterEnd else Alignment.CenterStart
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(18.dp)
-                    .clip(CircleShape)
-                    .background(Color.White)
-            )
-        }
+                .size(7.dp)
+                .clip(CircleShape)
+                .background(if (enabled) HA_Green_On else Color(0xFF64748B))
+        )
     }
 }
 
 @Composable
 fun PresetButtonRow(
     name: String,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onUp: (() -> Unit)? = null,
+    onRight: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -2254,10 +2345,18 @@ fun PresetButtonRow(
             .background(if (isFocused) TV_Surface_Focused else Color(0x22FFFFFF))
             .border(1.dp, if (isFocused) TV_Border_Focused else Color.Transparent, RoundedCornerShape(8.dp))
             .onPreviewKeyEvent { keyEvent ->
+                val code = keyEvent.nativeKeyEvent.keyCode
                 if (keyEvent.type == KeyEventType.KeyUp) {
-                    val code = keyEvent.nativeKeyEvent.keyCode
                     if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
                         onClick()
+                        return@onPreviewKeyEvent true
+                    }
+                } else if (keyEvent.type == KeyEventType.KeyDown) {
+                    if (code == KeyEvent.KEYCODE_DPAD_UP && onUp != null) {
+                        onUp()
+                        return@onPreviewKeyEvent true
+                    } else if (code == KeyEvent.KEYCODE_DPAD_RIGHT && onRight != null) {
+                        onRight()
                         return@onPreviewKeyEvent true
                     }
                 }
@@ -2631,7 +2730,8 @@ fun RemapCardItem(
     onEdit: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
-    onUp: (() -> Unit)? = null
+    onUp: (() -> Unit)? = null,
+    onLeft: (() -> Unit)? = null
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -2664,8 +2764,12 @@ fun RemapCardItem(
                         return@onPreviewKeyEvent true
                     }
                 } else if (keyEvent.type == KeyEventType.KeyDown) {
-                    if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP && onUp != null) {
+                    val code = keyEvent.nativeKeyEvent.keyCode
+                    if (code == KeyEvent.KEYCODE_DPAD_UP && onUp != null) {
                         onUp()
+                        return@onPreviewKeyEvent true
+                    } else if (code == KeyEvent.KEYCODE_DPAD_LEFT && onLeft != null) {
+                        onLeft()
                         return@onPreviewKeyEvent true
                     }
                 }
@@ -2752,7 +2856,7 @@ fun InstalledAppsView(
 
     Column(
         modifier = modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -2815,12 +2919,7 @@ fun InstalledAppsView(
                         firstItemFocusRequester = if (index == 0) firstAppFocusRequester else null,
                         onUpToTab = {
                             try {
-                                if (recentAppsEnabled) {
-                                    val chipIdx = (recentAppsCount - 1).coerceIn(0, 4)
-                                    countFocusRequesters.getOrNull(chipIdx)?.requestFocus()
-                                } else {
-                                    toggleFocusRequester?.requestFocus()
-                                }
+                                toggleFocusRequester?.requestFocus()
                             } catch (_: Exception) {}
                         }
                     )
@@ -2846,36 +2945,37 @@ fun RecentAppsToggleCard(
     val isToggleFocused by toggleInteractionSource.collectIsFocusedAsState()
 
     val toggleScale by animateFloatAsState(
-        targetValue = if (isToggleFocused) 1.015f else 1.0f,
+        targetValue = if (isToggleFocused) 1.02f else 1.0f,
         animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
         label = "toggle_scale"
     )
 
     val toggleFocusMod = if (toggleFocusRequester != null) Modifier.focusRequester(toggleFocusRequester) else Modifier
 
-    Column(
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(10.dp))
             .background(Color(0xFF1E293B))
             .border(
                 width = 1.dp,
                 color = Color(0x33475569),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(10.dp)
             )
-            .padding(horizontal = 14.dp, vertical = 12.dp)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
         Row(
             modifier = Modifier
                 .then(toggleFocusMod)
-                .fillMaxWidth()
                 .scale(toggleScale)
-                .clip(RoundedCornerShape(10.dp))
+                .clip(RoundedCornerShape(8.dp))
                 .background(if (isToggleFocused) TV_Surface_Focused else Color.Transparent)
                 .border(
                     width = if (isToggleFocused) 2.dp else 0.dp,
                     color = if (isToggleFocused) TV_Border_Focused else Color.Transparent,
-                    shape = RoundedCornerShape(10.dp)
+                    shape = RoundedCornerShape(8.dp)
                 )
                 .onPreviewKeyEvent { keyEvent ->
                     val code = keyEvent.nativeKeyEvent.keyCode
@@ -2884,7 +2984,7 @@ fun RecentAppsToggleCard(
                             onToggle()
                             return@onPreviewKeyEvent true
                         }
-                        if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN) {
+                        if (code == KeyEvent.KEYCODE_DPAD_UP || code == KeyEvent.KEYCODE_DPAD_DOWN || code == KeyEvent.KEYCODE_DPAD_RIGHT) {
                             return@onPreviewKeyEvent true
                         }
                     } else if (keyEvent.type == KeyEventType.KeyDown) {
@@ -2892,16 +2992,16 @@ fun RecentAppsToggleCard(
                             onUp()
                             return@onPreviewKeyEvent true
                         }
-                        if (code == KeyEvent.KEYCODE_DPAD_DOWN) {
-                            if (enabled) {
-                                try {
-                                    val chipIdx = (recentAppsCount - 1).coerceIn(0, 4)
-                                    countFocusRequesters.getOrNull(chipIdx)?.requestFocus()
-                                } catch (_: Exception) {}
-                            } else if (onDown != null) {
-                                onDown()
-                            }
+                        if (code == KeyEvent.KEYCODE_DPAD_DOWN && onDown != null) {
+                            onDown()
                             return@onPreviewKeyEvent true
+                        }
+                        if (code == KeyEvent.KEYCODE_DPAD_RIGHT && enabled) {
+                            try {
+                                val chipIdx = (recentAppsCount - 1).coerceIn(0, 4)
+                                countFocusRequesters.getOrNull(chipIdx)?.requestFocus()
+                                return@onPreviewKeyEvent true
+                            } catch (_: Exception) {}
                         }
                     }
                     false
@@ -2911,46 +3011,46 @@ fun RecentAppsToggleCard(
                     indication = null,
                     onClick = onToggle
                 )
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
+                .focusable(interactionSource = toggleInteractionSource)
+                .padding(horizontal = 8.dp, vertical = 5.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            Box(
+                modifier = Modifier
+                    .size(28.dp)
+                    .clip(RoundedCornerShape(6.dp))
+                    .background(if (enabled) HA_Blue else Color(0x33FFFFFF)),
+                contentAlignment = Alignment.Center
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(if (enabled) HA_Blue else Color(0x33FFFFFF)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.History,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Column {
-                    Text(
-                        text = "Show Recent Apps in Dock",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White
-                    )
-                    Text(
-                        text = "Displays up to $recentAppsCount recently opened apps as floating circular icons in the dock",
-                        fontSize = 12.sp,
-                        color = TV_Text_Secondary
-                    )
-                }
+                Icon(
+                    imageVector = Icons.Default.History,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(16.dp)
+                )
             }
-
+            Column {
+                Text(
+                    text = "Show Recent Apps in Dock",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = if (enabled)
+                        "Displays up to $recentAppsCount recent apps in dock"
+                    else
+                        "Disabled (only pinned apps appear in dock)",
+                    fontSize = 11.sp,
+                    color = TV_Text_Secondary
+                )
+            }
+            Spacer(modifier = Modifier.width(4.dp))
             Switch(
                 checked = enabled,
                 onCheckedChange = null,
+                modifier = Modifier.scale(0.8f),
                 colors = SwitchDefaults.colors(
                     checkedThumbColor = Color.White,
                     checkedTrackColor = HA_Blue,
@@ -2962,60 +3062,41 @@ fun RecentAppsToggleCard(
 
         AnimatedVisibility(
             visible = enabled,
-            enter = expandVertically() + fadeIn(),
-            exit = shrinkVertically() + fadeOut()
+            enter = fadeIn() + expandHorizontally(),
+            exit = fadeOut() + shrinkHorizontally()
         ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(1.dp)
-                        .background(Color(0x22FFFFFF))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(end = 6.dp)
+            ) {
+                Text(
+                    text = "Limit:",
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TV_Text_Secondary
                 )
-                Spacer(modifier = Modifier.height(10.dp))
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Recent Apps to Display",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = TV_Text_Secondary
+                (1..5).forEach { count ->
+                    RecentAppsCountChip(
+                        count = count,
+                        isSelected = count == recentAppsCount,
+                        focusRequester = countFocusRequesters[count - 1],
+                        onClick = { onSetRecentAppsCount(count) },
+                        onUp = { onUp?.invoke() },
+                        onDown = { onDown?.invoke() },
+                        onLeft = {
+                            if (count > 1) {
+                                try { countFocusRequesters[count - 2].requestFocus() } catch (_: Exception) {}
+                            } else {
+                                try { toggleFocusRequester?.requestFocus() } catch (_: Exception) {}
+                            }
+                        },
+                        onRight = if (count < 5) {
+                            {
+                                try { countFocusRequesters[count].requestFocus() } catch (_: Exception) {}
+                            }
+                        } else null
                     )
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        (1..5).forEach { count ->
-                            RecentAppsCountChip(
-                                count = count,
-                                isSelected = count == recentAppsCount,
-                                focusRequester = countFocusRequesters[count - 1],
-                                onClick = { onSetRecentAppsCount(count) },
-                                onUp = {
-                                    try { toggleFocusRequester?.requestFocus() } catch (_: Exception) {}
-                                },
-                                onDown = {
-                                    if (onDown != null) onDown()
-                                },
-                                onLeft = if (count > 1) {
-                                    {
-                                        try { countFocusRequesters[count - 2].requestFocus() } catch (_: Exception) {}
-                                    }
-                                } else null,
-                                onRight = if (count < 5) {
-                                    {
-                                        try { countFocusRequesters[count].requestFocus() } catch (_: Exception) {}
-                                    }
-                                } else null
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -3047,8 +3128,8 @@ fun RecentAppsCountChip(
         modifier = modifier
             .focusRequester(focusRequester)
             .scale(scale)
-            .size(width = 44.dp, height = 34.dp)
-            .clip(RoundedCornerShape(8.dp))
+            .size(width = 34.dp, height = 28.dp)
+            .clip(RoundedCornerShape(6.dp))
             .background(
                 when {
                     isFocused -> TV_Surface_Focused
@@ -3063,7 +3144,7 @@ fun RecentAppsCountChip(
                     isSelected -> Color(0x66FFFFFF)
                     else -> Color.Transparent
                 },
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(6.dp)
             )
             .onPreviewKeyEvent { keyEvent ->
                 val code = keyEvent.nativeKeyEvent.keyCode
@@ -3111,7 +3192,7 @@ fun RecentAppsCountChip(
     ) {
         Text(
             text = count.toString(),
-            fontSize = 14.sp,
+            fontSize = 12.sp,
             fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Medium,
             color = Color.White
         )
