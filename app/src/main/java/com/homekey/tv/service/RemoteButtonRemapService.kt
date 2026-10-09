@@ -2,8 +2,10 @@ package com.homekey.tv.service
 
 import android.accessibilityservice.AccessibilityService
 import android.accessibilityservice.AccessibilityServiceInfo
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
+import android.media.AudioManager
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -39,6 +41,9 @@ class RemoteButtonRemapService : AccessibilityService() {
         updateKeyFilterState()
         Log.d(tag, "Volume bypass window expired: restored key filter state")
     }
+
+    private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
+    private var volumeRepeatRunnable: Runnable? = null
 
     // Timing state is tracked per keyCode. The old implementation used single shared fields for all
     // keys, so pressing two different remapped keys in quick succession was misread as a
@@ -108,13 +113,17 @@ class RemoteButtonRemapService : AccessibilityService() {
             }
         }
 
-        // Reactively cancel volume bypass if volume fix is disabled
+        // Reactively cancel volume bypass and repeat timer if volume fix is disabled
         scope.launch {
             prefs.volumeFixEnabled.collect { enabled ->
-                if (!enabled && isVolumeBypassActive) {
-                    handler.removeCallbacks(restoreKeyFilterRunnable)
-                    isVolumeBypassActive = false
-                    updateKeyFilterState()
+                if (!enabled) {
+                    volumeRepeatRunnable?.let { handler.removeCallbacks(it) }
+                    volumeRepeatRunnable = null
+                    if (isVolumeBypassActive) {
+                        handler.removeCallbacks(restoreKeyFilterRunnable)
+                        isVolumeBypassActive = false
+                        updateKeyFilterState()
+                    }
                 }
             }
         }
@@ -135,6 +144,8 @@ class RemoteButtonRemapService : AccessibilityService() {
         serviceScope = null
         DockOverlayManager.teardown()
         handler.removeCallbacks(restoreKeyFilterRunnable)
+        volumeRepeatRunnable?.let { handler.removeCallbacks(it) }
+        volumeRepeatRunnable = null
         isVolumeBypassActive = false
         keyStates.values.forEach { state ->
             state.singleClickRunnable?.let { handler.removeCallbacks(it) }
@@ -194,8 +205,7 @@ class RemoteButtonRemapService : AccessibilityService() {
         // Volume Buttons Fix: On Xiaomi Mi TV and Android 9 (Pie) devices, the OS input filter
         // breaks hardware key repeats for volume buttons and may hijack the volume stream to
         // STREAM_ACCESSIBILITY. When volume keys are pressed and unmapped, temporarily disable
-        // key filtering so native PhoneWindowManager handles continuous repeat ramping, HDMI-CEC,
-        // and audio streams without interference.
+        // key filtering and generate active software repeats so holding volume continuously ramps.
         val isVolumeKey = keyCode in listOf(
             KeyEvent.KEYCODE_VOLUME_UP,
             KeyEvent.KEYCODE_VOLUME_DOWN,
@@ -211,6 +221,46 @@ class RemoteButtonRemapService : AccessibilityService() {
                     updateKeyFilterState()
                 }
                 handler.postDelayed(restoreKeyFilterRunnable, VOLUME_BYPASS_TIMEOUT_MS)
+
+                // Software repeat generator for Volume Up/Down on devices where the OS suppresses hold repeats
+                if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+                    if (event.action == KeyEvent.ACTION_DOWN) {
+                        if (event.repeatCount > 0) {
+                            // Hardware/OS repeat arrived: cancel synthetic repeat to prevent double ramping
+                            volumeRepeatRunnable?.let { handler.removeCallbacks(it) }
+                            volumeRepeatRunnable = null
+                        } else {
+                            volumeRepeatRunnable?.let { handler.removeCallbacks(it) }
+                            val direction = if (keyCode == KeyEvent.KEYCODE_VOLUME_UP) {
+                                AudioManager.ADJUST_RAISE
+                            } else {
+                                AudioManager.ADJUST_LOWER
+                            }
+                            val startTime = SystemClock.uptimeMillis()
+                            val repeatRunnable = object : Runnable {
+                                override fun run() {
+                                    if (SystemClock.uptimeMillis() - startTime > 8000L) return
+                                    try {
+                                        audioManager?.adjustSuggestedStreamVolume(
+                                            direction,
+                                            AudioManager.USE_DEFAULT_STREAM_TYPE,
+                                            AudioManager.FLAG_SHOW_UI
+                                        )
+                                    } catch (e: Exception) {
+                                        Log.w(tag, "Volume adjustment failed", e)
+                                    }
+                                    handler.postDelayed(this, VOLUME_REPEAT_INTERVAL_MS)
+                                }
+                            }
+                            volumeRepeatRunnable = repeatRunnable
+                            handler.postDelayed(repeatRunnable, VOLUME_REPEAT_INITIAL_DELAY_MS)
+                        }
+                    } else if (event.action == KeyEvent.ACTION_UP) {
+                        volumeRepeatRunnable?.let { handler.removeCallbacks(it) }
+                        volumeRepeatRunnable = null
+                    }
+                }
+
                 return false
             }
         }
@@ -231,12 +281,15 @@ class RemoteButtonRemapService : AccessibilityService() {
                 KeyEvent.KEYCODE_ESCAPE,
                 KeyEvent.KEYCODE_HOME,
                 KeyEvent.KEYCODE_APP_SWITCH,
+                KeyEvent.KEYCODE_POWER,
+                KeyEvent.KEYCODE_SLEEP -> return false
                 KeyEvent.KEYCODE_VOLUME_UP,
                 KeyEvent.KEYCODE_VOLUME_DOWN,
                 KeyEvent.KEYCODE_VOLUME_MUTE,
-                KeyEvent.KEYCODE_MUTE,
-                KeyEvent.KEYCODE_POWER,
-                KeyEvent.KEYCODE_SLEEP -> return false
+                KeyEvent.KEYCODE_MUTE -> {
+                    // Only bypass unmapped volume keys; custom mapped keys proceed to action dispatch
+                    if (findRemapConfig(keyCode) == null) return false
+                }
             }
         }
 
@@ -468,6 +521,8 @@ class RemoteButtonRemapService : AccessibilityService() {
         private const val LONG_PRESS_TIMEOUT_MS = 450L
         private const val DOUBLE_PRESS_TIMEOUT_MS = 280L
         private const val VOLUME_BYPASS_TIMEOUT_MS = 3500L
+        private const val VOLUME_REPEAT_INITIAL_DELAY_MS = 350L
+        private const val VOLUME_REPEAT_INTERVAL_MS = 90L
 
         var instance: RemoteButtonRemapService? = null
             private set

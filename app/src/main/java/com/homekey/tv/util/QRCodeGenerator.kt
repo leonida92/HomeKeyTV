@@ -19,13 +19,15 @@ object QRCodeGenerator {
             val bitMatrix = QRCodeWriter().encode(content, BarcodeFormat.QR_CODE, size, size, hints)
             val width = bitMatrix.width
             val height = bitMatrix.height
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-
-            for (x in 0 until width) {
-                for (y in 0 until height) {
-                    bitmap.setPixel(x, y, if (bitMatrix[x, y]) Color.BLACK else Color.WHITE)
+            val pixels = IntArray(width * height)
+            for (y in 0 until height) {
+                val rowOffset = y * width
+                for (x in 0 until width) {
+                    pixels[rowOffset + x] = if (bitMatrix[x, y]) Color.BLACK else Color.WHITE
                 }
             }
+            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+            bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
             bitmap
         } catch (e: Exception) {
             e.printStackTrace()

@@ -1,5 +1,6 @@
 package com.homekey.tv.viewmodel
 
+import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -145,6 +146,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    @SuppressLint("QueryPermissionsNeeded")
     fun loadInstalledApps() {
         viewModelScope.launch(Dispatchers.IO) {
             val pm = getApplication<Application>().packageManager

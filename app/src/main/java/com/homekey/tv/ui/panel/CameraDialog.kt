@@ -47,6 +47,14 @@ import kotlin.math.abs
 
 private const val TAG = "CameraDialog"
 
+private val cameraHttpClient by lazy {
+    OkHttpClient.Builder()
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(0, TimeUnit.MILLISECONDS)
+        .writeTimeout(10, TimeUnit.SECONDS)
+        .build()
+}
+
 private enum class StreamStatus {
     CONNECTING,
     LIVE,
@@ -89,13 +97,7 @@ fun CameraDialog(
     val streamUrl = remember(cleanBaseUrl, entity.entityId) { "$cleanBaseUrl/api/camera_proxy_stream/${entity.entityId}" }
     val snapshotUrl = remember(cleanBaseUrl, entity.entityId) { "$cleanBaseUrl/api/camera_proxy/${entity.entityId}" }
 
-    val client = remember {
-        OkHttpClient.Builder()
-            .connectTimeout(10, TimeUnit.SECONDS)
-            .readTimeout(0, TimeUnit.MILLISECONDS)
-            .writeTimeout(10, TimeUnit.SECONDS)
-            .build()
-    }
+    val client = cameraHttpClient
 
     // Live MJPEG streaming with automatic still snapshot fallback
     LaunchedEffect(entity.entityId, reconnectTrigger, streamUrl, snapshotUrl) {
