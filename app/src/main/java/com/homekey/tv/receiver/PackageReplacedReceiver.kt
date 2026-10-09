@@ -27,9 +27,16 @@ class PackageReplacedReceiver : BroadcastReceiver() {
                     return@launch
                 }
 
-                Log.d(TAG, "Package updated. Restoring RemoteButtonRemapService accessibility...")
+                // 1. Give Android OS time to naturally re-bind the service after package update
+                delay(1500)
+                if (RemoteButtonRemapService.isServiceRunning.value) {
+                    Log.d(TAG, "Accessibility service already running after package replace")
+                    return@launch
+                }
 
-                // 1. Try direct Secure Settings write first if permission is already granted
+                Log.d(TAG, "Package updated. Checking RemoteButtonRemapService accessibility...")
+
+                // 2. Try direct Secure Settings write first if permission is already granted
                 LocalAdbManager.tryEnableViaSecureSettings(context)
                 delay(800)
 
@@ -38,7 +45,7 @@ class PackageReplacedReceiver : BroadcastReceiver() {
                     return@launch
                 }
 
-                // 2. Fallback to silent local ADB loopback if Secure Settings alone did not bind the service
+                // 3. Fallback to silent local ADB loopback if Secure Settings alone did not bind the service
                 Log.d(TAG, "Attempting silent ADB restoration...")
                 val result = LocalAdbManager.enableAccessibilityService(context)
                 Log.d(TAG, "ADB restoration completed with result: $result")

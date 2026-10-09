@@ -35,13 +35,6 @@ class RemoteButtonRemapService : AccessibilityService() {
 
     private lateinit var prefs: PreferencesManager
 
-    private var isVolumeBypassActive = false
-    private val restoreKeyFilterRunnable = Runnable {
-        isVolumeBypassActive = false
-        updateKeyFilterState()
-        Log.d(tag, "Volume bypass window expired: restored key filter state")
-    }
-
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
     private var volumeRepeatRunnable: Runnable? = null
 
@@ -61,7 +54,7 @@ class RemoteButtonRemapService : AccessibilityService() {
         val info = serviceInfo ?: return
         val hasRemaps = ::prefs.isInitialized && prefs.buttonRemaps.value.isNotEmpty()
         val isLearning = _isLearnModeActive.value
-        val shouldFilter = (hasRemaps || isLearning) && !isVolumeBypassActive
+        val shouldFilter = hasRemaps || isLearning
 
         val currentlyFiltering = (info.flags and AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0
         if (shouldFilter != currentlyFiltering) {
@@ -71,7 +64,7 @@ class RemoteButtonRemapService : AccessibilityService() {
                 info.flags and AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS.inv()
             }
             serviceInfo = info
-            Log.d(tag, "updateKeyFilterState: shouldFilter=$shouldFilter (hasRemaps=$hasRemaps, isLearning=$isLearning, isVolumeBypass=$isVolumeBypassActive)")
+            Log.d(tag, "updateKeyFilterState: shouldFilter=$shouldFilter (hasRemaps=$hasRemaps, isLearning=$isLearning)")
         }
     }
 
@@ -113,17 +106,12 @@ class RemoteButtonRemapService : AccessibilityService() {
             }
         }
 
-        // Reactively cancel volume bypass and repeat timer if volume fix is disabled
+        // Reactively cancel volume repeat timer if volume fix is disabled
         scope.launch {
             prefs.volumeFixEnabled.collect { enabled ->
                 if (!enabled) {
                     volumeRepeatRunnable?.let { handler.removeCallbacks(it) }
                     volumeRepeatRunnable = null
-                    if (isVolumeBypassActive) {
-                        handler.removeCallbacks(restoreKeyFilterRunnable)
-                        isVolumeBypassActive = false
-                        updateKeyFilterState()
-                    }
                 }
             }
         }
@@ -143,10 +131,8 @@ class RemoteButtonRemapService : AccessibilityService() {
         serviceScope?.cancel()
         serviceScope = null
         DockOverlayManager.teardown()
-        handler.removeCallbacks(restoreKeyFilterRunnable)
         volumeRepeatRunnable?.let { handler.removeCallbacks(it) }
         volumeRepeatRunnable = null
-        isVolumeBypassActive = false
         keyStates.values.forEach { state ->
             state.singleClickRunnable?.let { handler.removeCallbacks(it) }
             state.longPressRunnable?.let { handler.removeCallbacks(it) }
@@ -204,8 +190,8 @@ class RemoteButtonRemapService : AccessibilityService() {
 
         // Volume Buttons Fix: On Xiaomi Mi TV and Android 9 (Pie) devices, the OS input filter
         // breaks hardware key repeats for volume buttons and may hijack the volume stream to
-        // STREAM_ACCESSIBILITY. When volume keys are pressed and unmapped, temporarily disable
-        // key filtering and generate active software repeats so holding volume continuously ramps.
+        // STREAM_ACCESSIBILITY. When volume keys are pressed and unmapped, pass through with 0ms latency
+        // and generate active software repeats so holding volume continuously ramps without filter flapping.
         val isVolumeKey = keyCode in listOf(
             KeyEvent.KEYCODE_VOLUME_UP,
             KeyEvent.KEYCODE_VOLUME_DOWN,
@@ -215,13 +201,6 @@ class RemoteButtonRemapService : AccessibilityService() {
         if (isVolumeKey && !_isLearnModeActive.value) {
             val isCustomMapped = findRemapConfig(keyCode) != null
             if (!isCustomMapped && ::prefs.isInitialized && prefs.volumeFixEnabled.value) {
-                handler.removeCallbacks(restoreKeyFilterRunnable)
-                if (!isVolumeBypassActive) {
-                    isVolumeBypassActive = true
-                    updateKeyFilterState()
-                }
-                handler.postDelayed(restoreKeyFilterRunnable, VOLUME_BYPASS_TIMEOUT_MS)
-
                 // Software repeat generator for Volume Up/Down on devices where the OS suppresses hold repeats
                 if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
                     if (event.action == KeyEvent.ACTION_DOWN) {
@@ -520,7 +499,6 @@ class RemoteButtonRemapService : AccessibilityService() {
     companion object {
         private const val LONG_PRESS_TIMEOUT_MS = 450L
         private const val DOUBLE_PRESS_TIMEOUT_MS = 280L
-        private const val VOLUME_BYPASS_TIMEOUT_MS = 3500L
         private const val VOLUME_REPEAT_INITIAL_DELAY_MS = 350L
         private const val VOLUME_REPEAT_INTERVAL_MS = 90L
 

@@ -75,15 +75,17 @@ object LocalAdbManager {
         return try {
             val resolver = context.contentResolver
             val current = Settings.Secure.getString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            // If our service is already enabled, ensure the master switch is on and return early
+            // without flapping the setting, which avoids tearing down and rebinding active input filters.
+            if (current != null && current.contains("RemoteButtonRemapService")) {
+                Settings.Secure.putInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+                Log.d(TAG, "RemoteButtonRemapService already present in Secure Settings")
+                return true
+            }
+
             val withoutService = removeAccessibilityService(current)
             val merged = mergeAccessibilityServices(withoutService, SERVICE_NAME)
 
-            if (current != null && current.contains("RemoteButtonRemapService")) {
-                Settings.Secure.putString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, withoutService)
-                try {
-                    Thread.sleep(100)
-                } catch (_: InterruptedException) {}
-            }
             Settings.Secure.putString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, merged)
             Settings.Secure.putInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
             Log.d(TAG, "Successfully wrote accessibility settings directly via Secure Settings")
@@ -136,25 +138,13 @@ object LocalAdbManager {
                 val current = dadb.shell("settings get secure enabled_accessibility_services").output.trim()
                 Log.d(TAG, "Current enabled_accessibility_services: $current")
 
-                val withoutService = removeAccessibilityService(current)
-                val merged = mergeAccessibilityServices(withoutService, SERVICE_NAME)
-
-                // 3. If our service was already present, force Android's SettingsProvider ContentObserver
-                // to trigger by clearing or setting without our service first.
-                if (current.contains("RemoteButtonRemapService")) {
-                    if (withoutService.isEmpty()) {
-                        dadb.shell("settings delete secure enabled_accessibility_services")
-                    } else {
-                        dadb.shell("settings put secure enabled_accessibility_services $withoutService")
-                    }
-                    try {
-                        Thread.sleep(150)
-                    } catch (_: InterruptedException) {}
+                // 3. Write merged service string only if not already registered
+                if (!current.contains("RemoteButtonRemapService")) {
+                    val withoutService = removeAccessibilityService(current)
+                    val merged = mergeAccessibilityServices(withoutService, SERVICE_NAME)
+                    Log.d(TAG, "Writing enabled_accessibility_services: $merged")
+                    dadb.shell("settings put secure enabled_accessibility_services $merged")
                 }
-
-                // 4. Write the canonical merged service string and enable accessibility master switch
-                Log.d(TAG, "Writing enabled_accessibility_services: $merged")
-                dadb.shell("settings put secure enabled_accessibility_services $merged")
                 dadb.shell("settings put secure accessibility_enabled 1")
 
                 Log.d(TAG, "ADB accessibility configuration complete")

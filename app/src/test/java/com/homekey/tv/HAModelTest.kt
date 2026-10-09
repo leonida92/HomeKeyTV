@@ -238,6 +238,11 @@ class HAModelTest {
         assertTrue(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.6.9", "1.6.8"))
         assertFalse(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.6.8", "1.6.8"))
         assertFalse(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.6.7", "1.6.8"))
+
+        // Comparisons against 1.6.9
+        assertTrue(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.7.0", "1.6.9"))
+        assertFalse(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.6.9", "1.6.9"))
+        assertFalse(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.7.0", "1.7.0"))
     }
 
     @Test

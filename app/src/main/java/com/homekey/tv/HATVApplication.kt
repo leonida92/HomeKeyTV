@@ -1,15 +1,9 @@
 package com.homekey.tv
 
 import android.app.Application
-import android.util.Log
 import com.homekey.tv.data.api.HAWebSocketClient
 import com.homekey.tv.data.local.PreferencesManager
 import com.homekey.tv.data.server.WebSetupServerManager
-import com.homekey.tv.service.LocalAdbManager
-import com.homekey.tv.service.RemoteButtonRemapService
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 
 class HATVApplication : Application() {
 
@@ -30,11 +24,5 @@ class HATVApplication : Application() {
             }
         }
 
-        // Ensure RemoteButtonRemapService is active if button remaps are configured
-        if (prefs.buttonRemaps.value.isNotEmpty() && !RemoteButtonRemapService.isServiceRunning.value) {
-            CoroutineScope(Dispatchers.IO).launch {
-                LocalAdbManager.tryEnableViaSecureSettings(this@HATVApplication)
-            }
-        }
     }
 }

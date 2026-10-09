@@ -159,14 +159,12 @@ object DockOverlayManager {
     }
 
     fun prewarm(service: RemoteButtonRemapService) {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            Handler(Looper.getMainLooper()).post { prewarm(service) }
-            return
-        }
-        if (rootLayout != null && rootLayout?.isAttachedToWindow == true) {
-            return
-        }
-        initWindow(service, initiallyVisible = false)
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (rootLayout != null && rootLayout?.isAttachedToWindow == true) {
+                return@postDelayed
+            }
+            initWindow(service, initiallyVisible = false)
+        }, 500L)
     }
 
     fun show(service: RemoteButtonRemapService) {
