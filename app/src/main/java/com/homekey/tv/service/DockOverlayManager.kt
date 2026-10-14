@@ -8,6 +8,7 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.KeyEvent
@@ -133,7 +134,9 @@ class OverlayFrameLayout(context: Context) : FrameLayout(context) {
 @SuppressLint("StaticFieldLeak")
 object DockOverlayManager {
     private const val TAG = "DockOverlayManager"
+    private const val TOGGLE_DEBOUNCE_MS = 350L
 
+    private var lastToggleTime = 0L
     private var windowManager: WindowManager? = null
     private var rootLayout: OverlayFrameLayout? = null
     private var composeView: ComposeView? = null
@@ -210,6 +213,12 @@ object DockOverlayManager {
             Handler(Looper.getMainLooper()).post { toggle(service) }
             return
         }
+        val now = SystemClock.uptimeMillis()
+        if (now - lastToggleTime < TOGGLE_DEBOUNCE_MS) {
+            Log.d(TAG, "toggle: ignoring rapid toggle event (${now - lastToggleTime}ms < ${TOGGLE_DEBOUNCE_MS}ms)")
+            return
+        }
+        lastToggleTime = now
         if (isShowing) hide() else show(service)
     }
 
@@ -228,6 +237,7 @@ object DockOverlayManager {
             return
         }
         if (isShowing) return
+        lastToggleTime = SystemClock.uptimeMillis()
 
         val layout = rootLayout
         val wm = windowManager
@@ -364,6 +374,7 @@ object DockOverlayManager {
             Handler(Looper.getMainLooper()).post { hide() }
             return
         }
+        lastToggleTime = SystemClock.uptimeMillis()
         val layout = rootLayout ?: return
         val wm = windowManager ?: return
 

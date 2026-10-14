@@ -38,6 +38,7 @@ class RemoteButtonRemapService : AccessibilityService() {
 
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
     private var volumeRepeatRunnable: Runnable? = null
+    private var lastOpenDockTime = 0L
 
     // Unboxed primitive key code cache for 0ms sub-millisecond lookup in onKeyEvent
     @Volatile private var globalRemapCache = SparseArray<ButtonRemapConfig>()
@@ -49,6 +50,7 @@ class RemoteButtonRemapService : AccessibilityService() {
     private class KeyState {
         var isLongPressTriggered = false
         var lastUpTime = 0L
+        var lastDownTime = 0L
         var singleClickRunnable: Runnable? = null
         var longPressRunnable: Runnable? = null
     }
@@ -364,6 +366,14 @@ class RemoteButtonRemapService : AccessibilityService() {
 
         if (event.action == KeyEvent.ACTION_DOWN) {
             if (event.repeatCount == 0) {
+                val now = SystemClock.uptimeMillis()
+                val debounceLimit = if (isSingleActionOnly) SINGLE_PRESS_DEBOUNCE_MS else MULTI_PRESS_DEBOUNCE_MS
+                val timeSinceLastDown = now - state.lastDownTime
+                if (timeSinceLastDown < debounceLimit) {
+                    Log.d(tag, "Ignoring bounce down event for keyCode=$keyCode (${timeSinceLastDown}ms < ${debounceLimit}ms)")
+                    return true
+                }
+                state.lastDownTime = now
                 state.isLongPressTriggered = false
 
                 if (isSingleActionOnly) {
@@ -414,8 +424,8 @@ class RemoteButtonRemapService : AccessibilityService() {
             val now = SystemClock.uptimeMillis()
             val timeSinceLastClick = now - state.lastUpTime
 
-            if (config.doublePressAction != null && timeSinceLastClick < DOUBLE_PRESS_TIMEOUT_MS) {
-                // Double click detected (same key pressed twice within the window).
+            if (config.doublePressAction != null && timeSinceLastClick in DOUBLE_PRESS_MIN_INTERVAL_MS until DOUBLE_PRESS_TIMEOUT_MS) {
+                // Double click detected (same key pressed twice within the valid human window).
                 state.singleClickRunnable?.let { handler.removeCallbacks(it) }
                 state.singleClickRunnable = null
                 state.lastUpTime = 0L
@@ -456,6 +466,12 @@ class RemoteButtonRemapService : AccessibilityService() {
             }
 
             "OPEN_DOCK" -> {
+                val now = SystemClock.uptimeMillis()
+                if (now - lastOpenDockTime < OPEN_DOCK_DEBOUNCE_MS) {
+                    Log.d(tag, "OPEN_DOCK throttled (${now - lastOpenDockTime}ms < ${OPEN_DOCK_DEBOUNCE_MS}ms)")
+                    return
+                }
+                lastOpenDockTime = now
                 DockOverlayManager.toggle(this)
             }
 
@@ -609,6 +625,10 @@ class RemoteButtonRemapService : AccessibilityService() {
     companion object {
         private const val LONG_PRESS_TIMEOUT_MS = 450L
         private const val DOUBLE_PRESS_TIMEOUT_MS = 280L
+        private const val DOUBLE_PRESS_MIN_INTERVAL_MS = 80L
+        private const val SINGLE_PRESS_DEBOUNCE_MS = 250L
+        private const val MULTI_PRESS_DEBOUNCE_MS = 80L
+        private const val OPEN_DOCK_DEBOUNCE_MS = 350L
         private const val VOLUME_REPEAT_INITIAL_DELAY_MS = 350L
         private const val VOLUME_REPEAT_INTERVAL_MS = 90L
 
