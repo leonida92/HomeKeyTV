@@ -966,6 +966,7 @@ class HAModelTest {
         assertEquals("Front Door Alert", decoded.title)
         assertEquals("Person detected on porch", decoded.message)
         assertEquals(20, decoded.durationSeconds)
+        assertEquals(alert.timestamp, decoded.timestamp)
     }
 
     @Test

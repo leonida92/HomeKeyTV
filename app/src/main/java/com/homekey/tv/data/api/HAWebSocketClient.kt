@@ -42,7 +42,6 @@ class HAWebSocketClient(
 
     @Volatile private var webSocket: WebSocket? = null
     private val messageId = AtomicLong(1)
-    @Volatile private var isSubscribedToEvents = false
     @Volatile private var getStatesMsgId: Long = -1
 
     private val baseMonitoredEntities = MutableStateFlow<Set<String>>(emptySet())
@@ -136,7 +135,6 @@ class HAWebSocketClient(
 
         // Don't flash DISCONNECTED while re-establishing a connection; we set CONNECTING below.
         disconnect(updateStatus = false)
-        isSubscribedToEvents = false
 
         val wsUrl = buildWsUrl(currentUrl)
         Log.d(tag, "Connecting to WebSocket: $wsUrl")
@@ -161,7 +159,6 @@ class HAWebSocketClient(
             Log.e(tag, "Error closing websocket", e)
         }
         webSocket = null
-        isSubscribedToEvents = false
         subscribeEntitiesSubId = -1L
         isSubscribedToEventsFallback = false
         notifyEventsSubId = -1L
@@ -197,7 +194,6 @@ class HAWebSocketClient(
     override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
         Log.d(tag, "WebSocket Closed: $code $reason")
         _connectionStatus.value = ConnectionStatus.DISCONNECTED
-        isSubscribedToEvents = false
         if (code != 1000) {
             scheduleReconnect()
         }
@@ -207,7 +203,6 @@ class HAWebSocketClient(
         Log.e(tag, "WebSocket Failure: ${t.message}", t)
         _connectionStatus.value = ConnectionStatus.FAILED
         _errorMessage.value = t.localizedMessage ?: "Connection failed"
-        isSubscribedToEvents = false
         scheduleReconnect()
     }
 
@@ -292,12 +287,13 @@ class HAWebSocketClient(
                     if (entityId != null) {
                         val title = data["title"]?.jsonPrimitive?.contentOrNull
                         val message = data["message"]?.jsonPrimitive?.contentOrNull
-                        val duration = data["duration"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 15
+                        val duration = (data["duration"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 15).coerceIn(3, 120)
                         val alert = CameraPipAlert(
                             entityId = entityId,
                             title = title,
                             message = message,
-                            durationSeconds = duration
+                            durationSeconds = duration,
+                            timestamp = System.currentTimeMillis()
                         )
                         Log.d(tag, "Received CameraPipAlert: $entityId ($title), duration=${duration}s")
                         _pipAlert.value = alert

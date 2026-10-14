@@ -3,6 +3,7 @@ package com.homekey.tv.service
 import android.content.Context
 import android.net.nsd.NsdManager
 import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import android.provider.Settings
 import android.util.Log
 import dadb.AdbKeyPair
@@ -136,91 +137,110 @@ object LocalAdbManager {
         timeoutMs: Long
     ): Int? {
         val nsdManager = context.getSystemService(Context.NSD_SERVICE) as? NsdManager ?: return null
-        return withTimeoutOrNull(timeoutMs) {
-            suspendCancellableCoroutine { continuation ->
-                var isCompleted = false
-                var isResolving = false
-                var discoveryStarted = false
+        val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+        val multicastLock = try {
+            wifiManager?.createMulticastLock("homekey_mdns")?.apply {
+                setReferenceCounted(false)
+                acquire()
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to acquire MulticastLock: ${e.message}")
+            null
+        }
 
-                var listenerRef: NsdManager.DiscoveryListener? = null
-                val listener = object : NsdManager.DiscoveryListener {
-                    override fun onDiscoveryStarted(regType: String) {
-                        discoveryStarted = true
-                        Log.d(TAG, "NSD discovery started for $regType")
-                    }
+        return try {
+            withTimeoutOrNull(timeoutMs) {
+                suspendCancellableCoroutine { continuation ->
+                    var isCompleted = false
+                    var isResolving = false
+                    var discoveryStarted = false
 
-                    override fun onServiceFound(serviceInfo: NsdServiceInfo) {
-                        Log.d(TAG, "NSD service found: ${serviceInfo.serviceName}, type: ${serviceInfo.serviceType}")
-                        if (isCompleted || isResolving) return
-                        isResolving = true
+                    var listenerRef: NsdManager.DiscoveryListener? = null
+                    val listener = object : NsdManager.DiscoveryListener {
+                        override fun onDiscoveryStarted(regType: String) {
+                            discoveryStarted = true
+                            Log.d(TAG, "NSD discovery started for $regType")
+                        }
 
-                        val resolveListener = object : NsdManager.ResolveListener {
-                            override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
-                                Log.w(TAG, "NSD resolve failed for ${info.serviceName}: $errorCode")
-                                isResolving = false
-                            }
+                        override fun onServiceFound(serviceInfo: NsdServiceInfo) {
+                            Log.d(TAG, "NSD service found: ${serviceInfo.serviceName}, type: ${serviceInfo.serviceType}")
+                            if (isCompleted || isResolving) return
+                            isResolving = true
 
-                            override fun onServiceResolved(info: NsdServiceInfo) {
-                                Log.d(TAG, "NSD resolved service: ${info.serviceName} -> port ${info.port}")
-                                if (!isCompleted && continuation.isActive) {
-                                    isCompleted = true
-                                    try {
-                                        listenerRef?.let { if (discoveryStarted) nsdManager.stopServiceDiscovery(it) }
-                                    } catch (_: Exception) {}
-                                    continuation.resume(info.port)
+                            val resolveListener = object : NsdManager.ResolveListener {
+                                override fun onResolveFailed(info: NsdServiceInfo, errorCode: Int) {
+                                    Log.w(TAG, "NSD resolve failed for ${info.serviceName}: $errorCode")
+                                    isResolving = false
+                                }
+
+                                override fun onServiceResolved(info: NsdServiceInfo) {
+                                    Log.d(TAG, "NSD resolved service: ${info.serviceName} -> port ${info.port}")
+                                    if (!isCompleted && continuation.isActive) {
+                                        isCompleted = true
+                                        try {
+                                            listenerRef?.let { if (discoveryStarted) nsdManager.stopServiceDiscovery(it) }
+                                        } catch (_: Exception) {}
+                                        continuation.resume(info.port)
+                                    }
                                 }
                             }
+
+                            try {
+                                @Suppress("DEPRECATION")
+                                nsdManager.resolveService(serviceInfo, resolveListener)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "NSD resolveService exception: ${e.message}")
+                                isResolving = false
+                            }
                         }
 
-                        try {
-                            @Suppress("DEPRECATION")
-                            nsdManager.resolveService(serviceInfo, resolveListener)
-                        } catch (e: Exception) {
-                            Log.w(TAG, "NSD resolveService exception: ${e.message}")
-                            isResolving = false
+                        override fun onServiceLost(serviceInfo: NsdServiceInfo) {
+                            Log.d(TAG, "NSD service lost: ${serviceInfo.serviceName}")
+                        }
+
+                        override fun onDiscoveryStopped(serviceType: String) {
+                            Log.d(TAG, "NSD discovery stopped for $serviceType")
+                        }
+
+                        override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                            Log.e(TAG, "NSD start discovery failed: $errorCode")
+                            if (!isCompleted && continuation.isActive) {
+                                isCompleted = true
+                                continuation.resume(null)
+                            }
+                        }
+
+                        override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
+                            Log.e(TAG, "NSD stop discovery failed: $errorCode")
                         }
                     }
+                    listenerRef = listener
 
-                    override fun onServiceLost(serviceInfo: NsdServiceInfo) {
-                        Log.d(TAG, "NSD service lost: ${serviceInfo.serviceName}")
-                    }
-
-                    override fun onDiscoveryStopped(serviceType: String) {
-                        Log.d(TAG, "NSD discovery stopped for $serviceType")
-                    }
-
-                    override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
-                        Log.e(TAG, "NSD start discovery failed: $errorCode")
+                    try {
+                        nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "NSD discoverServices failed: ${e.message}")
                         if (!isCompleted && continuation.isActive) {
                             isCompleted = true
                             continuation.resume(null)
                         }
                     }
 
-                    override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) {
-                        Log.e(TAG, "NSD stop discovery failed: $errorCode")
-                    }
-                }
-                listenerRef = listener
-
-                try {
-                    nsdManager.discoverServices(serviceType, NsdManager.PROTOCOL_DNS_SD, listener)
-                } catch (e: Exception) {
-                    Log.w(TAG, "NSD discoverServices failed: ${e.message}")
-                    if (!isCompleted && continuation.isActive) {
-                        isCompleted = true
-                        continuation.resume(null)
-                    }
-                }
-
-                continuation.invokeOnCancellation {
-                    if (discoveryStarted) {
-                        try {
-                            nsdManager.stopServiceDiscovery(listener)
-                        } catch (_: Exception) {}
+                    continuation.invokeOnCancellation {
+                        if (discoveryStarted) {
+                            try {
+                                nsdManager.stopServiceDiscovery(listener)
+                            } catch (_: Exception) {}
+                        }
                     }
                 }
             }
+        } finally {
+            try {
+                if (multicastLock?.isHeld == true) {
+                    multicastLock.release()
+                }
+            } catch (_: Exception) {}
         }
     }
 

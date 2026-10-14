@@ -293,7 +293,8 @@ data class CameraPipAlert(
     @SerialName("entity_id") val entityId: String,
     val title: String? = null,
     val message: String? = null,
-    @SerialName("duration") val durationSeconds: Int = 15
+    @SerialName("duration") val durationSeconds: Int = 15,
+    val timestamp: Long = System.currentTimeMillis()
 )
 
 

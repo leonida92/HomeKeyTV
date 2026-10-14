@@ -38,7 +38,7 @@ object TinkKeystoreCrypto {
                 Log.w(TAG, "Android Keystore master key unavailable, attempting un-mastered keyset: ${e.message}")
                 try {
                     val fallbackHandle = AndroidKeysetManager.Builder()
-                        .withSharedPref(context.applicationContext, KEYSET_NAME, PREF_FILE_NAME)
+                        .withSharedPref(context.applicationContext, "${KEYSET_NAME}_fallback", "${PREF_FILE_NAME}_fallback")
                         .withKeyTemplate(KeyTemplates.get("AES256_GCM"))
                         .build()
                         .keysetHandle

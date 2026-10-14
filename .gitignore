@@ -37,3 +37,7 @@ google-services.json
 
 # Log files
 *.log
+
+# Patch and diff files
+*.patch
+*.diff

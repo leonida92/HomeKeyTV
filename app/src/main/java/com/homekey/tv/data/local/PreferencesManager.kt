@@ -271,6 +271,17 @@ class PreferencesManager(context: Context) {
                                     set.add(target)
                                 }
                             }
+                        } else if (action.type == "CALL_SERVICE") {
+                            action.target?.let { target ->
+                                if (target.startsWith("script.") || target.startsWith("automation.") || target.startsWith("scene.")) {
+                                    set.add(target)
+                                }
+                            }
+                            action.extra?.let { extra ->
+                                if (extra.contains(".")) {
+                                    set.add(extra)
+                                }
+                            }
                         }
                     }
                 }
@@ -592,23 +603,76 @@ class PreferencesManager(context: Context) {
     fun restoreFromBackupJson(jsonString: String): Boolean {
         return try {
             val backup = json.decodeFromString<HomeKeyBackup>(jsonString)
-            if (backup.serverUrl.isNotBlank()) {
-                val token = backup.accessToken?.ifBlank { null } ?: _accessToken.value
-                saveServerConfig(backup.serverUrl, token)
+            val cleanUrl = backup.serverUrl.trim().removeSuffix("/")
+            val cleanToken = backup.accessToken?.ifBlank { null } ?: _accessToken.value
+            val panelLayout = normalizeLayout(backup.panelLayout)
+            val popupStyle = normalizePopupStyle(backup.popupStyle)
+            val cameraPopupStyle = normalizeCameraPopupStyle(backup.cameraPopupStyle)
+            val cameraCompactSize = normalizeCameraCompactSize(backup.cameraCompactSize)
+            val recentAppsEnabled = backup.recentAppsEnabled
+            val recentAppsCount = backup.recentAppsCount.coerceIn(1, 5)
+            val haEnabled = backup.haEnabled
+            val volumeFixEnabled = backup.volumeFixEnabled
+            val themePreset = backup.themePreset
+            val customColors = backup.customThemeColors
+            val pinnedEntities = backup.pinnedEntities
+            val pinnedApps = backup.pinnedApps
+            val buttonRemaps = backup.buttonRemaps
+
+            // Update in-memory StateFlows synchronously
+            if (cleanUrl.isNotBlank()) {
+                _serverUrl.value = cleanUrl
+                _accessToken.value = cleanToken
             }
-            setPanelLayout(backup.panelLayout)
-            setPopupStyle(backup.popupStyle)
-            setCameraPopupStyle(backup.cameraPopupStyle)
-            setCameraCompactSize(backup.cameraCompactSize)
-            setRecentAppsEnabled(backup.recentAppsEnabled)
-            setRecentAppsCount(backup.recentAppsCount)
-            setHaEnabled(backup.haEnabled)
-            setVolumeFixEnabled(backup.volumeFixEnabled)
-            setThemePreset(backup.themePreset)
-            setCustomDomainColors(backup.customThemeColors)
-            savePinnedEntities(backup.pinnedEntities)
-            savePinnedApps(backup.pinnedApps)
-            saveButtonRemaps(backup.buttonRemaps)
+            _panelLayout.value = panelLayout
+            _popupStyle.value = popupStyle
+            _cameraPopupStyle.value = cameraPopupStyle
+            _cameraCompactSize.value = cameraCompactSize
+            _recentAppsEnabled.value = recentAppsEnabled
+            _recentAppsCount.value = recentAppsCount
+            _haEnabled.value = haEnabled
+            _volumeFixEnabled.value = volumeFixEnabled
+            _themePreset.value = themePreset
+            _customThemeColors.value = customColors
+            _activePalette.value = calculateActivePalette(themePreset, customColors)
+            _pinnedEntities.value = pinnedEntities
+            _pinnedApps.value = pinnedApps
+            _buttonRemaps.value = buttonRemaps
+
+            // Single atomic write to DataStore
+            scope.launch(Dispatchers.IO) {
+                val encToken = if (cleanUrl.isNotBlank()) {
+                    TinkKeystoreCrypto.encrypt(appContext, cleanToken)
+                } else null
+
+                val customColorsJson = json.encodeToString(customColors)
+                val pinnedEntitiesJson = json.encodeToString(pinnedEntities)
+                val pinnedAppsJson = json.encodeToString(pinnedApps)
+                val buttonRemapsJson = json.encodeToString(buttonRemaps)
+
+                appContext.haDataStore.edit { p ->
+                    if (cleanUrl.isNotBlank()) {
+                        p[PreferencesKeys.SERVER_URL] = cleanUrl
+                        if (encToken != null) {
+                            p[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN] = encToken
+                            p.remove(PreferencesKeys.ACCESS_TOKEN)
+                        }
+                    }
+                    p[PreferencesKeys.PANEL_LAYOUT] = panelLayout
+                    p[PreferencesKeys.POPUP_STYLE] = popupStyle
+                    p[PreferencesKeys.CAMERA_POPUP_STYLE] = cameraPopupStyle
+                    p[PreferencesKeys.CAMERA_COMPACT_SIZE] = cameraCompactSize
+                    p[PreferencesKeys.RECENT_APPS_ENABLED] = recentAppsEnabled
+                    p[PreferencesKeys.RECENT_APPS_COUNT] = recentAppsCount
+                    p[PreferencesKeys.HA_ENABLED] = haEnabled
+                    p[PreferencesKeys.VOLUME_FIX_ENABLED] = volumeFixEnabled
+                    p[PreferencesKeys.THEME_PRESET] = themePreset
+                    p[PreferencesKeys.CUSTOM_THEME_COLORS] = customColorsJson
+                    p[PreferencesKeys.PINNED_ENTITIES] = pinnedEntitiesJson
+                    p[PreferencesKeys.PINNED_APPS] = pinnedAppsJson
+                    p[PreferencesKeys.BUTTON_REMAPS] = buttonRemapsJson
+                }
+            }
             true
         } catch (e: Exception) {
             Log.e(TAG, "Failed to restore backup: ${e.message}", e)

@@ -186,16 +186,18 @@ class RemoteButtonRemapService : AccessibilityService() {
         if (event == null) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString() ?: return
-            currentForegroundPackage = pkg
-            if (::prefs.isInitialized && prefs.recentAppsEnabled.value) {
-                try {
-                    val pm = packageManager
-                    val isLaunchable = pm.getLeanbackLaunchIntentForPackage(pkg) != null ||
-                            pm.getLaunchIntentForPackage(pkg) != null
-                    if (isLaunchable) {
-                        prefs.recordRecentApp(pkg)
-                    }
-                } catch (_: Exception) {}
+            if (pkg != packageName && pkg != "com.android.systemui") {
+                currentForegroundPackage = pkg
+                if (::prefs.isInitialized && prefs.recentAppsEnabled.value) {
+                    try {
+                        val pm = packageManager
+                        val isLaunchable = pm.getLeanbackLaunchIntentForPackage(pkg) != null ||
+                                pm.getLaunchIntentForPackage(pkg) != null
+                        if (isLaunchable) {
+                            prefs.recordRecentApp(pkg)
+                        }
+                    } catch (_: Exception) {}
+                }
             }
         }
     }
@@ -546,8 +548,14 @@ class RemoteButtonRemapService : AccessibilityService() {
                                 intent.setPackage(extra)
                             }
                         }
-                        startForegroundService(intent)
-                        Log.d(tag, "Started service intent: $intentAction (target=$extra)")
+                        try {
+                            startService(intent)
+                            Log.d(tag, "Started service intent: $intentAction (target=$extra)")
+                        } catch (ise: IllegalStateException) {
+                            // On Android 8+, background apps cannot call startService(); fall back to startForegroundService
+                            startForegroundService(intent)
+                            Log.d(tag, "Started foreground service intent: $intentAction (target=$extra)")
+                        }
                     } catch (e: Exception) {
                         Log.e(tag, "Failed to start service intent: $intentAction", e)
                     }

@@ -1,5 +1,6 @@
 package com.homekey.tv.service
 
+import android.accessibilityservice.AccessibilityService
 import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
@@ -160,10 +161,16 @@ object DockOverlayManager {
             WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
             WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS
 
+        val windowType = if (context is AccessibilityService) {
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY
+        } else {
+            WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY
+        }
+
         return WindowManager.LayoutParams(
             widthPx,
             heightPx,
-            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            windowType,
             flags,
             PixelFormat.TRANSLUCENT
         ).apply {
@@ -383,9 +390,11 @@ object DockOverlayManager {
 
         dismissPip()
 
-        val uiContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+        val uiContext = if (context is AccessibilityService) {
+            context
+        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             try {
-                context.createWindowContext(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, null)
+                context.createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
             } catch (_: Exception) {
                 context
             }
@@ -402,6 +411,8 @@ object DockOverlayManager {
         val serverUrl = prefs.serverUrl.value
         val accessToken = prefs.accessToken.value
         if (serverUrl.isBlank()) return
+
+        val safeDuration = alert.durationSeconds.coerceIn(3, 120)
 
         try {
             val owner = OverlayLifecycleOwner()
@@ -424,7 +435,7 @@ object DockOverlayManager {
                     ) {
                         HomeAssistantTVTheme {
                             CameraPipCard(
-                                alert = alert,
+                                alert = alert.copy(durationSeconds = safeDuration),
                                 serverUrl = serverUrl,
                                 accessToken = accessToken,
                                 onDismiss = { dismissPip() }
@@ -439,10 +450,10 @@ object DockOverlayManager {
             val params = createPipLayoutParams(uiContext)
             wm.addView(layout, params)
             owner.resume()
-            Log.d(TAG, "Camera PiP alert shown for ${alert.entityId} (${alert.durationSeconds}s)")
+            Log.d(TAG, "Camera PiP alert shown for ${alert.entityId} (${safeDuration}s)")
 
             pipDismissJob = pipScope.launch {
-                delay(alert.durationSeconds * 1000L)
+                delay(safeDuration * 1000L)
                 dismissPip()
             }
         } catch (e: Exception) {

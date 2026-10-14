@@ -2113,7 +2113,7 @@ fun ButtonRemapView(
             if (selectedKeyForConfig != null) {
                 // Key Configuration Dialog
                 val (code, name) = selectedKeyForConfig!!
-                val existing = editingRemapConfig ?: remember(code, buttonRemaps) { buttonRemaps.find { it.keyCode == code } }
+                val existing = editingRemapConfig ?: remember(code, buttonRemaps) { buttonRemaps.find { it.keyCode == code && it.appScope == null } }
 
                 var appScope by remember(code, existing) { mutableStateOf(existing?.appScope) }
                 var singleActionType by remember(code, existing) { mutableStateOf(existing?.singlePressAction?.type ?: "OPEN_DOCK") }
@@ -2127,6 +2127,42 @@ fun ButtonRemapView(
                 var longActionType by remember(code, existing) { mutableStateOf(existing?.longPressAction?.type ?: "NONE") }
                 var longTarget by remember(code, existing) { mutableStateOf(existing?.longPressAction?.target ?: "") }
                 var longExtra by remember(code, existing) { mutableStateOf(existing?.longPressAction?.extra ?: "") }
+
+                fun selectScope(newScope: String?) {
+                    appScope = newScope
+                    val matchingRule = buttonRemaps.find { it.keyCode == code && it.appScope == newScope }
+                    if (matchingRule != null) {
+                        singleActionType = matchingRule.singlePressAction?.type ?: "OPEN_DOCK"
+                        singleTarget = matchingRule.singlePressAction?.target ?: ""
+                        singleExtra = matchingRule.singlePressAction?.extra ?: ""
+                        doubleActionType = matchingRule.doublePressAction?.type ?: "NONE"
+                        doubleTarget = matchingRule.doublePressAction?.target ?: ""
+                        doubleExtra = matchingRule.doublePressAction?.extra ?: ""
+                        longActionType = matchingRule.longPressAction?.type ?: "NONE"
+                        longTarget = matchingRule.longPressAction?.target ?: ""
+                        longExtra = matchingRule.longPressAction?.extra ?: ""
+                    } else if (newScope == null) {
+                        singleActionType = "OPEN_DOCK"
+                        singleTarget = ""
+                        singleExtra = ""
+                        doubleActionType = "NONE"
+                        doubleTarget = ""
+                        doubleExtra = ""
+                        longActionType = "NONE"
+                        longTarget = ""
+                        longExtra = ""
+                    } else {
+                        singleActionType = "PASS_THROUGH"
+                        singleTarget = ""
+                        singleExtra = ""
+                        doubleActionType = "NONE"
+                        doubleTarget = ""
+                        doubleExtra = ""
+                        longActionType = "NONE"
+                        longTarget = ""
+                        longExtra = ""
+                    }
+                }
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     item {
@@ -2163,14 +2199,14 @@ fun ButtonRemapView(
                                             if (keyEvent.type == KeyEventType.KeyUp) {
                                                 val c = keyEvent.nativeKeyEvent.keyCode
                                                 if (c == KeyEvent.KEYCODE_DPAD_CENTER || c == KeyEvent.KEYCODE_ENTER || c == KeyEvent.KEYCODE_NUMPAD_ENTER) {
-                                                    appScope = null
+                                                    selectScope(null)
                                                     return@onPreviewKeyEvent true
                                                 }
                                             }
                                             false
                                         }
                                         .clickable(interactionSource = globalInteraction, indication = null) {
-                                            appScope = null
+                                            selectScope(null)
                                         }
                                         .focusable(interactionSource = globalInteraction)
                                         .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -2192,14 +2228,14 @@ fun ButtonRemapView(
                                                 if (keyEvent.type == KeyEventType.KeyUp) {
                                                     val c = keyEvent.nativeKeyEvent.keyCode
                                                     if (c == KeyEvent.KEYCODE_DPAD_CENTER || c == KeyEvent.KEYCODE_ENTER || c == KeyEvent.KEYCODE_NUMPAD_ENTER) {
-                                                        appScope = app.packageName
+                                                        selectScope(app.packageName)
                                                         return@onPreviewKeyEvent true
                                                     }
                                                 }
                                                 false
                                             }
                                             .clickable(interactionSource = appInteraction, indication = null) {
-                                                appScope = app.packageName
+                                                selectScope(app.packageName)
                                             }
                                             .focusable(interactionSource = appInteraction)
                                             .padding(horizontal = 12.dp, vertical = 6.dp)
@@ -2289,12 +2325,15 @@ fun ButtonRemapView(
                                 }
                             )
 
-                            if (existing != null) {
+                            val currentConfigToDelete = buttonRemaps.find {
+                                it.keyCode == code && it.appScope == appScope?.trim()?.ifEmpty { null }
+                            }
+                            if (currentConfigToDelete != null) {
                                 FocusableButton(
                                     text = "Delete",
                                     icon = Icons.Default.Delete,
                                     onClick = {
-                                        onRemoveRemap(existing)
+                                        onRemoveRemap(currentConfigToDelete)
                                         selectedKeyForConfig = null
                                         editingRemapConfig = null
                                     }
