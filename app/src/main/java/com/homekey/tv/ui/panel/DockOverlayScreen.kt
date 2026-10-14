@@ -930,22 +930,7 @@ fun DockListHorizontal(
                     listState.scrollToItem(0)
                 } catch (_: Exception) {}
             }
-            try {
-                firstFocusRequester.requestFocus()
-            } catch (_: Exception) {}
         }
-    }
-
-    LaunchedEffect(Unit) {
-        delay(50)
-        try {
-            val target = when (lastFocusedItemId) {
-                "dock_settings_tile" -> settingsFocusRequester
-                "dock_reorder_tile" -> if (items.size > 1) reorderFocusRequester else firstFocusRequester
-                else -> lastFocusedItemId?.let { itemFocusRequesters[it] } ?: firstFocusRequester
-            }
-            target.requestFocus()
-        } catch (_: Exception) {}
     }
 
     LaunchedEffect(isDialogActive) {
@@ -1132,22 +1117,7 @@ fun DockListVertical(
                     listState.scrollToItem(0)
                 } catch (_: Exception) {}
             }
-            try {
-                firstFocusRequester.requestFocus()
-            } catch (_: Exception) {}
         }
-    }
-
-    LaunchedEffect(Unit) {
-        delay(50)
-        try {
-            val target = when (lastFocusedItemId) {
-                "dock_settings_tile" -> settingsFocusRequester
-                "dock_reorder_tile" -> if (items.size > 1) reorderFocusRequester else firstFocusRequester
-                else -> lastFocusedItemId?.let { itemFocusRequesters[it] } ?: firstFocusRequester
-            }
-            target.requestFocus()
-        } catch (_: Exception) {}
     }
 
     LaunchedEffect(isDialogActive) {

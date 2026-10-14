@@ -248,7 +248,7 @@ object DockOverlayManager {
                 layout.visibility = View.VISIBLE
                 lifecycleOwner?.resume()
                 viewModel?.notifyOverlayShown()
-                layout.requestFocus()
+                cv.requestFocus()
                 Log.d(TAG, "DockOverlayManager shown (warm instant)")
             } catch (e: Exception) {
                 Log.e(TAG, "Error showing warm overlay view, re-initializing", e)
@@ -276,9 +276,12 @@ object DockOverlayManager {
             vm.connectToHomeAssistant()
 
             val layout = OverlayFrameLayout(service).apply {
-                isFocusable = true
-                isFocusableInTouchMode = true
+                isFocusable = false
+                isFocusableInTouchMode = false
                 descendantFocusability = ViewGroup.FOCUS_AFTER_DESCENDANTS
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    defaultFocusHighlightEnabled = false
+                }
                 onBackAction = {
                     handleBack()
                 }
@@ -291,6 +294,9 @@ object DockOverlayManager {
             layout.setViewTreeOnBackPressedDispatcherOwner(owner)
 
             val cv = ComposeView(service).apply {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    defaultFocusHighlightEnabled = false
+                }
                 setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
                 setContent {
                     CompositionLocalProvider(
@@ -335,7 +341,7 @@ object DockOverlayManager {
                 wm.addView(layout, params)
                 owner.resume()
                 vm.notifyOverlayShown()
-                layout.requestFocus()
+                cv.requestFocus()
                 Log.d(TAG, "DockOverlayManager shown (fresh)")
             } else {
                 layout.visibility = View.GONE
