@@ -11,6 +11,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.util.SparseArray
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import com.homekey.tv.data.api.HAWebSocketClient
@@ -38,6 +39,10 @@ class RemoteButtonRemapService : AccessibilityService() {
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
     private var volumeRepeatRunnable: Runnable? = null
 
+    // Unboxed primitive key code cache for 0ms sub-millisecond lookup in onKeyEvent
+    @Volatile private var globalRemapCache = SparseArray<ButtonRemapConfig>()
+    @Volatile private var scopedRemapCache = HashMap<String, SparseArray<ButtonRemapConfig>>()
+
     // Timing state is tracked per keyCode. The old implementation used single shared fields for all
     // keys, so pressing two different remapped keys in quick succession was misread as a
     // double-press and the first key's single action was dropped.
@@ -52,7 +57,7 @@ class RemoteButtonRemapService : AccessibilityService() {
 
     fun updateKeyFilterState() {
         val info = serviceInfo ?: return
-        val hasRemaps = ::prefs.isInitialized && prefs.buttonRemaps.value.isNotEmpty()
+        val hasRemaps = globalRemapCache.size() > 0 || scopedRemapCache.isNotEmpty() || (::prefs.isInitialized && prefs.buttonRemaps.value.isNotEmpty())
         val isLearning = _isLearnModeActive.value
         val shouldFilter = hasRemaps || isLearning
 
@@ -75,16 +80,17 @@ class RemoteButtonRemapService : AccessibilityService() {
         prefs = PreferencesManager.getInstance(this)
         _isServiceRunning.value = true
 
+        rebuildRemapCache(prefs.buttonRemaps.value)
+        updateKeyFilterState()
+
         serviceScope?.cancel()
         val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
         serviceScope = scope
 
-        // Initial sync of key filter state
-        updateKeyFilterState()
-
         // Reactively pre-warm or teardown overlay and sync key filtering when button remaps change
         scope.launch {
             prefs.buttonRemaps.collect { remaps ->
+                rebuildRemapCache(remaps)
                 updateKeyFilterState()
                 val hasDockRemap = remaps.any { remap ->
                     remap.singlePressAction?.type == "OPEN_DOCK" ||
@@ -115,6 +121,17 @@ class RemoteButtonRemapService : AccessibilityService() {
                 }
             }
         }
+
+        // Reactively observe PiP Camera alerts from Home Assistant
+        scope.launch {
+            HAWebSocketClient.getInstance().pipAlert.collect { alert ->
+                if (alert != null) {
+                    DockOverlayManager.showPipAlert(this@RemoteButtonRemapService, alert)
+                } else {
+                    DockOverlayManager.dismissPip()
+                }
+            }
+        }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
@@ -128,6 +145,7 @@ class RemoteButtonRemapService : AccessibilityService() {
         if (instance == this) {
             instance = null
         }
+        currentForegroundPackage = null
         serviceScope?.cancel()
         serviceScope = null
         DockOverlayManager.teardown()
@@ -168,6 +186,7 @@ class RemoteButtonRemapService : AccessibilityService() {
         if (event == null) return
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString() ?: return
+            currentForegroundPackage = pkg
             if (::prefs.isInitialized && prefs.recentAppsEnabled.value) {
                 try {
                     val pm = packageManager
@@ -199,7 +218,8 @@ class RemoteButtonRemapService : AccessibilityService() {
             KeyEvent.KEYCODE_MUTE
         )
         if (isVolumeKey && !_isLearnModeActive.value) {
-            val isCustomMapped = findRemapConfig(keyCode) != null
+            val mapped = findRemapConfig(keyCode)
+            val isCustomMapped = mapped != null && !(mapped.singlePressAction?.type == "PASS_THROUGH" && mapped.doublePressAction == null && mapped.longPressAction == null)
             if (!isCustomMapped && ::prefs.isInitialized && prefs.volumeFixEnabled.value) {
                 // Software repeat generator for Volume Up/Down on devices where the OS suppresses hold repeats
                 if (keyCode == KeyEvent.KEYCODE_VOLUME_UP || keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
@@ -221,10 +241,10 @@ class RemoteButtonRemapService : AccessibilityService() {
                                     if (SystemClock.uptimeMillis() - startTime > 8000L) return
                                     try {
                                         audioManager?.adjustSuggestedStreamVolume(
-                                            direction,
-                                            AudioManager.USE_DEFAULT_STREAM_TYPE,
-                                            AudioManager.FLAG_SHOW_UI
-                                        )
+                                             direction,
+                                             AudioManager.USE_DEFAULT_STREAM_TYPE,
+                                             AudioManager.FLAG_SHOW_UI
+                                         )
                                     } catch (e: Exception) {
                                         Log.w(tag, "Volume adjustment failed", e)
                                     }
@@ -267,7 +287,8 @@ class RemoteButtonRemapService : AccessibilityService() {
                 KeyEvent.KEYCODE_VOLUME_MUTE,
                 KeyEvent.KEYCODE_MUTE -> {
                     // Only bypass unmapped volume keys; custom mapped keys proceed to action dispatch
-                    if (findRemapConfig(keyCode) == null) return false
+                    val cfg = findRemapConfig(keyCode)
+                    if (cfg == null || (cfg.singlePressAction?.type == "PASS_THROUGH" && cfg.doublePressAction == null && cfg.longPressAction == null)) return false
                 }
             }
         }
@@ -332,6 +353,11 @@ class RemoteButtonRemapService : AccessibilityService() {
         val isSingleActionOnly = config.singlePressAction != null &&
             config.doublePressAction == null &&
             config.longPressAction == null
+
+        if (isSingleActionOnly && config.singlePressAction?.type == "PASS_THROUGH") {
+            return false
+        }
+
         val state = keyStates.getOrPut(config.keyCode) { KeyState() }
 
         if (event.action == KeyEvent.ACTION_DOWN) {
@@ -423,6 +449,10 @@ class RemoteButtonRemapService : AccessibilityService() {
         Log.d(tag, "Executing Remap Action: ${action.type} -> ${action.target}")
 
         when (action.type) {
+            "PASS_THROUGH" -> {
+                Log.d(tag, "Pass-through action: native event dispatch preserved")
+            }
+
             "OPEN_DOCK" -> {
                 DockOverlayManager.toggle(this)
             }
@@ -479,21 +509,93 @@ class RemoteButtonRemapService : AccessibilityService() {
                     HAWebSocketClient.getInstance().selectSource(entityId, source)
                 }
             }
+
+            "SEND_BROADCAST" -> {
+                action.target?.let { intentAction ->
+                    try {
+                        val intent = Intent(intentAction)
+                        val extra = action.extra?.ifBlank { null }
+                        if (extra != null) {
+                            if (extra.contains("/")) {
+                                val pkg = extra.substringBefore("/")
+                                val cls = extra.substringAfter("/").let { if (it.startsWith(".")) "$pkg$it" else it }
+                                intent.component = android.content.ComponentName(pkg, cls)
+                            } else {
+                                intent.setPackage(extra)
+                            }
+                        }
+                        sendBroadcast(intent)
+                        Log.d(tag, "Sent broadcast intent: $intentAction (target=$extra)")
+                    } catch (e: Exception) {
+                        Log.e(tag, "Failed to send broadcast intent: $intentAction", e)
+                    }
+                }
+            }
+
+            "START_SERVICE" -> {
+                action.target?.let { intentAction ->
+                    try {
+                        val intent = Intent(intentAction)
+                        val extra = action.extra?.ifBlank { null }
+                        if (extra != null) {
+                            if (extra.contains("/")) {
+                                val pkg = extra.substringBefore("/")
+                                val cls = extra.substringAfter("/").let { if (it.startsWith(".")) "$pkg$it" else it }
+                                intent.component = android.content.ComponentName(pkg, cls)
+                            } else {
+                                intent.setPackage(extra)
+                            }
+                        }
+                        startForegroundService(intent)
+                        Log.d(tag, "Started service intent: $intentAction (target=$extra)")
+                    } catch (e: Exception) {
+                        Log.e(tag, "Failed to start service intent: $intentAction", e)
+                    }
+                }
+            }
         }
     }
 
-    private fun findRemapConfig(keyCode: Int): ButtonRemapConfig? {
-        val remaps = prefs.buttonRemaps.value
-        return remaps.find { it.keyCode == keyCode }
-            ?: if (keyCode == 313) {
-                // KeyCode 313 is KEYCODE_MACRO_1 (Google TV Streamer Star button).
-                // Fallback to KEYCODE_PAIRING (225) or "Star" named configuration.
-                remaps.find { it.keyCode == KeyEvent.KEYCODE_PAIRING || it.keyName.contains("Star", ignoreCase = true) }
-            } else if (keyCode == KeyEvent.KEYCODE_PAIRING) {
-                remaps.find { it.keyCode == 313 || it.keyName.contains("Star", ignoreCase = true) }
-            } else {
-                null
+    private fun rebuildRemapCache(remaps: List<ButtonRemapConfig>) {
+        val newGlobalCache = SparseArray<ButtonRemapConfig>()
+        val newScopedCache = HashMap<String, SparseArray<ButtonRemapConfig>>()
+
+        fun putInArray(array: SparseArray<ButtonRemapConfig>, remap: ButtonRemapConfig) {
+            array.put(remap.keyCode, remap)
+            if (remap.keyCode == 313) {
+                if (array.get(KeyEvent.KEYCODE_PAIRING) == null) {
+                    array.put(KeyEvent.KEYCODE_PAIRING, remap)
+                }
+            } else if (remap.keyCode == KeyEvent.KEYCODE_PAIRING) {
+                if (array.get(313) == null) {
+                    array.put(313, remap)
+                }
+            } else if (remap.keyName.contains("Star", ignoreCase = true)) {
+                if (array.get(313) == null) array.put(313, remap)
+                if (array.get(KeyEvent.KEYCODE_PAIRING) == null) array.put(KeyEvent.KEYCODE_PAIRING, remap)
             }
+        }
+
+        for (remap in remaps) {
+            val scope = remap.appScope?.trim()?.ifEmpty { null }
+            if (scope == null) {
+                putInArray(newGlobalCache, remap)
+            } else {
+                val array = newScopedCache.getOrPut(scope) { SparseArray() }
+                putInArray(array, remap)
+            }
+        }
+        globalRemapCache = newGlobalCache
+        scopedRemapCache = newScopedCache
+    }
+
+    private fun findRemapConfig(keyCode: Int): ButtonRemapConfig? {
+        val pkg = currentForegroundPackage
+        if (pkg != null) {
+            val scoped = scopedRemapCache[pkg]?.get(keyCode)
+            if (scoped != null) return scoped
+        }
+        return globalRemapCache.get(keyCode)
     }
 
     companion object {
@@ -501,6 +603,10 @@ class RemoteButtonRemapService : AccessibilityService() {
         private const val DOUBLE_PRESS_TIMEOUT_MS = 280L
         private const val VOLUME_REPEAT_INITIAL_DELAY_MS = 350L
         private const val VOLUME_REPEAT_INTERVAL_MS = 90L
+
+        @Volatile
+        var currentForegroundPackage: String? = null
+            private set
 
         var instance: RemoteButtonRemapService? = null
             private set

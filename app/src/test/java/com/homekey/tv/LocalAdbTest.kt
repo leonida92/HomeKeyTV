@@ -68,5 +68,32 @@ class LocalAdbTest {
         val disabled: LocalAdbManager.AdbResult = LocalAdbManager.AdbResult.AdbDisabled("Connection refused")
         assertTrue(disabled is LocalAdbManager.AdbResult.AdbDisabled)
         assertEquals("Connection refused", (disabled as LocalAdbManager.AdbResult.AdbDisabled).message)
+
+        val timeout: LocalAdbManager.AdbResult = LocalAdbManager.AdbResult.AuthTimeout("Timed out waiting for prompt")
+        assertTrue(timeout is LocalAdbManager.AdbResult.AuthTimeout)
+        assertEquals("Timed out waiting for prompt", (timeout as LocalAdbManager.AdbResult.AuthTimeout).message)
+
+        val error: LocalAdbManager.AdbResult = LocalAdbManager.AdbResult.Error("Unexpected failure")
+        assertTrue(error is LocalAdbManager.AdbResult.Error)
+        assertEquals("Unexpected failure", (error as LocalAdbManager.AdbResult.Error).message)
+    }
+
+    @Test
+    fun testNsdServiceConstants() {
+        assertEquals("_adb-tls-connect._tcp", LocalAdbManager.SERVICE_TYPE_TLS_CONNECT)
+        assertEquals("_adb-tls-pairing._tcp", LocalAdbManager.SERVICE_TYPE_TLS_PAIRING)
+        assertEquals("_adb._tcp", LocalAdbManager.SERVICE_TYPE_LEGACY)
+        assertEquals(5555, LocalAdbManager.DEFAULT_PORT)
+
+        val service = LocalAdbManager.DiscoveredAdbService(
+            name = "adb-device",
+            serviceType = LocalAdbManager.SERVICE_TYPE_TLS_CONNECT,
+            host = "127.0.0.1",
+            port = 41235
+        )
+        assertEquals("adb-device", service.name)
+        assertEquals("_adb-tls-connect._tcp", service.serviceType)
+        assertEquals("127.0.0.1", service.host)
+        assertEquals(41235, service.port)
     }
 }

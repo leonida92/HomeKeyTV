@@ -12,8 +12,8 @@ android {
         applicationId = "com.homekey.tv"
         minSdk = 26
         targetSdk = 34
-        versionCode = 29
-        versionName = "1.7.0"
+        versionCode = 30
+        versionName = "1.7.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -94,6 +94,10 @@ dependencies {
 
     // Security crypto for token storage
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    implementation("com.google.crypto.tink:tink-android:1.8.0")
+
+    // Jetpack Preferences DataStore
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 
     // Pure Kotlin ADB client for local loopback permission setup
     implementation("dev.mobile:dadb:1.2.9") {

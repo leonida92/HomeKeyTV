@@ -289,6 +289,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         prefs.removeButtonRemap(keyCode)
     }
 
+    fun removeButtonRemap(config: ButtonRemapConfig) {
+        prefs.removeButtonRemap(config)
+    }
+
     fun setVolumeFixEnabled(enabled: Boolean) {
         prefs.setVolumeFixEnabled(enabled)
     }
@@ -365,6 +369,9 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                     _adbSetupState.value = AdbSetupState.Connecting(
                         "Connecting to local ADB (127.0.0.1:$port)...\nIf prompted on screen, check 'Always allow' and press OK."
                     )
+                },
+                onStatusUpdate = { status ->
+                    _adbSetupState.value = AdbSetupState.Connecting(status)
                 }
             )
 

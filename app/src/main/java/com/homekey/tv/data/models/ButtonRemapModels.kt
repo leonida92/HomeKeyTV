@@ -5,10 +5,10 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class RemapAction(
-    val type: String, // "OPEN_DOCK", "TOGGLE_ENTITY", "CALL_SERVICE", "LAUNCH_APP", "SYSTEM_SLEEP", "SYSTEM_SETTINGS", "SELECT_SOURCE"
-    val target: String? = null, // entityId, service (e.g. script.goodnight), or packageName (e.g. com.limelight)
+    val type: String, // "OPEN_DOCK", "TOGGLE_ENTITY", "CALL_SERVICE", "LAUNCH_APP", "SYSTEM_SLEEP", "SYSTEM_SETTINGS", "SELECT_SOURCE", "SEND_BROADCAST", "START_SERVICE", "PASS_THROUGH", "NONE"
+    val target: String? = null, // entityId, service (e.g. script.goodnight), packageName (e.g. com.limelight), or intent action (e.g. com.wled.tv.ACTION_TOGGLE_OVERLAY)
     val label: String? = null,
-    val extra: String? = null // target input source (e.g. "TV", "HDMI 1")
+    val extra: String? = null // target input source (e.g. "TV", "HDMI 1") or target package name for explicit intent (e.g. "com.wled.tv")
 )
 
 @Serializable
@@ -17,7 +17,8 @@ data class ButtonRemapConfig(
     val keyName: String,
     val singlePressAction: RemapAction? = null,
     val doublePressAction: RemapAction? = null,
-    val longPressAction: RemapAction? = null
+    val longPressAction: RemapAction? = null,
+    val appScope: String? = null // null = global (all apps), or specific packageName e.g. "com.limelight"
 )
 
 @Serializable

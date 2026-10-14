@@ -47,9 +47,12 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -342,6 +345,7 @@ fun SettingsScreen(
                                 context.startActivity(intent)
                             },
                             onEnableViaAdb = { viewModel.enableAccessibilityViaAdb() },
+                            onEnableViaAdbWithPort = { port -> viewModel.enableAccessibilityViaAdb(port) },
                             onToggleVolumeFix = { viewModel.setVolumeFixEnabled(!volumeFixEnabled) },
                             onStartLearnMode = { viewModel.setLearnMode(true) },
                             onStopLearnMode = { viewModel.setLearnMode(false) },
@@ -1717,15 +1721,18 @@ fun ButtonRemapView(
     onUp: (() -> Unit)? = null,
     onOpenAccessibilitySettings: () -> Unit,
     onEnableViaAdb: () -> Unit,
+    onEnableViaAdbWithPort: (Int) -> Unit = {},
     onToggleVolumeFix: () -> Unit,
     onStartLearnMode: () -> Unit,
     onStopLearnMode: () -> Unit,
     onSaveRemap: (ButtonRemapConfig) -> Unit,
-    onRemoveRemap: (Int) -> Unit
+    onRemoveRemap: (ButtonRemapConfig) -> Unit
 ) {
     var isLearning by remember { mutableStateOf(false) }
     var selectedKeyForConfig by remember { mutableStateOf<Pair<Int, String>?>(null) }
+    var editingRemapConfig by remember { mutableStateOf<ButtonRemapConfig?>(null) }
     var wasEditingConfig by remember { mutableStateOf(false) }
+    var showCustomPortDialog by remember { mutableStateOf(false) }
 
     val editMenuFocusRequester = remember { FocusRequester() }
     val remapListFocusRequester = remember { FocusRequester() }
@@ -1736,6 +1743,7 @@ fun ButtonRemapView(
 
     BackHandler(enabled = selectedKeyForConfig != null) {
         selectedKeyForConfig = null
+        editingRemapConfig = null
     }
 
     LaunchedEffect(selectedKeyForConfig) {
@@ -1776,6 +1784,7 @@ fun ButtonRemapView(
 
     LaunchedEffect(learnedKey) {
         if (learnedKey != null && isLearning) {
+            editingRemapConfig = null
             selectedKeyForConfig = learnedKey
             isLearning = false
             onStopLearnMode()
@@ -1935,6 +1944,12 @@ fun ButtonRemapView(
                                     color = Color(0xFFEF4444),
                                     lineHeight = 15.sp
                                 )
+                                Spacer(modifier = Modifier.height(4.dp))
+                                FocusableButton(
+                                    text = "Enter Wireless Debugging Port",
+                                    icon = Icons.Default.Edit,
+                                    onClick = { showCustomPortDialog = true }
+                                )
                             }
                             AdbSetupState.Idle -> {
                                 Text(
@@ -2032,7 +2047,10 @@ fun ButtonRemapView(
                         item {
                             PresetButtonRow(
                                 name = "Custom Star Button",
-                                onClick = { selectedKeyForConfig = Pair(313, "Custom Star Button") },
+                                onClick = {
+                                    editingRemapConfig = null
+                                    selectedKeyForConfig = Pair(313, "Custom Star Button")
+                                },
                                 onUp = { try { learnButtonFocusRequester.requestFocus() } catch (_: Exception) {} },
                                 onRight = onPresetRight
                             )
@@ -2040,28 +2058,40 @@ fun ButtonRemapView(
                         item {
                             PresetButtonRow(
                                 name = "Netflix Button",
-                                onClick = { selectedKeyForConfig = Pair(191, "Netflix Button") },
+                                onClick = {
+                                    editingRemapConfig = null
+                                    selectedKeyForConfig = Pair(191, "Netflix Button")
+                                },
                                 onRight = onPresetRight
                             )
                         }
                         item {
                             PresetButtonRow(
                                 name = "YouTube Button",
-                                onClick = { selectedKeyForConfig = Pair(190, "YouTube Button") },
+                                onClick = {
+                                    editingRemapConfig = null
+                                    selectedKeyForConfig = Pair(190, "YouTube Button")
+                                },
                                 onRight = onPresetRight
                             )
                         }
                         item {
                             PresetButtonRow(
                                 name = "Prime Video Button",
-                                onClick = { selectedKeyForConfig = Pair(229, "Prime Video Button") },
+                                onClick = {
+                                    editingRemapConfig = null
+                                    selectedKeyForConfig = Pair(229, "Prime Video Button")
+                                },
                                 onRight = onPresetRight
                             )
                         }
                         item {
                             PresetButtonRow(
                                 name = "Mute Button",
-                                onClick = { selectedKeyForConfig = Pair(KeyEvent.KEYCODE_VOLUME_MUTE, "Mute Button") },
+                                onClick = {
+                                    editingRemapConfig = null
+                                    selectedKeyForConfig = Pair(KeyEvent.KEYCODE_VOLUME_MUTE, "Mute Button")
+                                },
                                 onRight = onPresetRight
                             )
                         }
@@ -2083,8 +2113,9 @@ fun ButtonRemapView(
             if (selectedKeyForConfig != null) {
                 // Key Configuration Dialog
                 val (code, name) = selectedKeyForConfig!!
-                val existing = remember(code, buttonRemaps) { buttonRemaps.find { it.keyCode == code } }
+                val existing = editingRemapConfig ?: remember(code, buttonRemaps) { buttonRemaps.find { it.keyCode == code } }
 
+                var appScope by remember(code, existing) { mutableStateOf(existing?.appScope) }
                 var singleActionType by remember(code, existing) { mutableStateOf(existing?.singlePressAction?.type ?: "OPEN_DOCK") }
                 var singleTarget by remember(code, existing) { mutableStateOf(existing?.singlePressAction?.target ?: "") }
                 var singleExtra by remember(code, existing) { mutableStateOf(existing?.singlePressAction?.extra ?: "") }
@@ -2105,6 +2136,79 @@ fun ButtonRemapView(
                             fontWeight = FontWeight.Bold,
                             color = HA_Yellow_On
                         )
+                    }
+
+                    item {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                text = "Application Scope:",
+                                fontSize = 12.sp,
+                                color = TV_Text_Secondary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Row(
+                                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                val isGlobal = appScope.isNullOrBlank()
+                                val globalInteraction = remember { MutableInteractionSource() }
+                                val isGlobalFocused by globalInteraction.collectIsFocusedAsState()
+
+                                Box(
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(if (isGlobalFocused) TV_Surface_Focused else if (isGlobal) HA_Blue else Color(0x22FFFFFF))
+                                        .border(1.dp, if (isGlobalFocused) TV_Border_Focused else Color.Transparent, RoundedCornerShape(8.dp))
+                                        .onPreviewKeyEvent { keyEvent ->
+                                            if (keyEvent.type == KeyEventType.KeyUp) {
+                                                val c = keyEvent.nativeKeyEvent.keyCode
+                                                if (c == KeyEvent.KEYCODE_DPAD_CENTER || c == KeyEvent.KEYCODE_ENTER || c == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                                                    appScope = null
+                                                    return@onPreviewKeyEvent true
+                                                }
+                                            }
+                                            false
+                                        }
+                                        .clickable(interactionSource = globalInteraction, indication = null) {
+                                            appScope = null
+                                        }
+                                        .focusable(interactionSource = globalInteraction)
+                                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                                ) {
+                                    Text(text = "Global (All Apps)", fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                }
+
+                                installedApps.forEach { app ->
+                                    val isAppSelected = appScope == app.packageName
+                                    val appInteraction = remember { MutableInteractionSource() }
+                                    val isAppFocused by appInteraction.collectIsFocusedAsState()
+
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .background(if (isAppFocused) TV_Surface_Focused else if (isAppSelected) Color(0xFF6366F1) else Color(0x22FFFFFF))
+                                            .border(1.dp, if (isAppFocused) TV_Border_Focused else Color.Transparent, RoundedCornerShape(8.dp))
+                                            .onPreviewKeyEvent { keyEvent ->
+                                                if (keyEvent.type == KeyEventType.KeyUp) {
+                                                    val c = keyEvent.nativeKeyEvent.keyCode
+                                                    if (c == KeyEvent.KEYCODE_DPAD_CENTER || c == KeyEvent.KEYCODE_ENTER || c == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                                                        appScope = app.packageName
+                                                        return@onPreviewKeyEvent true
+                                                    }
+                                                }
+                                                false
+                                            }
+                                            .clickable(interactionSource = appInteraction, indication = null) {
+                                                appScope = app.packageName
+                                            }
+                                            .focusable(interactionSource = appInteraction)
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    ) {
+                                        Text(text = app.appName, fontSize = 11.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     item {
@@ -2165,12 +2269,14 @@ fun ButtonRemapView(
                                     val config = ButtonRemapConfig(
                                         keyCode = code,
                                         keyName = name,
+                                        appScope = appScope?.trim()?.ifEmpty { null },
                                         singlePressAction = if (singleActionType != "NONE") RemapAction(singleActionType, singleTarget.ifBlank { null }, extra = singleExtra.ifBlank { null }) else null,
                                         doublePressAction = if (doubleActionType != "NONE") RemapAction(doubleActionType, doubleTarget.ifBlank { null }, extra = doubleExtra.ifBlank { null }) else null,
                                         longPressAction = if (longActionType != "NONE") RemapAction(longActionType, longTarget.ifBlank { null }, extra = longExtra.ifBlank { null }) else null
                                     )
                                     onSaveRemap(config)
                                     selectedKeyForConfig = null
+                                    editingRemapConfig = null
                                 }
                             )
 
@@ -2179,6 +2285,7 @@ fun ButtonRemapView(
                                 icon = Icons.Default.Close,
                                 onClick = {
                                     selectedKeyForConfig = null
+                                    editingRemapConfig = null
                                 }
                             )
 
@@ -2187,8 +2294,9 @@ fun ButtonRemapView(
                                     text = "Delete",
                                     icon = Icons.Default.Delete,
                                     onClick = {
-                                        onRemoveRemap(code)
+                                        onRemoveRemap(existing)
                                         selectedKeyForConfig = null
+                                        editingRemapConfig = null
                                     }
                                 )
                             }
@@ -2220,18 +2328,181 @@ fun ButtonRemapView(
                         }
                     } else {
                         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                            itemsIndexed(buttonRemaps, key = { _, remap -> remap.keyCode }) { index, remap ->
+                            itemsIndexed(buttonRemaps, key = { _, remap -> "${remap.keyCode}_${remap.appScope ?: "global"}" }) { index, remap ->
                                 RemapCardItem(
                                     remap = remap,
-                                    onEdit = { selectedKeyForConfig = Pair(remap.keyCode, remap.keyName) },
-                                    onDelete = { onRemoveRemap(remap.keyCode) },
+                                    onEdit = {
+                                        editingRemapConfig = remap
+                                        selectedKeyForConfig = Pair(remap.keyCode, remap.keyName)
+                                    },
+                                    onDelete = { onRemoveRemap(remap) },
                                     modifier = if (index == 0) Modifier.focusRequester(remapListFocusRequester) else Modifier,
                                     onUp = if (index == 0) onUp else null,
-                                    onLeft = { try { learnButtonFocusRequester.requestFocus() } catch (_: Exception) {} }
+                                    onLeft = { try { learnButtonFocusRequester.requestFocus() } catch (_: Exception) {} },
+                                    installedApps = installedApps
                                 )
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    if (showCustomPortDialog) {
+        AdbCustomPortDialog(
+            onConnect = { port ->
+                showCustomPortDialog = false
+                onEnableViaAdbWithPort(port)
+            },
+            onDismiss = { showCustomPortDialog = false }
+        )
+    }
+}
+
+@Composable
+fun AdbCustomPortDialog(
+    initialPort: String = "",
+    onConnect: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var portText by remember { mutableStateOf(initialPort) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    val inputFocusRequester = remember { FocusRequester() }
+    val connectButtonFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        delay(60)
+        try {
+            inputFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xCC000000))
+            .onPreviewKeyEvent { keyEvent ->
+                val code = keyEvent.nativeKeyEvent.keyCode
+                if (code == KeyEvent.KEYCODE_BACK || code == KeyEvent.KEYCODE_ESCAPE) {
+                    if (keyEvent.type == KeyEventType.KeyUp) {
+                        onDismiss()
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                false
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        Box(
+            modifier = Modifier
+                .width(460.dp)
+                .clip(RoundedCornerShape(16.dp))
+                .background(Color(0xFF1E293B))
+                .border(1.dp, Color(0x44FFFFFF), RoundedCornerShape(16.dp))
+                .padding(24.dp)
+        ) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalAlignment = Alignment.Start
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        Icons.Default.Terminal,
+                        contentDescription = null,
+                        tint = HA_Yellow_On,
+                        modifier = Modifier.size(22.dp)
+                    )
+                    Text(
+                        text = "Wireless Debugging Port",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                Text(
+                    text = "On Android 11+, check TV Settings > Developer Options > Wireless Debugging to find the dynamic port (e.g. 192.168.1.50:41235).",
+                    fontSize = 11.sp,
+                    color = TV_Text_Secondary,
+                    lineHeight = 15.sp
+                )
+
+                OutlinedTextField(
+                    value = portText,
+                    onValueChange = { input ->
+                        val filtered = input.filter { it.isDigit() }.take(5)
+                        portText = filtered
+                        errorMessage = null
+                    },
+                    placeholder = { Text("e.g. 41235", fontSize = 12.sp, color = TV_Text_Secondary) },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    textStyle = TextStyle(fontSize = 14.sp, color = Color.White, fontWeight = FontWeight.Bold),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedBorderColor = HA_Yellow_On,
+                        unfocusedBorderColor = Color(0x44FFFFFF),
+                        focusedContainerColor = Color(0xFF0F172A),
+                        unfocusedContainerColor = Color(0x330F172A)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(inputFocusRequester)
+                        .onPreviewKeyEvent { keyEvent ->
+                            if (keyEvent.type == KeyEventType.KeyUp) {
+                                val code = keyEvent.nativeKeyEvent.keyCode
+                                if (code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                                    val p = portText.toIntOrNull()
+                                    if (p != null && p in 1024..65535) {
+                                        onConnect(p)
+                                    } else {
+                                        errorMessage = "Enter a valid port (1024 - 65535)"
+                                    }
+                                    return@onPreviewKeyEvent true
+                                }
+                            }
+                            false
+                        }
+                )
+
+                errorMessage?.let { err ->
+                    Text(
+                        text = err,
+                        fontSize = 11.sp,
+                        color = Color(0xFFEF4444)
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FocusableButton(
+                        text = "Cancel",
+                        onClick = onDismiss
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    FocusableButton(
+                        text = "Connect",
+                        icon = Icons.Default.Check,
+                        modifier = Modifier.focusRequester(connectButtonFocusRequester),
+                        onClick = {
+                            val p = portText.toIntOrNull()
+                            if (p != null && p in 1024..65535) {
+                                onConnect(p)
+                            } else {
+                                errorMessage = "Enter a valid port (1024 - 65535)"
+                            }
+                        }
+                    )
                 }
             }
         }
@@ -2398,10 +2669,13 @@ fun ActionChoiceRow(
             val actions = listOf(
                 "OPEN_DOCK" to "Open Dock",
                 "LAUNCH_APP" to "Open App",
+                "SEND_BROADCAST" to "Broadcast Intent",
+                "START_SERVICE" to "Service Intent",
                 "TOGGLE_ENTITY" to "Toggle HA",
                 "SELECT_SOURCE" to "Input Source",
                 "SYSTEM_SLEEP" to "Sleep TV",
                 "SYSTEM_SETTINGS" to "TV Settings",
+                "PASS_THROUGH" to "Pass-Through",
                 "NONE" to "None"
             )
             actions.forEach { (type, label) ->
@@ -2425,6 +2699,12 @@ fun ActionChoiceRow(
                             val mediaPlayers = haEntities.filter { it.domain == "media_player" }
                             if (currentTarget?.startsWith("media_player.") == true) currentTarget else mediaPlayers.firstOrNull()?.entityId
                         }
+                        "SEND_BROADCAST" -> {
+                            if (!currentTarget.isNullOrBlank() && currentTarget.contains("ACTION")) currentTarget
+                            else if (installedApps.any { it.packageName == "com.wled.tv" }) "com.wled.tv.ACTION_TOGGLE_OVERLAY"
+                            else currentTarget
+                        }
+                        "START_SERVICE" -> currentTarget
                         else -> null
                     }
                     val defaultExtra = when (type) {
@@ -2435,6 +2715,12 @@ fun ActionChoiceRow(
                                 mp?.sourceList?.firstOrNull() ?: "TV"
                             }
                         }
+                        "SEND_BROADCAST" -> {
+                            if (!currentExtra.isNullOrBlank()) currentExtra
+                            else if (defaultTarget == "com.wled.tv.ACTION_TOGGLE_OVERLAY") "com.wled.tv"
+                            else null
+                        }
+                        "START_SERVICE" -> currentExtra
                         else -> null
                     }
                     onSelectAction(type, defaultTarget, defaultExtra)
@@ -2549,6 +2835,7 @@ fun ActionChoiceRow(
                     }
                 },
                 singleLine = true,
+                textStyle = TextStyle(fontSize = 12.sp, color = Color.White),
                 colors = OutlinedTextFieldDefaults.colors(
                     focusedTextColor = Color.White,
                     unfocusedTextColor = Color.White,
@@ -2559,7 +2846,7 @@ fun ActionChoiceRow(
                 ),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
+                    .defaultMinSize(minHeight = 48.dp)
             )
 
             if (filteredEntities.isEmpty()) {
@@ -2721,6 +3008,147 @@ fun ActionChoiceRow(
                 }
             }
         }
+
+        // If SEND_BROADCAST or START_SERVICE: show Intent Action and Package Name fields
+        if (currentAction == "SEND_BROADCAST" || currentAction == "START_SERVICE") {
+            val isBroadcast = currentAction == "SEND_BROADCAST"
+            val titleColor = if (isBroadcast) Color(0xFF38BDF8) else Color(0xFFA78BFA)
+            Text(
+                text = if (isBroadcast) "Configure Broadcast Intent:" else "Configure Service Intent:",
+                fontSize = 11.sp,
+                color = titleColor,
+                fontWeight = FontWeight.SemiBold
+            )
+
+            var actionText by remember(currentTarget) { mutableStateOf(currentTarget ?: "") }
+            var packageText by remember(currentExtra) { mutableStateOf(currentExtra ?: "") }
+
+            Text(
+                text = "Intent Action:",
+                fontSize = 11.sp,
+                color = titleColor,
+                fontWeight = FontWeight.Medium
+            )
+
+            OutlinedTextField(
+                value = actionText,
+                onValueChange = {
+                    actionText = it
+                    onSelectAction(currentAction, it.ifBlank { null }, packageText.ifBlank { null })
+                },
+                placeholder = {
+                    Text(
+                        text = if (isBroadcast) "e.g. com.wled.tv.ACTION_TOGGLE_OVERLAY" else "e.g. com.example.START_SERVICE",
+                        fontSize = 12.sp,
+                        color = TV_Text_Secondary
+                    )
+                },
+                textStyle = TextStyle(fontSize = 13.sp, color = Color.White),
+                trailingIcon = {
+                    if (actionText.isNotEmpty()) {
+                        IconButton(onClick = {
+                            actionText = ""
+                            onSelectAction(currentAction, null, packageText.ifBlank { null })
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = TV_Text_Secondary, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = titleColor,
+                    unfocusedBorderColor = Color(0x44FFFFFF),
+                    focusedContainerColor = Color(0xFF0F172A),
+                    unfocusedContainerColor = Color(0x330F172A)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 52.dp)
+            )
+
+            Text(
+                text = "Target Package (Optional):",
+                fontSize = 11.sp,
+                color = TV_Text_Secondary,
+                fontWeight = FontWeight.Medium
+            )
+
+            OutlinedTextField(
+                value = packageText,
+                onValueChange = {
+                    packageText = it
+                    onSelectAction(currentAction, actionText.ifBlank { null }, it.ifBlank { null })
+                },
+                placeholder = {
+                    Text("e.g. com.wled.tv", fontSize = 12.sp, color = TV_Text_Secondary)
+                },
+                textStyle = TextStyle(fontSize = 13.sp, color = Color.White),
+                trailingIcon = {
+                    if (packageText.isNotEmpty()) {
+                        IconButton(onClick = {
+                            packageText = ""
+                            onSelectAction(currentAction, actionText.ifBlank { null }, null)
+                        }) {
+                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = TV_Text_Secondary, modifier = Modifier.size(16.dp))
+                        }
+                    }
+                },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = titleColor,
+                    unfocusedBorderColor = Color(0x44FFFFFF),
+                    focusedContainerColor = Color(0xFF0F172A),
+                    unfocusedContainerColor = Color(0x330F172A)
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .defaultMinSize(minHeight = 52.dp)
+            )
+
+            // Preset quick-fill chip if WLED TV is installed
+            val hasWled = remember(installedApps) { installedApps.any { it.packageName == "com.wled.tv" } }
+            if (hasWled && isBroadcast) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Quick Preset:", fontSize = 10.sp, color = TV_Text_Secondary)
+                    val presetInteraction = remember { MutableInteractionSource() }
+                    val presetFocused by presetInteraction.collectIsFocusedAsState()
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (presetFocused) TV_Surface_Focused else Color(0x2238BDF8))
+                            .border(1.dp, if (presetFocused) TV_Border_Focused else Color(0x4438BDF8), RoundedCornerShape(6.dp))
+                            .onPreviewKeyEvent { keyEvent ->
+                                if (keyEvent.type == KeyEventType.KeyUp) {
+                                    val code = keyEvent.nativeKeyEvent.keyCode
+                                    if (code == KeyEvent.KEYCODE_DPAD_CENTER || code == KeyEvent.KEYCODE_ENTER || code == KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                                        actionText = "com.wled.tv.ACTION_TOGGLE_OVERLAY"
+                                        packageText = "com.wled.tv"
+                                        onSelectAction("SEND_BROADCAST", "com.wled.tv.ACTION_TOGGLE_OVERLAY", "com.wled.tv")
+                                        return@onPreviewKeyEvent true
+                                    }
+                                }
+                                false
+                            }
+                            .clickable(interactionSource = presetInteraction, indication = null) {
+                                actionText = "com.wled.tv.ACTION_TOGGLE_OVERLAY"
+                                packageText = "com.wled.tv"
+                                onSelectAction("SEND_BROADCAST", "com.wled.tv.ACTION_TOGGLE_OVERLAY", "com.wled.tv")
+                            }
+                            .focusable(interactionSource = presetInteraction)
+                            .padding(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Text("WLED TV Overlay", fontSize = 10.sp, color = Color(0xFF38BDF8), fontWeight = FontWeight.SemiBold)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -2731,7 +3159,8 @@ fun RemapCardItem(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
     onUp: (() -> Unit)? = null,
-    onLeft: (() -> Unit)? = null
+    onLeft: (() -> Unit)? = null,
+    installedApps: List<InstalledAppInfo> = emptyList()
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val isFocused by interactionSource.collectIsFocusedAsState()
@@ -2788,7 +3217,28 @@ fun RemapCardItem(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Text(text = remap.keyName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(text = remap.keyName, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    if (!remap.appScope.isNullOrBlank()) {
+                        val appName = installedApps.find { it.packageName == remap.appScope }?.appName ?: remap.appScope
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color(0xFF334155))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            Text(
+                                text = "App: $appName",
+                                fontSize = 10.sp,
+                                color = Color(0xFF38BDF8),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     if (remap.singlePressAction != null) {
                         Text(text = "1x: ${formatRemapActionLabel(remap.singlePressAction)}", fontSize = 11.sp, color = HA_Blue)
@@ -2830,7 +3280,16 @@ private fun formatRemapActionLabel(action: RemapAction): String {
             val target = action.target?.substringAfterLast(".") ?: ""
             if (target.isNotBlank()) "Toggle ($target)" else "Toggle HA"
         }
+        "SEND_BROADCAST" -> {
+            val target = action.target?.substringAfterLast(".") ?: "Broadcast"
+            "Broadcast ($target)"
+        }
+        "START_SERVICE" -> {
+            val target = action.target?.substringAfterLast(".") ?: "Service"
+            "Service ($target)"
+        }
         "OPEN_DOCK" -> "Open Dock"
+        "PASS_THROUGH" -> "Pass-Through"
         "SYSTEM_SLEEP" -> "Sleep TV"
         "SYSTEM_SETTINGS" -> "TV Settings"
         else -> action.type

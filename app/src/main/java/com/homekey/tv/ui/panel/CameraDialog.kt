@@ -47,7 +47,7 @@ import kotlin.math.abs
 
 private const val TAG = "CameraDialog"
 
-private val cameraHttpClient by lazy {
+internal val cameraHttpClient by lazy {
     OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(0, TimeUnit.MILLISECONDS)
@@ -91,6 +91,12 @@ fun CameraDialog(
         } catch (_: Exception) {}
     }
 
+    DisposableEffect(Unit) {
+        onDispose {
+            currentBitmap = null
+        }
+    }
+
     BackHandler(onBack = onDismiss)
 
     val cleanBaseUrl = remember(serverUrl) { serverUrl.trim().removeSuffix("/") }
@@ -112,28 +118,33 @@ fun CameraDialog(
                     .build()
 
                 val call = client.newCall(request)
+                val cancelHandle = currentCoroutineContext()[Job]?.invokeOnCompletion {
+                    call.cancel()
+                }
                 try {
-                    val response = call.execute()
-                    if (response.isSuccessful) {
-                        val body = response.body
-                        if (body != null) {
-                            val inputStream = body.byteStream()
-                            withContext(Dispatchers.Main) {
-                                streamStatus = StreamStatus.LIVE
-                            }
-                            parseMjpegStream(
-                                inputStream = inputStream,
-                                onFrameDecoded = { bitmap ->
-                                    val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
-                                    if (abs(ratio - detectedAspectRatio) > 0.05f) {
-                                        detectedAspectRatio = ratio
-                                    }
-                                    currentBitmap = bitmap
-                                    if (streamStatus != StreamStatus.LIVE) {
+                    call.execute().use { response ->
+                        if (response.isSuccessful) {
+                            val body = response.body
+                            if (body != null) {
+                                body.byteStream().use { inputStream ->
+                                    withContext(Dispatchers.Main) {
                                         streamStatus = StreamStatus.LIVE
                                     }
+                                    parseMjpegStream(
+                                        inputStream = inputStream,
+                                        onFrameDecoded = { bitmap ->
+                                            val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
+                                            if (abs(ratio - detectedAspectRatio) > 0.05f) {
+                                                detectedAspectRatio = ratio
+                                            }
+                                            currentBitmap = bitmap
+                                            if (streamStatus != StreamStatus.LIVE) {
+                                                streamStatus = StreamStatus.LIVE
+                                            }
+                                        }
+                                    )
                                 }
-                            )
+                            }
                         }
                     }
                 } catch (ce: CancellationException) {
@@ -142,6 +153,8 @@ fun CameraDialog(
                 } catch (e: Exception) {
                     call.cancel()
                     Log.w(TAG, "MJPEG stream ended or failed: ${e.message}")
+                } finally {
+                    cancelHandle?.dispose()
                 }
             } catch (ce: CancellationException) {
                 throw ce
@@ -161,27 +174,31 @@ fun CameraDialog(
                         .build()
 
                     val snapCall = client.newCall(snapRequest)
+                    val snapCancelHandle = currentCoroutineContext()[Job]?.invokeOnCompletion {
+                        snapCall.cancel()
+                    }
                     try {
-                        val response = snapCall.execute()
-                        if (response.isSuccessful) {
-                            val bytes = response.body?.bytes()
-                            if (bytes != null && bytes.isNotEmpty()) {
-                                val bmp = decodeSampledBitmap(bytes)
-                                if (bmp != null) {
-                                    withContext(Dispatchers.Main) {
-                                        val ratio = bmp.width.toFloat() / bmp.height.toFloat()
-                                        if (abs(ratio - detectedAspectRatio) > 0.05f) {
-                                            detectedAspectRatio = ratio
+                        snapCall.execute().use { response ->
+                            if (response.isSuccessful) {
+                                val bytes = response.body?.bytes()
+                                if (bytes != null && bytes.isNotEmpty()) {
+                                    val bmp = decodeSampledBitmap(bytes)
+                                    if (bmp != null) {
+                                        withContext(Dispatchers.Main) {
+                                            val ratio = bmp.width.toFloat() / bmp.height.toFloat()
+                                            if (abs(ratio - detectedAspectRatio) > 0.05f) {
+                                                detectedAspectRatio = ratio
+                                            }
+                                            currentBitmap = bmp
+                                            streamStatus = StreamStatus.SNAPSHOT
                                         }
-                                        currentBitmap = bmp
-                                        streamStatus = StreamStatus.SNAPSHOT
                                     }
                                 }
-                            }
-                        } else {
-                            withContext(Dispatchers.Main) {
-                                streamStatus = StreamStatus.ERROR
-                                errorMessage = "Camera offline (HTTP ${response.code})"
+                            } else {
+                                withContext(Dispatchers.Main) {
+                                    streamStatus = StreamStatus.ERROR
+                                    errorMessage = "Camera offline (HTTP ${response.code})"
+                                }
                             }
                         }
                     } catch (ce: CancellationException) {
@@ -195,6 +212,8 @@ fun CameraDialog(
                                 errorMessage = e.message ?: "Connection failed"
                             }
                         }
+                    } finally {
+                        snapCancelHandle?.dispose()
                     }
                     delay(1500L)
                 }
@@ -637,43 +656,126 @@ fun CameraDialog(
 }
 }
 
+private const val MAX_FRAME_SIZE = 4 * 1024 * 1024 // 4 MB
+
 /**
- * Parses multipart MJPEG chunks from the HTTP input stream, extracting individual JPEG images
- * bounded by 0xFF 0xD8 (SOI) and 0xFF 0xD9 (EOI) markers.
+ * Parses multipart MJPEG chunks from the HTTP input stream using high-performance block memory
+ * operations (System.arraycopy) rather than single-byte writes.
+ * Extracts individual JPEG byte arrays bounded by 0xFF 0xD8 (SOI) and 0xFF 0xD9 (EOI) markers.
  */
-private suspend fun parseMjpegStream(
+internal suspend fun extractJpegFrames(
     inputStream: InputStream,
-    onFrameDecoded: suspend (Bitmap) -> Unit
+    onFrameExtracted: suspend (ByteArray) -> Unit
 ) {
     val buffer = ByteArray(16384)
-    val frameStream = ByteArrayOutputStream(65536)
+    var frameStream = ByteArrayOutputStream(65536)
     var inJpeg = false
-    var prevByte = 0
+    var trailing0xFF = false
 
     var bytesRead = 0
     while (currentCoroutineContext().isActive && inputStream.read(buffer).also { bytesRead = it } != -1) {
-        for (i in 0 until bytesRead) {
-            val b = buffer[i].toInt() and 0xFF
+        var cursor = 0
+        while (cursor < bytesRead) {
             if (!inJpeg) {
-                if (prevByte == 0xFF && b == 0xD8) {
+                // If previous chunk ended in 0xFF and this chunk starts with 0xD8, we have SOI
+                if (trailing0xFF && (buffer[cursor].toInt() and 0xFF) == 0xD8) {
                     inJpeg = true
                     frameStream.reset()
                     frameStream.write(0xFF)
                     frameStream.write(0xD8)
+                    cursor++
+                    trailing0xFF = false
+                    continue
+                }
+                trailing0xFF = false
+
+                // Scan for SOI marker: 0xFF, 0xD8
+                var soiIndex = -1
+                for (i in cursor until bytesRead - 1) {
+                    if ((buffer[i].toInt() and 0xFF) == 0xFF && (buffer[i + 1].toInt() and 0xFF) == 0xD8) {
+                        soiIndex = i
+                        break
+                    }
+                }
+
+                if (soiIndex != -1) {
+                    inJpeg = true
+                    frameStream.reset()
+                    cursor = soiIndex
+                } else {
+                    trailing0xFF = (buffer[bytesRead - 1].toInt() and 0xFF) == 0xFF
+                    cursor = bytesRead
                 }
             } else {
-                frameStream.write(b)
-                if (prevByte == 0xFF && b == 0xD9) {
+                // Inside JPEG: scan for EOI marker: 0xFF, 0xD9
+                if (trailing0xFF && (buffer[cursor].toInt() and 0xFF) == 0xD9) {
+                    frameStream.write(0xD9)
                     inJpeg = false
+                    trailing0xFF = false
+                    cursor++
                     val jpegBytes = frameStream.toByteArray()
                     frameStream.reset()
-                    val bmp = decodeSampledBitmap(jpegBytes)
-                    if (bmp != null) {
-                        onFrameDecoded(bmp)
+                    onFrameExtracted(jpegBytes)
+                    continue
+                }
+                trailing0xFF = false
+
+                var eoiIndex = -1
+                for (i in cursor until bytesRead - 1) {
+                    if ((buffer[i].toInt() and 0xFF) == 0xFF && (buffer[i + 1].toInt() and 0xFF) == 0xD9) {
+                        eoiIndex = i
+                        break
+                    }
+                }
+
+                if (eoiIndex != -1) {
+                    // Block-write all bytes up to and including the 0xFF 0xD9 marker
+                    val len = (eoiIndex + 2) - cursor
+                    frameStream.write(buffer, cursor, len)
+                    inJpeg = false
+                    cursor = eoiIndex + 2
+                    val jpegBytes = frameStream.toByteArray()
+                    frameStream.reset()
+                    onFrameExtracted(jpegBytes)
+                } else {
+                    // Marker not found in this chunk: block-write remaining chunk
+                    val lastIsFF = (buffer[bytesRead - 1].toInt() and 0xFF) == 0xFF
+                    val writeLen = if (lastIsFF) (bytesRead - 1) - cursor else bytesRead - cursor
+                    if (writeLen > 0) {
+                        frameStream.write(buffer, cursor, writeLen)
+                    }
+                    if (lastIsFF) {
+                        frameStream.write(0xFF)
+                        trailing0xFF = true
+                    } else {
+                        trailing0xFF = false
+                    }
+                    cursor = bytesRead
+
+                    // OOM Guard: if frame exceeds MAX_FRAME_SIZE, discard and reallocate frameStream
+                    // to release the backing buffer rather than permanently holding multi-megabyte heap
+                    if (frameStream.size() > MAX_FRAME_SIZE) {
+                        inJpeg = false
+                        trailing0xFF = false
+                        frameStream = ByteArrayOutputStream(65536)
                     }
                 }
             }
-            prevByte = b
+        }
+    }
+}
+
+/**
+ * Parses multipart MJPEG stream and decodes extracted frames into downsampled Bitmaps.
+ */
+internal suspend fun parseMjpegStream(
+    inputStream: InputStream,
+    onFrameDecoded: suspend (Bitmap) -> Unit
+) {
+    extractJpegFrames(inputStream) { jpegBytes ->
+        val bmp = decodeSampledBitmap(jpegBytes)
+        if (bmp != null) {
+            onFrameDecoded(bmp)
         }
     }
 }
@@ -682,7 +784,7 @@ private suspend fun parseMjpegStream(
  * Decodes JPEG bytes with adaptive downsampling to 1080p maximum using RGB_565 configuration,
  * saving 50% RAM and avoiding CPU spikes on budget Android TV hardware.
  */
-private fun decodeSampledBitmap(jpegBytes: ByteArray): Bitmap? {
+internal fun decodeSampledBitmap(jpegBytes: ByteArray): Bitmap? {
     return try {
         val boundsOptions = BitmapFactory.Options().apply {
             inJustDecodeBounds = true

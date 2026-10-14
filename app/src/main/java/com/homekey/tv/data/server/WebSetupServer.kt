@@ -8,6 +8,8 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.OkHttpClient
@@ -167,13 +169,14 @@ class WebSetupServer(
                         .header("Content-Type", "application/json")
                         .build()
 
-                    val response = httpClient.newCall(request).execute()
-                    val responseBody = response.body?.string() ?: "[]"
+                    val (isSuccessful, code, responseBody) = httpClient.newCall(request).execute().use { response ->
+                        Triple(response.isSuccessful, response.code, response.body?.string() ?: "[]")
+                    }
 
-                    if (response.isSuccessful) {
+                    if (isSuccessful) {
                         newFixedLengthResponse(Response.Status.OK, "application/json", responseBody)
                     } else {
-                        jsonError(Response.Status.BAD_REQUEST, "Home Assistant returned HTTP ${response.code}")
+                        jsonError(Response.Status.BAD_REQUEST, "Home Assistant returned HTTP $code")
                     }
                 } catch (e: Exception) {
                     Log.e(tag, "Error proxying entity fetch", e)
@@ -247,6 +250,54 @@ class WebSetupServer(
                 } catch (e: Exception) {
                     Log.e(tag, "Error saving setup config", e)
                     jsonError(Response.Status.INTERNAL_ERROR, "Failed to save configuration")
+                }
+            }
+            method == Method.GET && uri == "/api/backup" -> {
+                val pin = session.parameters["pin"]?.firstOrNull() ?: session.headers["x-pairing-pin"]
+                if (!isPinAccepted(pin)) {
+                    return forbidden()
+                }
+                val includeToken = session.parameters["includeToken"]?.firstOrNull()?.toBoolean() ?: false
+                val backupJson = preferencesManager.exportBackupJson(includeToken)
+                val resp = newFixedLengthResponse(Response.Status.OK, "application/json", backupJson)
+                resp.addHeader("Content-Disposition", "attachment; filename=\"homekey_tv_backup.json\"")
+                resp
+            }
+            method == Method.POST && uri == "/api/restore" -> {
+                try {
+                    val map = HashMap<String, String>()
+                    session.parseBody(map)
+                    val postData = map["postData"] ?: ""
+
+                    var actualPin = session.headers["x-pairing-pin"] ?: session.parameters["pin"]?.firstOrNull()
+                    var backupContent = postData
+
+                    try {
+                        val parsed = json.parseToJsonElement(postData)
+                        if (parsed is JsonObject) {
+                            if (parsed.containsKey("pin")) {
+                                actualPin = (parsed["pin"] as? JsonPrimitive)?.content ?: actualPin
+                            }
+                            if (parsed.containsKey("backup")) {
+                                backupContent = parsed["backup"].toString()
+                            }
+                        }
+                    } catch (_: Exception) {}
+
+                    if (!isPinAccepted(actualPin)) {
+                        return forbidden()
+                    }
+
+                    val success = preferencesManager.restoreFromBackupJson(backupContent)
+                    if (success) {
+                        onConfigUpdated()
+                        jsonSuccess("Configuration restored successfully!")
+                    } else {
+                        jsonError(Response.Status.BAD_REQUEST, "Failed to restore: invalid backup format.")
+                    }
+                } catch (e: Exception) {
+                    Log.e(tag, "Error restoring backup", e)
+                    jsonError(Response.Status.INTERNAL_ERROR, "Failed to restore backup")
                 }
             }
             else -> newFixedLengthResponse(Response.Status.NOT_FOUND, "text/plain", "Not Found")
@@ -897,6 +948,23 @@ class WebSetupServer(
 
                 <div id="entitiesContainer" class="entity-list">
                     <p style="padding: 16px; text-align: center; color: var(--text-muted);">Tap Fetch Entities to load devices from Home Assistant</p>
+                </div>
+            </div>
+        <!-- Section 5: Backup & Restore (Collapsible) -->
+        <div class="setup-card collapsed" id="card-backup">
+            <div class="card-header" onclick="toggleCard('card-backup')">
+                <div class="card-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <span>Backup &amp; Restore</span>
+                </div>
+                <span class="card-chevron">&#9660;</span>
+            </div>
+            <div class="card-body">
+                <p class="help-text" style="margin-bottom: 12px;">Export all TV settings, custom themes, entity configurations, and remote button mappings to a JSON file, or restore them onto this or another TV.</p>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button type="button" class="btn" style="flex: 1; min-width: 160px; margin-top: 0; background: #0284c7;" onclick="downloadBackup()">Download Backup JSON</button>
+                    <button type="button" class="btn-secondary" style="flex: 1; min-width: 160px; margin-top: 0; padding: 12px; border-radius: 8px; font-weight: 700; cursor: pointer; border: 1px solid var(--border);" onclick="triggerRestoreUpload()">Restore from JSON File</button>
+                    <input type="file" id="restoreFileInput" accept=".json,application/json" style="display: none;" onchange="handleRestoreFile(event)">
                 </div>
             </div>
         </div>
@@ -1598,6 +1666,86 @@ class WebSetupServer(
                 }
             } catch (err) {
                 showAlert('Network error saving to TV: ' + err.message, false);
+            }
+        }
+
+        async function downloadBackup() {
+            const pin = document.getElementById('pairingPin').value.trim();
+            if (!pin) {
+                showAlert('Enter the pairing PIN shown on the TV to download a backup.', false);
+                return;
+            }
+            try {
+                showAlert('Preparing backup...', true);
+                const res = await fetch('/api/backup?pin=' + encodeURIComponent(pin) + '&includeToken=false');
+                if (!res.ok) {
+                    const errData = await res.json().catch(function() { return { error: 'Failed to download backup' }; });
+                    showAlert(errData.error || 'Failed to download backup', false);
+                    return;
+                }
+                const blob = await res.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                a.download = 'homekey_tv_backup.json';
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                window.URL.revokeObjectURL(downloadUrl);
+                showAlert('Backup downloaded successfully.', true);
+            } catch (err) {
+                showAlert('Error downloading backup: ' + err.message, false);
+            }
+        }
+
+        function triggerRestoreUpload() {
+            const pin = document.getElementById('pairingPin').value.trim();
+            if (!pin) {
+                showAlert('Enter the pairing PIN shown on the TV before restoring.', false);
+                return;
+            }
+            document.getElementById('restoreFileInput').click();
+        }
+
+        async function handleRestoreFile(event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const pin = document.getElementById('pairingPin').value.trim();
+            if (!pin) {
+                showAlert('Enter the pairing PIN shown on the TV before restoring.', false);
+                event.target.value = '';
+                return;
+            }
+
+            try {
+                showAlert('Reading backup file...', true);
+                const fileText = await file.text();
+                JSON.parse(fileText);
+
+                showAlert('Restoring backup to Google TV...', true);
+                const res = await fetch('/api/restore', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-Pairing-PIN': pin
+                    },
+                    body: JSON.stringify({
+                        pin: pin,
+                        backup: JSON.parse(fileText)
+                    })
+                });
+
+                const data = await res.json();
+                if (data.success) {
+                    showAlert('Configuration restored successfully! Reloading...', true);
+                    setTimeout(function() { location.reload(); }, 1500);
+                } else {
+                    showAlert('Error restoring backup: ' + (data.error || data.message), false);
+                }
+            } catch (err) {
+                showAlert('Invalid backup file or network error: ' + err.message, false);
+            } finally {
+                event.target.value = '';
             }
         }
 

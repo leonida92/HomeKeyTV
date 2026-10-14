@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.*
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -243,6 +244,10 @@ class HAModelTest {
         assertTrue(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.7.0", "1.6.9"))
         assertFalse(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.6.9", "1.6.9"))
         assertFalse(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.7.0", "1.7.0"))
+
+        // Comparisons against 1.7.0
+        assertTrue(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.7.1", "1.7.0"))
+        assertFalse(com.homekey.tv.data.api.UpdateManager.isNewerVersion("v1.7.1", "1.7.1"))
     }
 
     @Test
@@ -850,6 +855,232 @@ class HAModelTest {
         assertEquals("#AABBCC", multiOverridden.getColorHexForDomain("camera"))
         assertEquals("#223344", multiOverridden.getColorHexForDomain("off_background"))
         assertEquals("#556677", multiOverridden.getColorHexForDomain("icon_color"))
+    }
+
+    @Test
+    fun testIntentRemapActionSerialization() {
+        val broadcastConfig = com.homekey.tv.data.models.ButtonRemapConfig(
+            keyCode = 24,
+            keyName = "VOLUME_UP",
+            longPressAction = com.homekey.tv.data.models.RemapAction(
+                type = "SEND_BROADCAST",
+                target = "com.wled.tv.ACTION_TOGGLE_OVERLAY",
+                extra = "com.wled.tv",
+                label = "Broadcast: com.wled.tv.ACTION_TOGGLE_OVERLAY"
+            )
+        )
+        val encodedBroadcast = json.encodeToString(broadcastConfig)
+        val decodedBroadcast = json.decodeFromString<com.homekey.tv.data.models.ButtonRemapConfig>(encodedBroadcast)
+        assertEquals("SEND_BROADCAST", decodedBroadcast.longPressAction?.type)
+        assertEquals("com.wled.tv.ACTION_TOGGLE_OVERLAY", decodedBroadcast.longPressAction?.target)
+        assertEquals("com.wled.tv", decodedBroadcast.longPressAction?.extra)
+
+        val serviceConfig = com.homekey.tv.data.models.ButtonRemapConfig(
+            keyCode = 25,
+            keyName = "VOLUME_DOWN",
+            doublePressAction = com.homekey.tv.data.models.RemapAction(
+                type = "START_SERVICE",
+                target = "com.example.service.ACTION_START",
+                extra = "com.example.service"
+            )
+        )
+        val encodedService = json.encodeToString(serviceConfig)
+        val decodedService = json.decodeFromString<com.homekey.tv.data.models.ButtonRemapConfig>(encodedService)
+        assertEquals("START_SERVICE", decodedService.doublePressAction?.type)
+        assertEquals("com.example.service.ACTION_START", decodedService.doublePressAction?.target)
+        assertEquals("com.example.service", decodedService.doublePressAction?.extra)
+    }
+
+    @Test
+    fun testHAEntityDiffProcessorAddAndChange() {
+        val initialMap = mapOf(
+            "light.living_room" to HAEntityState(
+                entityId = "light.living_room",
+                state = "off",
+                attributes = kotlinx.serialization.json.buildJsonObject {
+                    put("friendly_name", "Living Room")
+                }
+            )
+        )
+
+        // Test Add new entity via "a"
+        val addEvent = kotlinx.serialization.json.buildJsonObject {
+            put("a", kotlinx.serialization.json.buildJsonObject {
+                put("switch.kitchen", kotlinx.serialization.json.buildJsonObject {
+                    put("s", "on")
+                    put("a", kotlinx.serialization.json.buildJsonObject {
+                        put("friendly_name", "Kitchen Switch")
+                    })
+                })
+            })
+        }
+        val afterAdd = com.homekey.tv.data.models.HAEntityDiffProcessor.applyDiff(initialMap, addEvent)
+        assertEquals(2, afterAdd.size)
+        assertEquals("on", afterAdd["switch.kitchen"]?.state)
+        assertEquals("Kitchen Switch", afterAdd["switch.kitchen"]?.friendlyName)
+
+        // Test Change via "c" (+ for state & new attribute, - for removed attribute)
+        val changeEvent = kotlinx.serialization.json.buildJsonObject {
+            put("c", kotlinx.serialization.json.buildJsonObject {
+                put("light.living_room", kotlinx.serialization.json.buildJsonObject {
+                    put("+", kotlinx.serialization.json.buildJsonObject {
+                        put("s", "on")
+                        put("a", kotlinx.serialization.json.buildJsonObject {
+                            put("brightness", 255)
+                        })
+                        put("lc", "1700000000.0")
+                    })
+                })
+            })
+        }
+        val afterChange = com.homekey.tv.data.models.HAEntityDiffProcessor.applyDiff(afterAdd, changeEvent)
+        assertEquals("on", afterChange["light.living_room"]?.state)
+        assertEquals(255, afterChange["light.living_room"]?.brightness)
+        assertEquals("Living Room", afterChange["light.living_room"]?.friendlyName)
+        assertEquals("1700000000.0", afterChange["light.living_room"]?.lastChanged)
+
+        // Test Removal via "r"
+        val removeEvent = kotlinx.serialization.json.buildJsonObject {
+            put("r", kotlinx.serialization.json.buildJsonArray {
+                add(kotlinx.serialization.json.JsonPrimitive("switch.kitchen"))
+            })
+        }
+        val afterRemove = com.homekey.tv.data.models.HAEntityDiffProcessor.applyDiff(afterChange, removeEvent)
+        assertEquals(1, afterRemove.size)
+        assertNull(afterRemove["switch.kitchen"])
+        assertEquals("light.living_room", afterRemove["light.living_room"]?.entityId)
+    }
+
+    @Test
+    fun testCameraPipAlertSerialization() {
+        val alert = com.homekey.tv.data.models.CameraPipAlert(
+            entityId = "camera.front_door",
+            title = "Front Door Alert",
+            message = "Person detected on porch",
+            durationSeconds = 20
+        )
+        val serialized = json.encodeToString(com.homekey.tv.data.models.CameraPipAlert.serializer(), alert)
+        val decoded = json.decodeFromString<com.homekey.tv.data.models.CameraPipAlert>(serialized)
+
+        assertEquals("camera.front_door", decoded.entityId)
+        assertEquals("Front Door Alert", decoded.title)
+        assertEquals("Person detected on porch", decoded.message)
+        assertEquals(20, decoded.durationSeconds)
+    }
+
+    @Test
+    fun testButtonRemapWithAppScopeAndPassThrough() {
+        val config = com.homekey.tv.data.models.ButtonRemapConfig(
+            keyCode = 191,
+            keyName = "Netflix Button",
+            appScope = "com.netflix.ninja",
+            singlePressAction = com.homekey.tv.data.models.RemapAction("PASS_THROUGH"),
+            doublePressAction = null,
+            longPressAction = null
+        )
+        val serialized = json.encodeToString(com.homekey.tv.data.models.ButtonRemapConfig.serializer(), config)
+        val decoded = json.decodeFromString<com.homekey.tv.data.models.ButtonRemapConfig>(serialized)
+
+        assertEquals(191, decoded.keyCode)
+        assertEquals("Netflix Button", decoded.keyName)
+        assertEquals("com.netflix.ninja", decoded.appScope)
+        assertEquals("PASS_THROUGH", decoded.singlePressAction?.type)
+        assertNull(decoded.doublePressAction)
+    }
+
+    @Test
+    fun testHomeKeyBackupSerialization() {
+        val backup = com.homekey.tv.data.local.HomeKeyBackup(
+            serverUrl = "http://192.168.1.100:8123",
+            accessToken = "test_token_abc",
+            panelLayout = "DOCK_LEFT",
+            popupStyle = "MINIMAL",
+            cameraPopupStyle = "COMPACT",
+            cameraCompactSize = "LARGE",
+            recentAppsEnabled = true,
+            recentAppsCount = 5,
+            haEnabled = true,
+            themePreset = "MIDNIGHT",
+            customThemeColors = mapOf("light" to "#FF5500"),
+            volumeFixEnabled = true,
+            pinnedEntities = listOf(
+                com.homekey.tv.data.models.PinnedEntityConfig("light.living_room", order = 0)
+            ),
+            pinnedApps = listOf(
+                com.homekey.tv.data.models.PinnedAppConfig("com.kodi", "Kodi", order = 0)
+            ),
+            buttonRemaps = listOf(
+                com.homekey.tv.data.models.ButtonRemapConfig(
+                    keyCode = 313,
+                    keyName = "Custom Star Button",
+                    singlePressAction = com.homekey.tv.data.models.RemapAction("OPEN_DOCK")
+                )
+            )
+        )
+
+        val serialized = json.encodeToString(com.homekey.tv.data.local.HomeKeyBackup.serializer(), backup)
+        val decoded = json.decodeFromString<com.homekey.tv.data.local.HomeKeyBackup>(serialized)
+
+        assertEquals("http://192.168.1.100:8123", decoded.serverUrl)
+        assertEquals("test_token_abc", decoded.accessToken)
+        assertEquals("DOCK_LEFT", decoded.panelLayout)
+        assertEquals("MINIMAL", decoded.popupStyle)
+        assertEquals("COMPACT", decoded.cameraPopupStyle)
+        assertEquals("LARGE", decoded.cameraCompactSize)
+        assertTrue(decoded.recentAppsEnabled)
+        assertEquals(5, decoded.recentAppsCount)
+        assertTrue(decoded.volumeFixEnabled)
+        assertEquals(1, decoded.pinnedEntities.size)
+        assertEquals("light.living_room", decoded.pinnedEntities[0].entityId)
+        assertEquals(1, decoded.pinnedApps.size)
+        assertEquals("com.kodi", decoded.pinnedApps[0].packageName)
+        assertEquals(1, decoded.buttonRemaps.size)
+        assertEquals(313, decoded.buttonRemaps[0].keyCode)
+    }
+
+    @Test
+    fun testExtractJpegFrames_singleFrame() = kotlinx.coroutines.runBlocking {
+        val streamData = byteArrayOf(
+            0x2D, 0x2D, 0x66, 0x72, // --fr (boundary)
+            0xFF.toByte(), 0xD8.toByte(), // SOI
+            0x01, 0x02, 0x03, 0x04,
+            0xFF.toByte(), 0xD9.toByte(), // EOI
+            0x0D, 0x0A
+        )
+        val extracted = mutableListOf<ByteArray>()
+        com.homekey.tv.ui.panel.extractJpegFrames(java.io.ByteArrayInputStream(streamData)) { frame ->
+            extracted.add(frame)
+        }
+
+        assertEquals(1, extracted.size)
+        val expected = byteArrayOf(
+            0xFF.toByte(), 0xD8.toByte(),
+            0x01, 0x02, 0x03, 0x04,
+            0xFF.toByte(), 0xD9.toByte()
+        )
+        org.junit.Assert.assertArrayEquals(expected, extracted[0])
+    }
+
+    @Test
+    fun testExtractJpegFrames_multipleFramesAndSplitMarkers() = kotlinx.coroutines.runBlocking {
+        val frame1 = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0x10, 0x20, 0xFF.toByte(), 0xD9.toByte())
+        val frame2 = byteArrayOf(0xFF.toByte(), 0xD8.toByte(), 0x30, 0x40, 0x50, 0xFF.toByte(), 0xD9.toByte())
+        val combined = byteArrayOf(
+            0x00, 0x01, // leading junk
+            *frame1,
+            0x02, 0x03, // intermediate boundary
+            *frame2,
+            0x04 // trailing junk
+        )
+
+        val extracted = mutableListOf<ByteArray>()
+        com.homekey.tv.ui.panel.extractJpegFrames(java.io.ByteArrayInputStream(combined)) { frame ->
+            extracted.add(frame)
+        }
+
+        assertEquals(2, extracted.size)
+        org.junit.Assert.assertArrayEquals(frame1, extracted[0])
+        org.junit.Assert.assertArrayEquals(frame2, extracted[1])
     }
 }
 

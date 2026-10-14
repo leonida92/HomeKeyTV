@@ -1,8 +1,10 @@
 package com.homekey.tv.service
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -35,10 +37,15 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.homekey.tv.data.api.HAWebSocketClient
+import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.models.CameraPipAlert
 import com.homekey.tv.ui.SettingsActivity
+import com.homekey.tv.ui.panel.CameraPipCard
 import com.homekey.tv.ui.panel.PanelOverlayScreen
 import com.homekey.tv.ui.theme.HomeAssistantTVTheme
 import com.homekey.tv.viewmodel.PanelViewModel
+import kotlinx.coroutines.*
 
 class OverlayLifecycleOwner :
     LifecycleOwner,
@@ -58,8 +65,6 @@ class OverlayLifecycleOwner :
         savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_CREATE)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_START)
-        lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_RESUME)
     }
 
     override val lifecycle: Lifecycle get() = lifecycleRegistry
@@ -70,6 +75,16 @@ class OverlayLifecycleOwner :
     fun pause() {
         if (!isDestroyed && lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
             lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        }
+    }
+
+    fun stop() {
+        if (isDestroyed) return
+        if (lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.RESUMED)) {
+            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_PAUSE)
+        }
+        if (lifecycleRegistry.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            lifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_STOP)
         }
     }
 
@@ -114,6 +129,7 @@ class OverlayFrameLayout(context: Context) : FrameLayout(context) {
     }
 }
 
+@SuppressLint("StaticFieldLeak")
 object DockOverlayManager {
     private const val TAG = "DockOverlayManager"
 
@@ -123,8 +139,40 @@ object DockOverlayManager {
     private var lifecycleOwner: OverlayLifecycleOwner? = null
     private var viewModel: PanelViewModel? = null
 
+    private var pipRootLayout: FrameLayout? = null
+    private var pipComposeView: ComposeView? = null
+    private var pipLifecycleOwner: OverlayLifecycleOwner? = null
+    private var pipDismissJob: Job? = null
+    private val pipScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+
     val isShowing: Boolean
         get() = rootLayout != null && rootLayout?.isAttachedToWindow == true && rootLayout?.visibility == View.VISIBLE
+
+    private fun createPipLayoutParams(context: Context): WindowManager.LayoutParams {
+        val density = context.resources.displayMetrics.density
+        val widthPx = (360 * density).toInt()
+        val heightPx = (220 * density).toInt()
+        val marginPx = (24 * density).toInt()
+
+        val flags = WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE or
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_HARDWARE_ACCELERATED or
+            WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS
+
+        return WindowManager.LayoutParams(
+            widthPx,
+            heightPx,
+            WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
+            flags,
+            PixelFormat.TRANSLUCENT
+        ).apply {
+            gravity = Gravity.TOP or Gravity.END
+            x = marginPx
+            y = marginPx
+            format = PixelFormat.TRANSLUCENT
+        }
+    }
 
     private fun createLayoutParams(focusable: Boolean): WindowManager.LayoutParams {
         val flags = if (focusable) {
@@ -226,7 +274,7 @@ object DockOverlayManager {
             layout.setViewTreeOnBackPressedDispatcherOwner(owner)
 
             val cv = ComposeView(service).apply {
-                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
                 setContent {
                     CompositionLocalProvider(
                         LocalSavedStateRegistryOwner provides owner,
@@ -276,7 +324,7 @@ object DockOverlayManager {
                 layout.visibility = View.GONE
                 val params = createLayoutParams(focusable = false)
                 wm.addView(layout, params)
-                owner.pause()
+                owner.stop()
                 Log.d(TAG, "DockOverlayManager pre-warmed in background")
             }
         } catch (e: Exception) {
@@ -316,9 +364,10 @@ object DockOverlayManager {
             if (layout.isAttachedToWindow) {
                 layout.visibility = View.GONE
                 wm.updateViewLayout(layout, createLayoutParams(focusable = false))
-                lifecycleOwner?.pause()
+                lifecycleOwner?.stop()
                 viewModel?.closeEntityDialog()
-                Log.d(TAG, "DockOverlayManager hidden (kept warm)")
+                viewModel?.exitReorderMode()
+                Log.d(TAG, "DockOverlayManager hidden (stopped & kept warm)")
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error hiding overlay", e)
@@ -326,11 +375,112 @@ object DockOverlayManager {
         }
     }
 
+    fun showPipAlert(context: Context, alert: CameraPipAlert) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Handler(Looper.getMainLooper()).post { showPipAlert(context, alert) }
+            return
+        }
+
+        dismissPip()
+
+        val uiContext = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            try {
+                context.createWindowContext(WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY, null)
+            } catch (_: Exception) {
+                context
+            }
+        } else {
+            context
+        }
+
+        val wm = (uiContext.getSystemService(Context.WINDOW_SERVICE) as? WindowManager)
+            ?: windowManager
+            ?: return
+        windowManager = wm
+
+        val prefs = PreferencesManager.getInstance(context)
+        val serverUrl = prefs.serverUrl.value
+        val accessToken = prefs.accessToken.value
+        if (serverUrl.isBlank()) return
+
+        try {
+            val owner = OverlayLifecycleOwner()
+            pipLifecycleOwner = owner
+
+            val layout = FrameLayout(uiContext)
+            pipRootLayout = layout
+
+            layout.setViewTreeLifecycleOwner(owner)
+            layout.setViewTreeViewModelStoreOwner(owner)
+            layout.setViewTreeSavedStateRegistryOwner(owner)
+            layout.setViewTreeOnBackPressedDispatcherOwner(owner)
+
+            val cv = ComposeView(uiContext).apply {
+                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
+                setContent {
+                    CompositionLocalProvider(
+                        LocalSavedStateRegistryOwner provides owner,
+                        LocalOnBackPressedDispatcherOwner provides owner
+                    ) {
+                        HomeAssistantTVTheme {
+                            CameraPipCard(
+                                alert = alert,
+                                serverUrl = serverUrl,
+                                accessToken = accessToken,
+                                onDismiss = { dismissPip() }
+                            )
+                        }
+                    }
+                }
+            }
+            pipComposeView = cv
+            layout.addView(cv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
+
+            val params = createPipLayoutParams(uiContext)
+            wm.addView(layout, params)
+            owner.resume()
+            Log.d(TAG, "Camera PiP alert shown for ${alert.entityId} (${alert.durationSeconds}s)")
+
+            pipDismissJob = pipScope.launch {
+                delay(alert.durationSeconds * 1000L)
+                dismissPip()
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error displaying PiP alert", e)
+            dismissPip()
+        }
+    }
+
+    fun dismissPip() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            Handler(Looper.getMainLooper()).post { dismissPip() }
+            return
+        }
+        pipDismissJob?.cancel()
+        pipDismissJob = null
+
+        val wm = windowManager
+        val layout = pipRootLayout
+        if (wm != null && layout != null && layout.isAttachedToWindow) {
+            try {
+                wm.removeViewImmediate(layout)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error removing PiP view", e)
+            }
+        }
+        pipRootLayout = null
+        pipComposeView = null
+        pipLifecycleOwner?.destroy()
+        pipLifecycleOwner = null
+        HAWebSocketClient.getInstance().dismissPipAlert()
+    }
+
     fun teardown() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             Handler(Looper.getMainLooper()).post { teardown() }
             return
         }
+        dismissPip()
         try {
             val wm = windowManager
             val layout = rootLayout

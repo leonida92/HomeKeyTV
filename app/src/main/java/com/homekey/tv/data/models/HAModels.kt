@@ -3,6 +3,7 @@ package com.homekey.tv.data.models
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.contentOrNull
@@ -186,3 +187,113 @@ enum class ConnectionStatus {
     AUTHENTICATED,
     FAILED
 }
+
+/**
+ * Pure differential updater for Home Assistant subscribe_entities messages.
+ * Handles initial snapshots (a), incremental property diffs (c with + and -),
+ * and entity removals (r).
+ */
+object HAEntityDiffProcessor {
+    fun applyDiff(current: Map<String, HAEntityState>, event: JsonObject): Map<String, HAEntityState> {
+        val added = event["a"]?.let { if (it is JsonObject) it else null }
+        val changed = event["c"]?.let { if (it is JsonObject) it else null }
+        val removed = event["r"]
+
+        if (added == null && changed == null && removed == null) return current
+
+        val map = current.toMutableMap()
+
+        if (added != null) {
+            for ((entityId, entityElem) in added) {
+                val obj = if (entityElem is JsonObject) entityElem else continue
+                val state = obj["s"]?.jsonPrimitive?.content ?: "unknown"
+                val attrs = obj["a"]?.let { if (it is JsonObject) it else null } ?: JsonObject(emptyMap())
+                val lastChanged = obj["lc"]?.jsonPrimitive?.contentOrNull
+                val lastUpdated = obj["lu"]?.jsonPrimitive?.contentOrNull
+                val existing = map[entityId]
+                val mergedAttrs = if (existing != null) {
+                    JsonObject(existing.attributes + attrs)
+                } else {
+                    attrs
+                }
+                map[entityId] = HAEntityState(
+                    entityId = entityId,
+                    state = state,
+                    attributes = mergedAttrs,
+                    lastChanged = lastChanged ?: existing?.lastChanged,
+                    lastUpdated = lastUpdated ?: existing?.lastUpdated
+                )
+            }
+        }
+
+        if (changed != null) {
+            for ((entityId, diffElem) in changed) {
+                val diffObj = if (diffElem is JsonObject) diffElem else continue
+                val plus = diffObj["+"]?.let { if (it is JsonObject) it else null }
+                val minus = diffObj["-"]
+
+                val existing = map[entityId] ?: HAEntityState(
+                    entityId = entityId,
+                    state = plus?.get("s")?.jsonPrimitive?.content ?: "unknown"
+                )
+
+                var newState = existing.state
+                var newLastChanged = existing.lastChanged
+                var newLastUpdated = existing.lastUpdated
+                val newAttrsMap = existing.attributes.toMutableMap()
+
+                if (plus != null) {
+                    plus["s"]?.jsonPrimitive?.contentOrNull?.let { newState = it }
+                    plus["lc"]?.jsonPrimitive?.contentOrNull?.let { newLastChanged = it }
+                    plus["lu"]?.jsonPrimitive?.contentOrNull?.let { newLastUpdated = it }
+                    plus["a"]?.let { if (it is JsonObject) it else null }?.let { newAttrs ->
+                        for ((k, v) in newAttrs) {
+                            newAttrsMap[k] = v
+                        }
+                    }
+                }
+
+                if (minus != null) {
+                    val removedKeys = when (minus) {
+                        is JsonArray -> minus.mapNotNull { it.jsonPrimitive.contentOrNull }
+                        is JsonObject -> (minus["a"] as? JsonArray)?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: minus.keys.toList()
+                        else -> emptyList()
+                    }
+                    for (key in removedKeys) {
+                        newAttrsMap.remove(key)
+                    }
+                }
+
+                map[entityId] = existing.copy(
+                    state = newState,
+                    attributes = JsonObject(newAttrsMap),
+                    lastChanged = newLastChanged,
+                    lastUpdated = newLastUpdated
+                )
+            }
+        }
+
+        if (removed != null) {
+            val removedIds = when (removed) {
+                is JsonArray -> removed.mapNotNull { it.jsonPrimitive.contentOrNull }
+                is JsonObject -> removed.keys.toList()
+                else -> emptyList()
+            }
+            for (id in removedIds) {
+                map.remove(id)
+            }
+        }
+
+        return map
+    }
+}
+
+@Serializable
+data class CameraPipAlert(
+    @SerialName("entity_id") val entityId: String,
+    val title: String? = null,
+    val message: String? = null,
+    @SerialName("duration") val durationSeconds: Int = 15
+)
+
+

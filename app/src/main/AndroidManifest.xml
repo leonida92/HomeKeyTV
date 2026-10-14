@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission
@@ -112,6 +113,21 @@
             android:exported="false">
             <intent-filter>
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Allows other apps / button remappers to toggle or show HomeKey TV dock overlay -->
+        <receiver
+            android:name=".receiver.DockToggleReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="com.homekey.tv.ACTION_TOGGLE_OVERLAY" />
+                <action android:name="com.homekey.tv.ACTION_TOGGLE_DOCK" />
+                <action android:name="com.homekey.tv.ACTION_SHOW_OVERLAY" />
+                <action android:name="com.homekey.tv.ACTION_SHOW_DOCK" />
+                <action android:name="com.homekey.tv.ACTION_HIDE_OVERLAY" />
+                <action android:name="com.homekey.tv.ACTION_HIDE_DOCK" />
             </intent-filter>
         </receiver>
 

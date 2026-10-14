@@ -1,6 +1,7 @@
 package com.homekey.tv.data.api
 
 import android.util.Log
+import com.homekey.tv.data.models.CameraPipAlert
 import com.homekey.tv.data.models.ConnectionStatus
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.OptimisticToggle
@@ -9,6 +10,9 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -41,6 +45,32 @@ class HAWebSocketClient(
     @Volatile private var isSubscribedToEvents = false
     @Volatile private var getStatesMsgId: Long = -1
 
+    private val baseMonitoredEntities = MutableStateFlow<Set<String>>(emptySet())
+    private val activeDialogEntity = MutableStateFlow<String?>(null)
+    @Volatile private var monitoredEntityIds: Set<String> = emptySet()
+    @Volatile private var subscribeEntitiesSubId: Long = -1L
+    @Volatile private var isSubscribedToEventsFallback = false
+    @Volatile private var notifyEventsSubId: Long = -1L
+
+    private val _pipAlert = MutableStateFlow<CameraPipAlert?>(null)
+    val pipAlert: StateFlow<CameraPipAlert?> = _pipAlert.asStateFlow()
+
+    fun dismissPipAlert() {
+        _pipAlert.value = null
+    }
+
+    fun triggerPipAlert(alert: CameraPipAlert) {
+        _pipAlert.value = alert
+    }
+
+    fun setBaseMonitoredEntities(entities: Set<String>) {
+        baseMonitoredEntities.value = entities
+    }
+
+    fun setActiveDialogEntity(entityId: String?) {
+        activeDialogEntity.value = entityId
+    }
+
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
 
@@ -66,6 +96,22 @@ class HAWebSocketClient(
                     Log.e(tag, "Error parsing message: $text", e)
                 }
             }
+        }
+
+        @OptIn(FlowPreview::class)
+        scope.launch {
+            combine(baseMonitoredEntities, activeDialogEntity) { base, dialog ->
+                if (dialog != null && dialog.contains(".")) base + dialog else base
+            }
+                .distinctUntilChanged()
+                .debounce(300L)
+                .collect { entityIds ->
+                    val changed = monitoredEntityIds != entityIds
+                    monitoredEntityIds = entityIds
+                    if (changed && _connectionStatus.value == ConnectionStatus.AUTHENTICATED) {
+                        resubscribeEntities()
+                    }
+                }
         }
     }
 
@@ -116,6 +162,9 @@ class HAWebSocketClient(
         }
         webSocket = null
         isSubscribedToEvents = false
+        subscribeEntitiesSubId = -1L
+        isSubscribedToEventsFallback = false
+        notifyEventsSubId = -1L
         if (updateStatus) {
             _connectionStatus.value = ConnectionStatus.DISCONNECTED
         }
@@ -194,7 +243,8 @@ class HAWebSocketClient(
                 _connectionStatus.value = ConnectionStatus.AUTHENTICATED
                 _errorMessage.value = null
                 fetchInitialStates()
-                subscribeToStateChanges()
+                resubscribeEntities()
+                subscribeToNotifyEvents()
             }
 
             "auth_invalid" -> {
@@ -207,6 +257,13 @@ class HAWebSocketClient(
             "result" -> {
                 val id = root["id"]?.jsonPrimitive?.longOrNull
                 val success = root["success"]?.jsonPrimitive?.booleanOrNull ?: false
+
+                if (id == subscribeEntitiesSubId && !success) {
+                    val errorMsg = root["error"]?.jsonObject?.get("message")?.jsonPrimitive?.contentOrNull
+                    Log.w(tag, "subscribe_entities rejected by HA ($errorMsg), falling back to state_changed")
+                    subscribeEntitiesSubId = -1L
+                    subscribeToStateChangesFallback()
+                }
 
                 if (id == getStatesMsgId && success) {
                     val resultList = root["result"]?.jsonArray
@@ -229,7 +286,23 @@ class HAWebSocketClient(
             "event" -> {
                 val event = root["event"]?.jsonObject
                 val eventType = event?.get("event_type")?.jsonPrimitive?.content
-                if (eventType == "state_changed") {
+                if (eventType == "homekey_tv_notify") {
+                    val data = event["data"]?.jsonObject
+                    val entityId = data?.get("entity_id")?.jsonPrimitive?.contentOrNull
+                    if (entityId != null) {
+                        val title = data["title"]?.jsonPrimitive?.contentOrNull
+                        val message = data["message"]?.jsonPrimitive?.contentOrNull
+                        val duration = data["duration"]?.jsonPrimitive?.contentOrNull?.toIntOrNull() ?: 15
+                        val alert = CameraPipAlert(
+                            entityId = entityId,
+                            title = title,
+                            message = message,
+                            durationSeconds = duration
+                        )
+                        Log.d(tag, "Received CameraPipAlert: $entityId ($title), duration=${duration}s")
+                        _pipAlert.value = alert
+                    }
+                } else if (eventType == "state_changed") {
                     val data = event["data"]?.jsonObject
                     val entityId = data?.get("entity_id")?.jsonPrimitive?.content
                     val newStateElem = data?.get("new_state")
@@ -250,6 +323,10 @@ class HAWebSocketClient(
                             }
                         }
                     }
+                } else if (event != null) {
+                    _entities.update { current ->
+                        com.homekey.tv.data.models.HAEntityDiffProcessor.applyDiff(current, event)
+                    }
                 }
             }
         }
@@ -265,8 +342,43 @@ class HAWebSocketClient(
         webSocket?.send(cmd.toString())
     }
 
-    private fun subscribeToStateChanges() {
-        if (isSubscribedToEvents) return
+    private fun resubscribeEntities() {
+        val ws = webSocket ?: return
+        if (_connectionStatus.value != ConnectionStatus.AUTHENTICATED) return
+
+        val oldSubId = subscribeEntitiesSubId
+        if (oldSubId != -1L) {
+            val unsubId = messageId.getAndIncrement()
+            val unsubCmd = buildJsonObject {
+                put("id", unsubId)
+                put("type", "unsubscribe_events")
+                put("subscription", oldSubId)
+            }
+            ws.send(unsubCmd.toString())
+            subscribeEntitiesSubId = -1L
+        }
+
+        val targets = monitoredEntityIds.filter { it.isNotBlank() && it.contains(".") }
+        if (targets.isEmpty()) {
+            Log.d(tag, "No monitored entities configured, subscription idle")
+            return
+        }
+
+        val newId = messageId.getAndIncrement()
+        subscribeEntitiesSubId = newId
+        val cmd = buildJsonObject {
+            put("id", newId)
+            put("type", "subscribe_entities")
+            put("entity_ids", buildJsonArray {
+                targets.forEach { add(JsonPrimitive(it)) }
+            })
+        }
+        Log.d(tag, "Subscribing to ${targets.size} monitored entities (id=$newId)")
+        ws.send(cmd.toString())
+    }
+
+    private fun subscribeToStateChangesFallback() {
+        if (isSubscribedToEventsFallback) return
         val id = messageId.getAndIncrement()
         val cmd = buildJsonObject {
             put("id", id)
@@ -274,7 +386,22 @@ class HAWebSocketClient(
             put("event_type", "state_changed")
         }
         webSocket?.send(cmd.toString())
-        isSubscribedToEvents = true
+        isSubscribedToEventsFallback = true
+        Log.d(tag, "Subscribed to full state_changed fallback (id=$id)")
+    }
+
+    private fun subscribeToNotifyEvents() {
+        val ws = webSocket ?: return
+        if (_connectionStatus.value != ConnectionStatus.AUTHENTICATED) return
+        val id = messageId.getAndIncrement()
+        notifyEventsSubId = id
+        val cmd = buildJsonObject {
+            put("id", id)
+            put("type", "subscribe_events")
+            put("event_type", "homekey_tv_notify")
+        }
+        ws.send(cmd.toString())
+        Log.d(tag, "Subscribed to homekey_tv_notify events (id=$id)")
     }
 
     /**

@@ -169,11 +169,13 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     fun openEntityDialog(entity: HAEntityState) {
         lastOpenedDialogEntity = entity
         _activeDialogEntityId.value = entity.entityId
+        wsClient.setActiveDialogEntity(entity.entityId)
     }
 
     fun closeEntityDialog() {
         _activeDialogEntityId.value = null
         lastOpenedDialogEntity = null
+        wsClient.setActiveDialogEntity(null)
     }
 
     fun turnOnEntity(entityId: String) {
