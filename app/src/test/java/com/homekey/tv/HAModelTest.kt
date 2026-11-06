@@ -15,7 +15,7 @@ import org.junit.Test
 
 class HAModelTest {
 
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+    private val json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
 
     @Test
     fun testLightEntityStateParsing() {
@@ -957,7 +957,8 @@ class HAModelTest {
             entityId = "camera.front_door",
             title = "Front Door Alert",
             message = "Person detected on porch",
-            durationSeconds = 20
+            durationSeconds = 20,
+            timestamp = 1700000000000L
         )
         val serialized = json.encodeToString(com.homekey.tv.data.models.CameraPipAlert.serializer(), alert)
         val decoded = json.decodeFromString<com.homekey.tv.data.models.CameraPipAlert>(serialized)
@@ -966,7 +967,7 @@ class HAModelTest {
         assertEquals("Front Door Alert", decoded.title)
         assertEquals("Person detected on porch", decoded.message)
         assertEquals(20, decoded.durationSeconds)
-        assertEquals(alert.timestamp, decoded.timestamp)
+        assertEquals(1700000000000L, decoded.timestamp)
     }
 
     @Test

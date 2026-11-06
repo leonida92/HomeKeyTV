@@ -705,6 +705,34 @@ fun DockOverlayScreen(
                             onDismiss = { viewModel.closeEntityDialog() }
                         )
                     }
+                    entity.domain == "cover" -> {
+                        CoverDialog(
+                            entity = entity,
+                            onOpen = { viewModel.openCover(entity.entityId) },
+                            onClose = { viewModel.closeCover(entity.entityId) },
+                            onStop = { viewModel.stopCover(entity.entityId) },
+                            onSetPosition = { viewModel.setCoverPosition(entity.entityId, it) },
+                            onSetTilt = { viewModel.setCoverTiltPosition(entity.entityId, it) },
+                            onDismiss = { viewModel.closeEntityDialog() }
+                        )
+                    }
+                    entity.domain == "fan" -> {
+                        FanDialog(
+                            entity = entity,
+                            onToggle = { viewModel.toggleEntity(entity.entityId) },
+                            onSetPercentage = { viewModel.setFanPercentage(entity.entityId, it) },
+                            onSetOscillating = { viewModel.setFanOscillating(entity.entityId, it) },
+                            onDismiss = { viewModel.closeEntityDialog() }
+                        )
+                    }
+                    entity.domain == "lock" -> {
+                        LockDialog(
+                            entity = entity,
+                            onLock = { viewModel.lock(entity.entityId) },
+                            onUnlock = { viewModel.unlock(entity.entityId) },
+                            onDismiss = { viewModel.closeEntityDialog() }
+                        )
+                    }
                     else -> {}
                 }
             }
@@ -786,6 +814,35 @@ private fun MinimalEntityPopupContent(
                 onPreviousTrack = { viewModel.mediaPrevious(entity.entityId) },
                 onSetVolume = { viewModel.setMediaVolume(entity.entityId, it) },
                 onToggleMute = { viewModel.toggleMediaMute(entity.entityId, entity.isVolumeMuted) },
+                onDismiss = onDismiss
+            )
+        }
+        entity.domain == "cover" -> {
+            MinimalCoverPopup(
+                entity = entity,
+                isVertical = isVertical,
+                onOpen = { viewModel.openCover(entity.entityId) },
+                onClose = { viewModel.closeCover(entity.entityId) },
+                onStop = { viewModel.stopCover(entity.entityId) },
+                onSetPosition = { viewModel.setCoverPosition(entity.entityId, it) },
+                onDismiss = onDismiss
+            )
+        }
+        entity.domain == "fan" -> {
+            MinimalFanPopup(
+                entity = entity,
+                isVertical = isVertical,
+                onToggle = { viewModel.toggleEntity(entity.entityId) },
+                onSetPercentage = { viewModel.setFanPercentage(entity.entityId, it) },
+                onDismiss = onDismiss
+            )
+        }
+        entity.domain == "lock" -> {
+            MinimalLockPopup(
+                entity = entity,
+                isVertical = isVertical,
+                onLock = { viewModel.lock(entity.entityId) },
+                onUnlock = { viewModel.unlock(entity.entityId) },
                 onDismiss = onDismiss
             )
         }

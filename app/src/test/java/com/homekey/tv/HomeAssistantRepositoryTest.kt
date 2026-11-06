@@ -145,4 +145,40 @@ class HomeAssistantRepositoryTest {
         repository.dismissPipAlert()
         assertNull(repository.pipAlert.value)
     }
+
+    @Test
+    fun cover_service_calls_generate_expected_ha_payloads() = runTest(testDispatcher) {
+        repository.openCover("cover.living_room_blinds")
+        assertTrue(fakeTransport.sentMessages.any { it.contains("call_service") && it.contains("open_cover") && it.contains("cover.living_room_blinds") })
+
+        repository.closeCover("cover.living_room_blinds")
+        assertTrue(fakeTransport.sentMessages.any { it.contains("call_service") && it.contains("close_cover") && it.contains("cover.living_room_blinds") })
+
+        repository.stopCover("cover.living_room_blinds")
+        assertTrue(fakeTransport.sentMessages.any { it.contains("call_service") && it.contains("stop_cover") && it.contains("cover.living_room_blinds") })
+
+        repository.setCoverPosition("cover.living_room_blinds", 75)
+        assertTrue(fakeTransport.sentMessages.any { it.contains("set_cover_position") && it.contains("\"position\":75") })
+
+        repository.setCoverTiltPosition("cover.living_room_blinds", 45)
+        assertTrue(fakeTransport.sentMessages.any { it.contains("set_cover_tilt_position") && it.contains("\"tilt_position\":45") })
+    }
+
+    @Test
+    fun fan_service_calls_generate_expected_ha_payloads() = runTest(testDispatcher) {
+        repository.setFanPercentage("fan.living_room", 60)
+        assertTrue(fakeTransport.sentMessages.any { it.contains("call_service") && it.contains("set_percentage") && it.contains("\"percentage\":60") })
+
+        repository.setFanOscillating("fan.living_room", true)
+        assertTrue(fakeTransport.sentMessages.any { it.contains("call_service") && it.contains("oscillate") && it.contains("\"oscillating\":true") })
+    }
+
+    @Test
+    fun lock_service_calls_generate_expected_ha_payloads() = runTest(testDispatcher) {
+        repository.lock("lock.front_door")
+        assertTrue(fakeTransport.sentMessages.any { it.contains("call_service") && it.contains("\"service\":\"lock\"") && it.contains("lock.front_door") })
+
+        repository.unlock("lock.front_door")
+        assertTrue(fakeTransport.sentMessages.any { it.contains("call_service") && it.contains("\"service\":\"unlock\"") && it.contains("lock.front_door") })
+    }
 }

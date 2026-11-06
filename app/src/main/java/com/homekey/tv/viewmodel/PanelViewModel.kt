@@ -250,6 +250,17 @@ class PanelViewModel(
         haRepo.selectSource(entityId, source)
     }
 
+    // Extended Domain Controls (ADR 0004)
+    fun openCover(entityId: String) = haRepo.openCover(entityId)
+    fun closeCover(entityId: String) = haRepo.closeCover(entityId)
+    fun stopCover(entityId: String) = haRepo.stopCover(entityId)
+    fun setCoverPosition(entityId: String, position: Int) = haRepo.setCoverPosition(entityId, position)
+    fun setCoverTiltPosition(entityId: String, tilt: Int) = haRepo.setCoverTiltPosition(entityId, tilt)
+    fun setFanPercentage(entityId: String, percentage: Int) = haRepo.setFanPercentage(entityId, percentage)
+    fun setFanOscillating(entityId: String, oscillating: Boolean) = haRepo.setFanOscillating(entityId, oscillating)
+    fun lock(entityId: String) = haRepo.lock(entityId)
+    fun unlock(entityId: String) = haRepo.unlock(entityId)
+
     fun setMediaVolume(entityId: String, volume: Float) {
         haRepo.setVolume(entityId, volume)
     }

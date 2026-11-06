@@ -30,6 +30,7 @@ data class DomainColorPalette(
     val mediaPlayer: String = "#0D9488",
     val cover: String = "#059669",
     val fan: String = "#0891B2",
+    val lock: String = "#10B981",
     val vacuum: String = "#78716C",
     val scene: String = "#9333EA",
     val sensor: String = "#8B5CF6",
@@ -51,6 +52,7 @@ data class DomainColorPalette(
             "media_player" -> mediaPlayer
             "cover" -> cover
             "fan" -> fan
+            "lock" -> lock
             "vacuum" -> vacuum
             "scene", "script" -> scene
             "sensor", "binary_sensor" -> sensor
@@ -73,6 +75,7 @@ data class DomainColorPalette(
             "media_player" -> copy(mediaPlayer = hex)
             "cover" -> copy(cover = hex)
             "fan" -> copy(fan = hex)
+            "lock" -> copy(lock = hex)
             "vacuum" -> copy(vacuum = hex)
             "scene", "script" -> copy(scene = hex)
             "sensor", "binary_sensor" -> copy(sensor = hex)
@@ -120,6 +123,7 @@ data class DomainColorPalette(
             mediaPlayer = "#0D9488",
             cover = "#059669",
             fan = "#0891B2",
+            lock = "#10B981",
             vacuum = "#78716C",
             scene = "#9333EA",
             sensor = "#8B5CF6",
@@ -136,6 +140,7 @@ data class DomainColorPalette(
             mediaPlayer = "#FF2D55",
             cover = "#34C759",
             fan = "#64D2FF",
+            lock = "#30D158",
             vacuum = "#8E8E93",
             scene = "#BF5AF2",
             sensor = "#5E5CE6",
@@ -152,6 +157,7 @@ data class DomainColorPalette(
             mediaPlayer = "#00FF66",
             cover = "#39FF14",
             fan = "#00B8FF",
+            lock = "#00FF66",
             vacuum = "#64748B",
             scene = "#B000FF",
             sensor = "#FF007F",
@@ -168,6 +174,7 @@ data class DomainColorPalette(
             mediaPlayer = "#606C38",
             cover = "#588157",
             fan = "#7C98A6",
+            lock = "#588157",
             vacuum = "#595959",
             scene = "#8E7C93",
             sensor = "#DDA15E",
@@ -184,6 +191,7 @@ data class DomainColorPalette(
             mediaPlayer = "#94A3B8",
             cover = "#A0AEC0",
             fan = "#F8FAFC",
+            lock = "#E2E8F0",
             vacuum = "#64748B",
             scene = "#CBD5E1",
             sensor = "#D1D5DB",

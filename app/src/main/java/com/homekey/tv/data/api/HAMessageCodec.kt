@@ -176,6 +176,22 @@ object HAMessageCodec {
         put("is_volume_muted", mute)
     }
 
+    fun buildPositionData(position: Int): JsonObject = buildJsonObject {
+        put("position", position.coerceIn(0, 100))
+    }
+
+    fun buildTiltData(tilt: Int): JsonObject = buildJsonObject {
+        put("tilt_position", tilt.coerceIn(0, 100))
+    }
+
+    fun buildPercentageData(percentage: Int): JsonObject = buildJsonObject {
+        put("percentage", percentage.coerceIn(0, 100))
+    }
+
+    fun buildOscillateData(oscillating: Boolean): JsonObject = buildJsonObject {
+        put("oscillating", oscillating)
+    }
+
     fun encodeCallService(
         id: Long,
         domain: String,

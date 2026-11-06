@@ -452,6 +452,46 @@ class DefaultHomeAssistantRepository(
         callService("media_player", "volume_mute", serviceData, entityId)
     }
 
+    override fun openCover(entityId: String) {
+        callService("cover", "open_cover", entityId = entityId)
+    }
+
+    override fun closeCover(entityId: String) {
+        callService("cover", "close_cover", entityId = entityId)
+    }
+
+    override fun stopCover(entityId: String) {
+        callService("cover", "stop_cover", entityId = entityId)
+    }
+
+    override fun setCoverPosition(entityId: String, position: Int) {
+        val serviceData = HAMessageCodec.buildPositionData(position)
+        callService("cover", "set_cover_position", serviceData, entityId)
+    }
+
+    override fun setCoverTiltPosition(entityId: String, tilt: Int) {
+        val serviceData = HAMessageCodec.buildTiltData(tilt)
+        callService("cover", "set_cover_tilt_position", serviceData, entityId)
+    }
+
+    override fun setFanPercentage(entityId: String, percentage: Int) {
+        val serviceData = HAMessageCodec.buildPercentageData(percentage)
+        callService("fan", "set_percentage", serviceData, entityId)
+    }
+
+    override fun setFanOscillating(entityId: String, oscillating: Boolean) {
+        val serviceData = HAMessageCodec.buildOscillateData(oscillating)
+        callService("fan", "oscillate", serviceData, entityId)
+    }
+
+    override fun lock(entityId: String) {
+        callService("lock", "lock", entityId = entityId)
+    }
+
+    override fun unlock(entityId: String) {
+        callService("lock", "unlock", entityId = entityId)
+    }
+
     override fun callService(
         domain: String,
         service: String,

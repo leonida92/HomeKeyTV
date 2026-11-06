@@ -33,6 +33,18 @@ interface HomeAssistantRepository {
     fun selectSource(entityId: String, source: String)
     fun setVolume(entityId: String, volume: Float)
     fun mediaMute(entityId: String, mute: Boolean)
+
+    // Extended Domain Controls (ADR 0004)
+    fun openCover(entityId: String)
+    fun closeCover(entityId: String)
+    fun stopCover(entityId: String)
+    fun setCoverPosition(entityId: String, position: Int)
+    fun setCoverTiltPosition(entityId: String, tilt: Int)
+    fun setFanPercentage(entityId: String, percentage: Int)
+    fun setFanOscillating(entityId: String, oscillating: Boolean)
+    fun lock(entityId: String)
+    fun unlock(entityId: String)
+
     fun callService(
         domain: String,
         service: String,

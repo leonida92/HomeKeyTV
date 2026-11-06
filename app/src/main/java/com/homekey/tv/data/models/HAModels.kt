@@ -146,7 +146,37 @@ data class HAEntityState(
 
     val isPlaying: Boolean
         get() = state.equals("playing", ignoreCase = true)
+
+    // Extended Domain Controls (ADR 0004)
+    val currentPosition: Int?
+        get() = attributes["current_position"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+
+    val currentTiltPosition: Int?
+        get() = attributes["current_tilt_position"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+
+    val supportsTilt: Boolean
+        get() = currentTiltPosition != null || (supportedFeatures and COVER_SUPPORT_SET_TILT_POSITION) != 0
+
+    val fanPercentage: Int?
+        get() = attributes["percentage"]?.jsonPrimitive?.contentOrNull?.toIntOrNull()
+
+    val isOscillating: Boolean
+        get() = attributes["oscillating"]?.jsonPrimitive?.contentOrNull?.toBoolean() ?: false
+
+    val isLocked: Boolean
+        get() = state.equals("locked", ignoreCase = true)
+
+    val isJammed: Boolean
+        get() = state.equals("jammed", ignoreCase = true)
+
+    val isLocking: Boolean
+        get() = state.equals("locking", ignoreCase = true)
+
+    val isUnlocking: Boolean
+        get() = state.equals("unlocking", ignoreCase = true)
 }
+
+private const val COVER_SUPPORT_SET_TILT_POSITION = 128
 
 /**
  * Pure decision logic for the optimistic dock toggle. Kept separate from the WebSocket client so

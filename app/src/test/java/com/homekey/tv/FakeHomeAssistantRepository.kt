@@ -111,6 +111,42 @@ class FakeHomeAssistantRepository : HomeAssistantRepository {
         serviceCalls.add("mediaMute:$entityId:$mute")
     }
 
+    override fun openCover(entityId: String) {
+        serviceCalls.add("openCover:$entityId")
+    }
+
+    override fun closeCover(entityId: String) {
+        serviceCalls.add("closeCover:$entityId")
+    }
+
+    override fun stopCover(entityId: String) {
+        serviceCalls.add("stopCover:$entityId")
+    }
+
+    override fun setCoverPosition(entityId: String, position: Int) {
+        serviceCalls.add("setCoverPosition:$entityId:$position")
+    }
+
+    override fun setCoverTiltPosition(entityId: String, tilt: Int) {
+        serviceCalls.add("setCoverTiltPosition:$entityId:$tilt")
+    }
+
+    override fun setFanPercentage(entityId: String, percentage: Int) {
+        serviceCalls.add("setFanPercentage:$entityId:$percentage")
+    }
+
+    override fun setFanOscillating(entityId: String, oscillating: Boolean) {
+        serviceCalls.add("setFanOscillating:$entityId:$oscillating")
+    }
+
+    override fun lock(entityId: String) {
+        serviceCalls.add("lock:$entityId")
+    }
+
+    override fun unlock(entityId: String) {
+        serviceCalls.add("unlock:$entityId")
+    }
+
     override fun callService(
         domain: String,
         service: String,

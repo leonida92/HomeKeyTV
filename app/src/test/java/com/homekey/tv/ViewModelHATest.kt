@@ -56,6 +56,39 @@ class ViewModelHATest {
     }
 
     @Test
+    fun panelViewModel_delegates_extended_domain_actions_to_repository() = runTest(testDispatcher) {
+        val app = Application()
+        val viewModel = PanelViewModel(app, fakePrefs, fakeHaRepo)
+
+        viewModel.openCover("cover.blinds")
+        assertTrue(fakeHaRepo.serviceCalls.contains("openCover:cover.blinds"))
+
+        viewModel.closeCover("cover.blinds")
+        assertTrue(fakeHaRepo.serviceCalls.contains("closeCover:cover.blinds"))
+
+        viewModel.stopCover("cover.blinds")
+        assertTrue(fakeHaRepo.serviceCalls.contains("stopCover:cover.blinds"))
+
+        viewModel.setCoverPosition("cover.blinds", 50)
+        assertTrue(fakeHaRepo.serviceCalls.contains("setCoverPosition:cover.blinds:50"))
+
+        viewModel.setCoverTiltPosition("cover.blinds", 30)
+        assertTrue(fakeHaRepo.serviceCalls.contains("setCoverTiltPosition:cover.blinds:30"))
+
+        viewModel.setFanPercentage("fan.bedroom", 80)
+        assertTrue(fakeHaRepo.serviceCalls.contains("setFanPercentage:fan.bedroom:80"))
+
+        viewModel.setFanOscillating("fan.bedroom", true)
+        assertTrue(fakeHaRepo.serviceCalls.contains("setFanOscillating:fan.bedroom:true"))
+
+        viewModel.lock("lock.front_door")
+        assertTrue(fakeHaRepo.serviceCalls.contains("lock:lock.front_door"))
+
+        viewModel.unlock("lock.front_door")
+        assertTrue(fakeHaRepo.serviceCalls.contains("unlock:lock.front_door"))
+    }
+
+    @Test
     fun panelViewModel_handleBack_respects_ordered_precedence() = runTest(testDispatcher) {
         val app = Application()
         val viewModel = PanelViewModel(app, fakePrefs, fakeHaRepo)

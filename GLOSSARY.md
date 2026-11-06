@@ -43,3 +43,15 @@ _Avoid_: SubscribedEntity, WatchedEntity, TrackedEntity
 **Camera PiP Alert**:
 A transient picture-in-picture video feed overlay triggered automatically by an external Home Assistant notification event.
 _Avoid_: NotificationPopup, PipNotification
+
+**Cover Control**:
+Dedicated TV overlay controls for motorized blinds, shades, and garage doors, providing open/stop/close buttons and position/tilt sliders.
+_Avoid_: BlindPopup, ShadeDialog
+
+**Fan Control**:
+Dedicated TV overlay controls for ventilation and ceiling fans, providing speed percentage adjustment, oscillation toggle, and power state.
+_Avoid_: SpeedPopup, FanSettings
+
+**Lock Control**:
+Dedicated TV overlay controls for security locks, providing dynamic status visuals (locked green / unlocked red) and two-step unlock confirmation.
+_Avoid_: SecurityPopup, DoorDialog
