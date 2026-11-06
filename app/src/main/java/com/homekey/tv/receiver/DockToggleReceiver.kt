@@ -4,8 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.homekey.tv.service.DockOverlayManager
-import com.homekey.tv.service.RemoteButtonRemapService
+import com.homekey.tv.service.DockOverlayController
 import com.homekey.tv.ui.MainActivity
 
 class DockToggleReceiver : BroadcastReceiver() {
@@ -14,12 +13,12 @@ class DockToggleReceiver : BroadcastReceiver() {
         val action = intent?.action ?: return
         Log.d(TAG, "Received broadcast intent: $action")
 
-        val service = RemoteButtonRemapService.instance
-        if (service != null) {
+        val controller = DockOverlayController.getInstance()
+        if (controller.isServiceAttached) {
             when (action) {
-                ACTION_TOGGLE_DOCK, ACTION_TOGGLE_OVERLAY -> DockOverlayManager.toggle(service)
-                ACTION_SHOW_DOCK, ACTION_SHOW_OVERLAY -> DockOverlayManager.show(service)
-                ACTION_HIDE_DOCK, ACTION_HIDE_OVERLAY -> DockOverlayManager.hide()
+                ACTION_TOGGLE_DOCK, ACTION_TOGGLE_OVERLAY -> controller.toggle()
+                ACTION_SHOW_DOCK, ACTION_SHOW_OVERLAY -> controller.show()
+                ACTION_HIDE_DOCK, ACTION_HIDE_OVERLAY -> controller.hide()
             }
         } else {
             // Service not bound or inactive; launch MainActivity to present overlay

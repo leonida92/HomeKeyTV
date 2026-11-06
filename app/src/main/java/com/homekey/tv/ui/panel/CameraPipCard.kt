@@ -54,7 +54,7 @@ fun CameraPipCard(
         }
     }
 
-    // Countdown timer for user feedback (dismissal owned by DockOverlayManager)
+    // Countdown timer for user feedback (dismissal owned by CameraPipOverlayController)
     LaunchedEffect(alert.durationSeconds, alert.timestamp) {
         secondsRemaining = alert.durationSeconds
         while (secondsRemaining > 0) {

@@ -7,6 +7,10 @@ import com.homekey.tv.data.api.OkHttpHATransport
 import com.homekey.tv.data.local.DataStorePreferencesRepository
 import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.server.WebSetupServerManager
+import com.homekey.tv.service.CameraPipOverlayController
+import com.homekey.tv.service.DefaultCameraPipOverlayController
+import com.homekey.tv.service.DefaultDockOverlayController
+import com.homekey.tv.service.DockOverlayController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -26,6 +30,15 @@ class HATVApplication : Application() {
             scope = applicationScope
         )
         HomeAssistantRepository.initialize(haRepository)
+
+        val dockOverlayController = DefaultDockOverlayController()
+        DockOverlayController.initialize(dockOverlayController)
+
+        val cameraPipOverlayController = DefaultCameraPipOverlayController(
+            prefs = preferencesRepository,
+            haRepository = haRepository
+        )
+        CameraPipOverlayController.initialize(cameraPipOverlayController)
 
         val server = preferencesRepository.serverConfig.value
 

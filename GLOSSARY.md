@@ -32,6 +32,10 @@ _Avoid_: DockApp, AppShortcut
 A physical remote control key code binding mapped to an action (toggle dock, toggle entity, launch app, or pass through).
 _Avoid_: KeyMapping, ButtonBinding
 
+**Remap Action**:
+A discrete domain operation executed upon remote button activation (such as toggling the dock, toggling an entity, calling a service, or launching an installed application).
+_Avoid_: KeyAction, ButtonCommand
+
 **Monitored Entity**:
 A Home Assistant entity whose state is actively tracked over the real-time event stream, derived from pinned entities, remote button targets, and active dialog targets.
 _Avoid_: SubscribedEntity, WatchedEntity, TrackedEntity

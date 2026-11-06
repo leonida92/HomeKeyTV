@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.media.AudioManager
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -18,8 +17,6 @@ import com.homekey.tv.data.api.HomeAssistantRepository
 import com.homekey.tv.data.local.DataStorePreferencesRepository
 import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.models.ButtonRemapConfig
-import com.homekey.tv.data.models.RemapAction
-import com.homekey.tv.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,6 +24,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class RemoteButtonRemapService : AccessibilityService() {
@@ -39,7 +37,16 @@ class RemoteButtonRemapService : AccessibilityService() {
 
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
     private var volumeRepeatRunnable: Runnable? = null
-    private var lastOpenDockTime = 0L
+
+    private val dockController: DockOverlayController by lazy { DockOverlayController.getInstance() }
+    private val pipController: CameraPipOverlayController by lazy { CameraPipOverlayController.getInstance() }
+    private val actionDispatcher: RemapActionDispatcher by lazy {
+        RemapActionDispatcher(
+            prefs = prefs,
+            haRepository = HomeAssistantRepository.getInstance(),
+            dockController = dockController
+        )
+    }
 
     // Unboxed primitive key code cache for 0ms sub-millisecond lookup in onKeyEvent
     @Volatile private var globalRemapCache = SparseArray<ButtonRemapConfig>()
@@ -78,10 +85,10 @@ class RemoteButtonRemapService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
-        instance = this
-        Log.d(tag, "RemoteButtonRemapService connected and active")
+        dockController.attachService(this)
+        Log.d(tag, "RemoteButtonRemapService connected and attached to DockOverlayController")
         prefs = DataStorePreferencesRepository.getInstance(this)
-        _isServiceRunning.value = true
+        _isServiceRunning.update { true }
 
         rebuildRemapCache(prefs.buttonRemaps.value)
         updateKeyFilterState()
@@ -101,9 +108,9 @@ class RemoteButtonRemapService : AccessibilityService() {
                         remap.longPressAction?.type == "OPEN_DOCK"
                 }
                 if (hasDockRemap) {
-                    DockOverlayManager.prewarm(this@RemoteButtonRemapService)
-                } else if (!DockOverlayManager.isShowing) {
-                    DockOverlayManager.teardown()
+                    dockController.prewarm()
+                } else if (!dockController.isShowing.value) {
+                    dockController.teardown()
                 }
             }
         }
@@ -129,29 +136,26 @@ class RemoteButtonRemapService : AccessibilityService() {
         scope.launch {
             HomeAssistantRepository.getInstance().pipAlert.collect { alert ->
                 if (alert != null) {
-                    DockOverlayManager.showPipAlert(this@RemoteButtonRemapService, alert)
+                    pipController.showPipAlert(this@RemoteButtonRemapService, alert)
                 } else {
-                    DockOverlayManager.dismissPip()
+                    pipController.dismissPip()
                 }
             }
         }
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
-        DockOverlayManager.teardown()
+        dockController.detachService()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         Log.d(tag, "RemoteButtonRemapService destroyed")
-        if (instance == this) {
-            instance = null
-        }
         currentForegroundPackage = null
         serviceScope?.cancel()
         serviceScope = null
-        DockOverlayManager.teardown()
+        dockController.detachService()
         volumeRepeatRunnable?.let { handler.removeCallbacks(it) }
         volumeRepeatRunnable = null
         keyStates.values.forEach { state ->
@@ -159,29 +163,29 @@ class RemoteButtonRemapService : AccessibilityService() {
             state.longPressRunnable?.let { handler.removeCallbacks(it) }
         }
         keyStates.clear()
-        _isServiceRunning.value = false
+        _isServiceRunning.update { false }
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
-        if (!DockOverlayManager.isShowing) {
-            DockOverlayManager.teardown()
+        if (!dockController.isShowing.value) {
+            dockController.teardown()
             val hasDockRemap = prefs.buttonRemaps.value.any { remap ->
                 remap.singlePressAction?.type == "OPEN_DOCK" ||
                     remap.doublePressAction?.type == "OPEN_DOCK" ||
                     remap.longPressAction?.type == "OPEN_DOCK"
             }
             if (hasDockRemap) {
-                DockOverlayManager.prewarm(this)
+                dockController.prewarm()
             }
         }
     }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= TRIM_MEMORY_RUNNING_CRITICAL && !DockOverlayManager.isShowing) {
+        if (level >= TRIM_MEMORY_RUNNING_CRITICAL && !dockController.isShowing.value) {
             Log.d(tag, "Low memory: tearing down idle pre-warmed overlay")
-            DockOverlayManager.teardown()
+            dockController.teardown()
         }
     }
 
@@ -272,7 +276,7 @@ class RemoteButtonRemapService : AccessibilityService() {
         // Fast-path bypass: Navigation and system control keys must NEVER be intercepted or delayed
         // when the dock overlay is not open and learn mode is inactive. This guarantees 0ms latency
         // and prevents duplicate/multiplied D-pad inputs in other TV apps and system menus.
-        if (!DockOverlayManager.isShowing && !_isLearnModeActive.value && !_isSettingsForeground.value) {
+        if (!dockController.isShowing.value && !_isLearnModeActive.value && !_isSettingsForeground.value) {
             when (keyCode) {
                 KeyEvent.KEYCODE_DPAD_UP,
                 KeyEvent.KEYCODE_DPAD_DOWN,
@@ -302,7 +306,7 @@ class RemoteButtonRemapService : AccessibilityService() {
         if (_isSettingsForeground.value || _isLearnModeActive.value) {
             if (_isLearnModeActive.value && event.action == KeyEvent.ACTION_DOWN) {
                 val name = KeyEvent.keyCodeToString(keyCode).removePrefix("KEYCODE_")
-                _lastLearnedKeyCode.value = Pair(keyCode, name)
+                _lastLearnedKeyCode.update { Pair(keyCode, name) }
                 Log.d(tag, "Learned Key: $keyCode ($name)")
                 return true
             }
@@ -323,7 +327,7 @@ class RemoteButtonRemapService : AccessibilityService() {
         }
 
         // If Dock Overlay is currently showing, handle Back or pass D-pad through to overlay window
-        if (DockOverlayManager.isShowing) {
+        if (dockController.isShowing.value) {
             val mappedConfig = findRemapConfig(keyCode)
             val isDockToggleKey = mappedConfig?.singlePressAction?.type == "OPEN_DOCK" ||
                     mappedConfig?.doublePressAction?.type == "OPEN_DOCK" ||
@@ -332,12 +336,12 @@ class RemoteButtonRemapService : AccessibilityService() {
             if (!isDockToggleKey) {
                 if (keyCode == KeyEvent.KEYCODE_BACK || keyCode == KeyEvent.KEYCODE_ESCAPE) {
                     if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) {
-                        DockOverlayManager.handleBack()
+                        dockController.handleBack()
                     }
                     return true
                 }
                 if (keyCode == KeyEvent.KEYCODE_HOME) {
-                    DockOverlayManager.hide()
+                    dockController.hide()
                     return false
                 }
                 val isNavKey = keyCode in listOf(
@@ -381,7 +385,7 @@ class RemoteButtonRemapService : AccessibilityService() {
                     // Adaptive single-action optimization:
                     // Only a single action is assigned (no double-press or long-press configured).
                     // Fire immediately on physical button down for 0ms input latency!
-                    executeAction(config.singlePressAction)
+                    actionDispatcher.execute(config.singlePressAction, this)
                     return true
                 }
 
@@ -399,7 +403,7 @@ class RemoteButtonRemapService : AccessibilityService() {
                             state.singleClickRunnable?.let { handler.removeCallbacks(it) }
                             state.singleClickRunnable = null
                             state.longPressRunnable = null
-                            executeAction(config.longPressAction)
+                            actionDispatcher.execute(config.longPressAction, this)
                         }
                     }
                     state.longPressRunnable = longRunnable
@@ -430,7 +434,7 @@ class RemoteButtonRemapService : AccessibilityService() {
                 state.singleClickRunnable?.let { handler.removeCallbacks(it) }
                 state.singleClickRunnable = null
                 state.lastUpTime = 0L
-                executeAction(config.doublePressAction)
+                actionDispatcher.execute(config.doublePressAction, this)
             } else {
                 state.lastUpTime = now
                 if (config.doublePressAction != null) {
@@ -438,7 +442,7 @@ class RemoteButtonRemapService : AccessibilityService() {
                     state.singleClickRunnable?.let { handler.removeCallbacks(it) }
                     val singleRunnable = Runnable {
                         if (config.singlePressAction != null) {
-                            executeAction(config.singlePressAction)
+                            actionDispatcher.execute(config.singlePressAction, this)
                         }
                         state.singleClickRunnable = null
                     }
@@ -447,7 +451,7 @@ class RemoteButtonRemapService : AccessibilityService() {
                 } else {
                     // No double click configured, trigger single click immediately
                     if (config.singlePressAction != null) {
-                        executeAction(config.singlePressAction)
+                        actionDispatcher.execute(config.singlePressAction, this)
                     }
                 }
             }
@@ -455,130 +459,6 @@ class RemoteButtonRemapService : AccessibilityService() {
         }
 
         return false
-    }
-
-    private fun executeAction(action: RemapAction?) {
-        if (action == null) return
-        Log.d(tag, "Executing Remap Action: ${action.type} -> ${action.target}")
-
-        when (action.type) {
-            "PASS_THROUGH" -> {
-                Log.d(tag, "Pass-through action: native event dispatch preserved")
-            }
-
-            "OPEN_DOCK" -> {
-                val now = SystemClock.uptimeMillis()
-                if (now - lastOpenDockTime < OPEN_DOCK_DEBOUNCE_MS) {
-                    Log.d(tag, "OPEN_DOCK throttled (${now - lastOpenDockTime}ms < ${OPEN_DOCK_DEBOUNCE_MS}ms)")
-                    return
-                }
-                lastOpenDockTime = now
-                DockOverlayManager.toggle(this)
-            }
-
-            "TOGGLE_ENTITY" -> {
-                action.target?.let { entityId ->
-                    HomeAssistantRepository.getInstance().toggleEntity(entityId)
-                }
-            }
-
-            "CALL_SERVICE" -> {
-                action.target?.let { serviceKey ->
-                    val domain = serviceKey.substringBefore(".", "homeassistant")
-                    val service = serviceKey.substringAfter(".", serviceKey)
-                    HomeAssistantRepository.getInstance().callService(domain, service)
-                }
-            }
-
-            "LAUNCH_APP" -> {
-                action.target?.let { pkgName ->
-                    val launchIntent = packageManager.getLaunchIntentForPackage(pkgName)
-                    if (launchIntent != null) {
-                        launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                        startActivity(launchIntent)
-                    }
-                }
-            }
-
-            "SYSTEM_SLEEP" -> {
-                // The SDK exposes no true "sleep" action to accessibility services. Locking the
-                // screen is the closest supported proxy on Android 9+ (API 28+). On older versions
-                // or if locking is unavailable, fall back to the power dialog.
-                val locked = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    performGlobalAction(GLOBAL_ACTION_LOCK_SCREEN)
-                } else {
-                    false
-                }
-                if (!locked) {
-                    performGlobalAction(GLOBAL_ACTION_POWER_DIALOG)
-                }
-            }
-
-            "SYSTEM_SETTINGS" -> {
-                val intent = Intent(android.provider.Settings.ACTION_SETTINGS).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                startActivity(intent)
-            }
-
-            "SELECT_SOURCE" -> {
-                val entityId = action.target
-                val source = action.extra
-                if (entityId != null && source != null) {
-                    HomeAssistantRepository.getInstance().selectSource(entityId, source)
-                }
-            }
-
-            "SEND_BROADCAST" -> {
-                action.target?.let { intentAction ->
-                    try {
-                        val intent = Intent(intentAction)
-                        val extra = action.extra?.ifBlank { null }
-                        if (extra != null) {
-                            if (extra.contains("/")) {
-                                val pkg = extra.substringBefore("/")
-                                val cls = extra.substringAfter("/").let { if (it.startsWith(".")) "$pkg$it" else it }
-                                intent.component = android.content.ComponentName(pkg, cls)
-                            } else {
-                                intent.setPackage(extra)
-                            }
-                        }
-                        sendBroadcast(intent)
-                        Log.d(tag, "Sent broadcast intent: $intentAction (target=$extra)")
-                    } catch (e: Exception) {
-                        Log.e(tag, "Failed to send broadcast intent: $intentAction", e)
-                    }
-                }
-            }
-
-            "START_SERVICE" -> {
-                action.target?.let { intentAction ->
-                    try {
-                        val intent = Intent(intentAction)
-                        val extra = action.extra?.ifBlank { null }
-                        if (extra != null) {
-                            if (extra.contains("/")) {
-                                val pkg = extra.substringBefore("/")
-                                val cls = extra.substringAfter("/").let { if (it.startsWith(".")) "$pkg$it" else it }
-                                intent.component = android.content.ComponentName(pkg, cls)
-                            } else {
-                                intent.setPackage(extra)
-                            }
-                        }
-                        try {
-                            startService(intent)
-                            Log.d(tag, "Started service intent: $intentAction (target=$extra)")
-                        } catch (ise: IllegalStateException) {
-                            // On Android 8+, background apps cannot call startService(); fall back to startForegroundService
-                            startForegroundService(intent)
-                            Log.d(tag, "Started foreground service intent: $intentAction (target=$extra)")
-                        }
-                    } catch (e: Exception) {
-                        Log.e(tag, "Failed to start service intent: $intentAction", e)
-                    }
-                }
-            }
-        }
     }
 
     private fun rebuildRemapCache(remaps: List<ButtonRemapConfig>) {
@@ -629,15 +509,11 @@ class RemoteButtonRemapService : AccessibilityService() {
         private const val DOUBLE_PRESS_MIN_INTERVAL_MS = 80L
         private const val SINGLE_PRESS_DEBOUNCE_MS = 250L
         private const val MULTI_PRESS_DEBOUNCE_MS = 80L
-        private const val OPEN_DOCK_DEBOUNCE_MS = 350L
         private const val VOLUME_REPEAT_INITIAL_DELAY_MS = 350L
         private const val VOLUME_REPEAT_INTERVAL_MS = 90L
 
         @Volatile
         var currentForegroundPackage: String? = null
-            private set
-
-        var instance: RemoteButtonRemapService? = null
             private set
 
         private val _isServiceRunning = MutableStateFlow(false)
@@ -653,19 +529,18 @@ class RemoteButtonRemapService : AccessibilityService() {
         val lastLearnedKeyCode: StateFlow<Pair<Int, String>?> = _lastLearnedKeyCode.asStateFlow()
 
         fun setSettingsForeground(inForeground: Boolean) {
-            _isSettingsForeground.value = inForeground
+            _isSettingsForeground.update { inForeground }
         }
 
         fun setLearnMode(active: Boolean) {
-            _isLearnModeActive.value = active
+            _isLearnModeActive.update { active }
             if (active) {
-                _lastLearnedKeyCode.value = null
+                _lastLearnedKeyCode.update { null }
             }
-            instance?.updateKeyFilterState()
         }
 
         fun clearLearnedKey() {
-            _lastLearnedKeyCode.value = null
+            _lastLearnedKeyCode.update { null }
         }
     }
 }

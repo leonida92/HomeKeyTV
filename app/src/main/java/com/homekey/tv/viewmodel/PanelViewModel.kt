@@ -188,6 +188,24 @@ class PanelViewModel(
         }
     }
 
+    /**
+     * Handles back navigation hierarchy per ADR 0003:
+     * 1. Active entity dialog dismissal
+     * 2. Reorder mode exit
+     * Returns true if a dialog or reorder mode was closed, false otherwise.
+     */
+    fun handleBack(): Boolean {
+        if (activeDialogEntity.value != null) {
+            closeEntityDialog()
+            return true
+        }
+        if (isReorderMode.value) {
+            exitReorderMode()
+            return true
+        }
+        return false
+    }
+
     fun openEntityDialog(entity: HAEntityState) {
         lastOpenedDialogEntity = entity
         _activeDialogEntityId.value = entity.entityId
@@ -262,18 +280,18 @@ class PanelViewModel(
 
     fun toggleReorderMode() {
         if (_isReorderMode.value) {
-            _isReorderMode.value = false
-            _selectedReorderEntityId.value = null
+            _isReorderMode.update { false }
+            _selectedReorderEntityId.update { null }
         } else {
             ensurePinnedListInitialized()
-            _isReorderMode.value = true
-            _selectedReorderEntityId.value = null
+            _isReorderMode.update { true }
+            _selectedReorderEntityId.update { null }
         }
     }
 
     fun exitReorderMode() {
-        _isReorderMode.value = false
-        _selectedReorderEntityId.value = null
+        _isReorderMode.update { false }
+        _selectedReorderEntityId.update { null }
     }
 
     fun selectEntityForReorder(id: String) {

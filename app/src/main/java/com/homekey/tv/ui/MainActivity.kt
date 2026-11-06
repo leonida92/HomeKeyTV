@@ -15,8 +15,7 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import com.homekey.tv.service.DockOverlayManager
-import com.homekey.tv.service.RemoteButtonRemapService
+import com.homekey.tv.service.DockOverlayController
 import com.homekey.tv.ui.panel.PanelOverlayScreen
 import com.homekey.tv.ui.theme.HomeAssistantTVTheme
 import com.homekey.tv.viewmodel.PanelViewModel
@@ -47,9 +46,9 @@ class MainActivity : ComponentActivity() {
             handleBackAction()
         }
 
-        val service = RemoteButtonRemapService.instance
-        if (service != null) {
-            DockOverlayManager.show(service)
+        val controller = DockOverlayController.getInstance()
+        if (controller.isServiceAttached) {
+            controller.show()
             finish()
             if (Build.VERSION.SDK_INT >= 34) {
                 overrideActivityTransition(OVERRIDE_TRANSITION_CLOSE, 0, 0)
@@ -100,11 +99,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleBackAction() {
-        if (viewModel.isReorderMode.value) {
-            viewModel.exitReorderMode()
-        } else if (viewModel.activeDialogEntity.value != null) {
-            viewModel.closeEntityDialog()
-        } else {
+        if (!viewModel.handleBack()) {
             dismissOverlay()
         }
     }

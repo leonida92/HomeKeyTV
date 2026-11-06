@@ -56,6 +56,42 @@ class ViewModelHATest {
     }
 
     @Test
+    fun panelViewModel_handleBack_respects_ordered_precedence() = runTest(testDispatcher) {
+        val app = Application()
+        val viewModel = PanelViewModel(app, fakePrefs, fakeHaRepo)
+
+        // Neither active -> returns false
+        assertFalse(viewModel.handleBack())
+
+        // In reorder mode -> exits reorder mode and returns true
+        viewModel.toggleReorderMode()
+        assertTrue(viewModel.isReorderMode.value)
+        assertTrue(viewModel.handleBack())
+        assertFalse(viewModel.isReorderMode.value)
+
+        // Dialog active -> closes dialog and returns true
+        val entity = HAEntityState(entityId = "light.lamp", state = "on")
+        viewModel.openEntityDialog(entity)
+        assertNotNull(viewModel.activeDialogEntity.value)
+        assertTrue(viewModel.handleBack())
+        assertNull(viewModel.activeDialogEntity.value)
+
+        // Both dialog and reorder mode active -> closes dialog FIRST
+        viewModel.toggleReorderMode()
+        viewModel.openEntityDialog(entity)
+        assertTrue(viewModel.isReorderMode.value)
+        assertNotNull(viewModel.activeDialogEntity.value)
+
+        assertTrue(viewModel.handleBack())
+        assertNull(viewModel.activeDialogEntity.value)
+        assertTrue(viewModel.isReorderMode.value) // reorder mode stayed until second back
+
+        assertTrue(viewModel.handleBack())
+        assertFalse(viewModel.isReorderMode.value)
+        assertFalse(viewModel.handleBack())
+    }
+
+    @Test
     fun settingsViewModel_receives_entities_and_connection_from_haRepository() = runTest(testDispatcher) {
         val app = Application()
         fakeHaRepo.setEntities(mapOf(
