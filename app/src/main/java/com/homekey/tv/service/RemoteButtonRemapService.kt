@@ -14,7 +14,7 @@ import android.util.Log
 import android.util.SparseArray
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
-import com.homekey.tv.data.api.HAWebSocketClient
+import com.homekey.tv.data.api.HomeAssistantRepository
 import com.homekey.tv.data.local.DataStorePreferencesRepository
 import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.models.ButtonRemapConfig
@@ -127,7 +127,7 @@ class RemoteButtonRemapService : AccessibilityService() {
 
         // Reactively observe PiP Camera alerts from Home Assistant
         scope.launch {
-            HAWebSocketClient.getInstance().pipAlert.collect { alert ->
+            HomeAssistantRepository.getInstance().pipAlert.collect { alert ->
                 if (alert != null) {
                     DockOverlayManager.showPipAlert(this@RemoteButtonRemapService, alert)
                 } else {
@@ -478,7 +478,7 @@ class RemoteButtonRemapService : AccessibilityService() {
 
             "TOGGLE_ENTITY" -> {
                 action.target?.let { entityId ->
-                    HAWebSocketClient.getInstance().toggleEntity(entityId)
+                    HomeAssistantRepository.getInstance().toggleEntity(entityId)
                 }
             }
 
@@ -486,7 +486,7 @@ class RemoteButtonRemapService : AccessibilityService() {
                 action.target?.let { serviceKey ->
                     val domain = serviceKey.substringBefore(".", "homeassistant")
                     val service = serviceKey.substringAfter(".", serviceKey)
-                    HAWebSocketClient.getInstance().callService(domain, service)
+                    HomeAssistantRepository.getInstance().callService(domain, service)
                 }
             }
 
@@ -525,7 +525,7 @@ class RemoteButtonRemapService : AccessibilityService() {
                 val entityId = action.target
                 val source = action.extra
                 if (entityId != null && source != null) {
-                    HAWebSocketClient.getInstance().selectSource(entityId, source)
+                    HomeAssistantRepository.getInstance().selectSource(entityId, source)
                 }
             }
 

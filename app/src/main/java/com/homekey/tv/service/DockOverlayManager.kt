@@ -39,7 +39,7 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.homekey.tv.data.api.HAWebSocketClient
+import com.homekey.tv.data.api.HomeAssistantRepository
 import com.homekey.tv.data.local.DataStorePreferencesRepository
 import com.homekey.tv.data.models.CameraPipAlert
 import com.homekey.tv.ui.SettingsActivity
@@ -500,7 +500,7 @@ object DockOverlayManager {
         pipComposeView = null
         pipLifecycleOwner?.destroy()
         pipLifecycleOwner = null
-        HAWebSocketClient.getInstance().dismissPipAlert()
+        HomeAssistantRepository.getInstance().dismissPipAlert()
     }
 
     fun teardown() {

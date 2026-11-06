@@ -4,7 +4,7 @@ import android.app.Application
 import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.homekey.tv.data.api.HAWebSocketClient
+import com.homekey.tv.data.api.HomeAssistantRepository
 import com.homekey.tv.data.local.DataStorePreferencesRepository
 import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.models.ConnectionStatus
@@ -27,19 +27,25 @@ data class DockItem(
 
 class PanelViewModel(
     application: Application,
-    private val prefs: PreferencesRepository
+    private val prefs: PreferencesRepository,
+    private val haRepo: HomeAssistantRepository = HomeAssistantRepository.getInstance()
 ) : AndroidViewModel(application) {
 
     constructor(application: Application) : this(
         application,
-        DataStorePreferencesRepository.getInstance(application)
+        DataStorePreferencesRepository.getInstance(application),
+        HomeAssistantRepository.getInstance()
     )
 
-    private val wsClient = HAWebSocketClient.getInstance()
+    constructor(application: Application, prefs: PreferencesRepository) : this(
+        application,
+        prefs,
+        HomeAssistantRepository.getInstance()
+    )
 
-    val connectionStatus: StateFlow<ConnectionStatus> = wsClient.connectionStatus
-    val allEntities: StateFlow<Map<String, HAEntityState>> = wsClient.entities
-    val errorMessage: StateFlow<String?> = wsClient.errorMessage
+    val connectionStatus: StateFlow<ConnectionStatus> = haRepo.connectionStatus
+    val allEntities: StateFlow<Map<String, HAEntityState>> = haRepo.entities
+    val errorMessage: StateFlow<String?> = haRepo.errorMessage
     val pinnedConfigs: StateFlow<List<PinnedEntityConfig>> = prefs.pinnedEntities
     val pinnedApps: StateFlow<List<PinnedAppConfig>> = prefs.pinnedApps
 
@@ -152,7 +158,7 @@ class PanelViewModel(
                     connectToHomeAssistant()
                 } else {
                     closeEntityDialog()
-                    wsClient.disconnect()
+                    haRepo.disconnect()
                 }
             }
         }
@@ -162,12 +168,12 @@ class PanelViewModel(
         val server = prefs.serverConfig.value
         if (!server.haEnabled) return
         if (server.serverUrl.isNotBlank() && server.accessToken.isNotBlank()) {
-            wsClient.connect(server.serverUrl, server.accessToken)
+            haRepo.connect(server.serverUrl, server.accessToken)
         }
     }
 
     fun toggleEntity(entityId: String) {
-        wsClient.toggleEntity(entityId)
+        haRepo.toggleEntity(entityId)
     }
 
     fun launchApp(packageName: String) {
@@ -185,65 +191,65 @@ class PanelViewModel(
     fun openEntityDialog(entity: HAEntityState) {
         lastOpenedDialogEntity = entity
         _activeDialogEntityId.value = entity.entityId
-        wsClient.setActiveDialogEntity(entity.entityId)
+        haRepo.setActiveDialogEntity(entity.entityId)
     }
 
     fun closeEntityDialog() {
         _activeDialogEntityId.value = null
         lastOpenedDialogEntity = null
-        wsClient.setActiveDialogEntity(null)
+        haRepo.setActiveDialogEntity(null)
     }
 
     fun turnOnEntity(entityId: String) {
-        wsClient.turnOn(entityId)
+        haRepo.turnOn(entityId)
     }
 
     fun turnOffEntity(entityId: String) {
-        wsClient.turnOff(entityId)
+        haRepo.turnOff(entityId)
     }
 
     fun setBrightness(entityId: String, brightness: Int) {
-        wsClient.setBrightness(entityId, brightness)
+        haRepo.setBrightness(entityId, brightness)
     }
 
     fun setTargetTemperature(entityId: String, temp: Float) {
-        wsClient.setTargetTemperature(entityId, temp)
+        haRepo.setTargetTemperature(entityId, temp)
     }
 
     fun setHvacMode(entityId: String, mode: String) {
-        wsClient.setHvacMode(entityId, mode)
+        haRepo.setHvacMode(entityId, mode)
     }
 
     fun setFanMode(entityId: String, fanMode: String) {
-        wsClient.setFanMode(entityId, fanMode)
+        haRepo.setFanMode(entityId, fanMode)
     }
 
     fun setPresetMode(entityId: String, presetMode: String) {
-        wsClient.setPresetMode(entityId, presetMode)
+        haRepo.setPresetMode(entityId, presetMode)
     }
 
     fun selectMediaSource(entityId: String, source: String) {
-        wsClient.selectSource(entityId, source)
+        haRepo.selectSource(entityId, source)
     }
 
     fun setMediaVolume(entityId: String, volume: Float) {
-        wsClient.setVolume(entityId, volume)
+        haRepo.setVolume(entityId, volume)
     }
 
     fun toggleMediaPlayPause(entityId: String) {
-        wsClient.mediaPlayPause(entityId)
+        haRepo.mediaPlayPause(entityId)
     }
 
     fun mediaNext(entityId: String) {
-        wsClient.mediaNext(entityId)
+        haRepo.mediaNext(entityId)
     }
 
     fun mediaPrevious(entityId: String) {
-        wsClient.mediaPrevious(entityId)
+        haRepo.mediaPrevious(entityId)
     }
 
     fun toggleMediaMute(entityId: String, currentMute: Boolean) {
-        wsClient.mediaMute(entityId, !currentMute)
+        haRepo.mediaMute(entityId, !currentMute)
     }
 
     fun setDockLayout(layout: String) {

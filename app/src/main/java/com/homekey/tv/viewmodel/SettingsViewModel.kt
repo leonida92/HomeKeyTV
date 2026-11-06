@@ -9,7 +9,7 @@ import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import com.homekey.tv.data.api.HAWebSocketClient
+import com.homekey.tv.data.api.HomeAssistantRepository
 import com.homekey.tv.data.api.UpdateManager
 import com.homekey.tv.data.local.DataStorePreferencesRepository
 import com.homekey.tv.data.local.PreferencesRepository
@@ -39,15 +39,22 @@ import kotlinx.coroutines.withContext
 
 class SettingsViewModel(
     application: Application,
-    private val prefs: PreferencesRepository
+    private val prefs: PreferencesRepository,
+    private val haRepo: HomeAssistantRepository = HomeAssistantRepository.getInstance()
 ) : AndroidViewModel(application) {
 
     constructor(application: Application) : this(
         application,
-        DataStorePreferencesRepository.getInstance(application)
+        DataStorePreferencesRepository.getInstance(application),
+        HomeAssistantRepository.getInstance()
     )
 
-    private val wsClient = HAWebSocketClient.getInstance()
+    constructor(application: Application, prefs: PreferencesRepository) : this(
+        application,
+        prefs,
+        HomeAssistantRepository.getInstance()
+    )
+
     private val updateManager = UpdateManager(application)
 
     val appVersion: String = try {
@@ -83,7 +90,7 @@ class SettingsViewModel(
     val recentAppsCount: StateFlow<Int> = prefs.recentAppsConfig.map { it.maxCount }
         .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.maxCount)
 
-    val connectionStatus: StateFlow<ConnectionStatus> = wsClient.connectionStatus
+    val connectionStatus: StateFlow<ConnectionStatus> = haRepo.connectionStatus
     val themePreset: StateFlow<String> = prefs.themeConfig.map { it.preset }
         .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.preset)
     val customThemeColors: StateFlow<Map<String, String>> = prefs.themeConfig.map { it.customColors }
@@ -92,13 +99,13 @@ class SettingsViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.activePalette)
 
     // Total entity count, re-emitted only when the number actually changes
-    val entityCount: StateFlow<Int> = wsClient.entities
+    val entityCount: StateFlow<Int> = haRepo.entities
         .map { it.size }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
     // Stable, alphabetised entity list used only by the "Toggle HA" target picker
-    val sortedEntities: StateFlow<List<HAEntityState>> = wsClient.entities
+    val sortedEntities: StateFlow<List<HAEntityState>> = haRepo.entities
         .map { map -> map.values.sortedBy { it.friendlyName.lowercase() } }
         .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -139,17 +146,17 @@ class SettingsViewModel(
             WebSetupServerManager.start(prefs) {
                 val s = prefs.serverConfig.value
                 if (s.isConfigured && s.haEnabled) {
-                    wsClient.connect(s.serverUrl, s.accessToken)
+                    haRepo.connect(s.serverUrl, s.accessToken)
                 }
             }
             val s = prefs.serverConfig.value
             if (s.isConfigured) {
-                wsClient.connect(s.serverUrl, s.accessToken)
+                haRepo.connect(s.serverUrl, s.accessToken)
             }
             loadSetupQr()
         } else {
             WebSetupServerManager.stop()
-            wsClient.disconnect()
+            haRepo.disconnect()
         }
     }
 
@@ -167,8 +174,9 @@ class SettingsViewModel(
     @SuppressLint("QueryPermissionsNeeded")
     fun loadInstalledApps() {
         viewModelScope.launch(Dispatchers.IO) {
-            val pm = getApplication<Application>().packageManager
-            val myPkg = getApplication<Application>().packageName
+            val app = getApplication<Application>() ?: return@launch
+            val pm = app.packageManager ?: return@launch
+            val myPkg = app.packageName ?: ""
             val apps = mutableListOf<InstalledAppInfo>()
             val seenPackages = mutableSetOf<String>()
 

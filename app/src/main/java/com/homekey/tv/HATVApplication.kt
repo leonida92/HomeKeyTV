@@ -1,7 +1,9 @@
 package com.homekey.tv
 
 import android.app.Application
-import com.homekey.tv.data.api.HAWebSocketClient
+import com.homekey.tv.data.api.DefaultHomeAssistantRepository
+import com.homekey.tv.data.api.HomeAssistantRepository
+import com.homekey.tv.data.api.OkHttpHATransport
 import com.homekey.tv.data.local.DataStorePreferencesRepository
 import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.server.WebSetupServerManager
@@ -16,21 +18,27 @@ class HATVApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         preferencesRepository = DataStorePreferencesRepository.getInstance(this)
-        val server = preferencesRepository.serverConfig.value
 
-        // Reconcile monitored entities within HAWebSocketClient
-        HAWebSocketClient.getInstance().observeMonitoredEntities(applicationScope, preferencesRepository)
+        val haTransport = OkHttpHATransport()
+        val haRepository = DefaultHomeAssistantRepository(
+            transport = haTransport,
+            prefs = preferencesRepository,
+            scope = applicationScope
+        )
+        HomeAssistantRepository.initialize(haRepository)
+
+        val server = preferencesRepository.serverConfig.value
 
         if (server.haEnabled) {
             if (server.isConfigured) {
-                HAWebSocketClient.getInstance().connect(server.serverUrl, server.accessToken)
+                haRepository.connect(server.serverUrl, server.accessToken)
             }
 
             // Keep WebSetupServer running in background on port 8124 for instant phone access
             WebSetupServerManager.start(preferencesRepository) {
                 val current = preferencesRepository.serverConfig.value
                 if (current.isConfigured && current.haEnabled) {
-                    HAWebSocketClient.getInstance().connect(current.serverUrl, current.accessToken)
+                    haRepository.connect(current.serverUrl, current.accessToken)
                 }
             }
         }

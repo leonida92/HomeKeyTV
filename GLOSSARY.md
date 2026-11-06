@@ -31,3 +31,11 @@ _Avoid_: DockApp, AppShortcut
 **Button Remap**:
 A physical remote control key code binding mapped to an action (toggle dock, toggle entity, launch app, or pass through).
 _Avoid_: KeyMapping, ButtonBinding
+
+**Monitored Entity**:
+A Home Assistant entity whose state is actively tracked over the real-time event stream, derived from pinned entities, remote button targets, and active dialog targets.
+_Avoid_: SubscribedEntity, WatchedEntity, TrackedEntity
+
+**Camera PiP Alert**:
+A transient picture-in-picture video feed overlay triggered automatically by an external Home Assistant notification event.
+_Avoid_: NotificationPopup, PipNotification
