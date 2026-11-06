@@ -15,7 +15,8 @@ import android.util.SparseArray
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
 import com.homekey.tv.data.api.HAWebSocketClient
-import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.local.DataStorePreferencesRepository
+import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.models.ButtonRemapConfig
 import com.homekey.tv.data.models.RemapAction
 import com.homekey.tv.ui.MainActivity
@@ -34,7 +35,7 @@ class RemoteButtonRemapService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private var serviceScope: CoroutineScope? = null
 
-    private lateinit var prefs: PreferencesManager
+    private lateinit var prefs: PreferencesRepository
 
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
     private var volumeRepeatRunnable: Runnable? = null
@@ -79,7 +80,7 @@ class RemoteButtonRemapService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         Log.d(tag, "RemoteButtonRemapService connected and active")
-        prefs = PreferencesManager.getInstance(this)
+        prefs = DataStorePreferencesRepository.getInstance(this)
         _isServiceRunning.value = true
 
         rebuildRemapCache(prefs.buttonRemaps.value)
@@ -190,13 +191,13 @@ class RemoteButtonRemapService : AccessibilityService() {
             val pkg = event.packageName?.toString() ?: return
             if (pkg != packageName && pkg != "com.android.systemui") {
                 currentForegroundPackage = pkg
-                if (::prefs.isInitialized && prefs.recentAppsEnabled.value) {
+                if (::prefs.isInitialized && prefs.recentAppsConfig.value.enabled) {
                     try {
                         val pm = packageManager
                         val isLaunchable = pm.getLeanbackLaunchIntentForPackage(pkg) != null ||
                                 pm.getLaunchIntentForPackage(pkg) != null
                         if (isLaunchable) {
-                            prefs.recordRecentApp(pkg)
+                            serviceScope?.launch(Dispatchers.IO) { prefs.recordRecentApp(pkg) }
                         }
                     } catch (_: Exception) {}
                 }

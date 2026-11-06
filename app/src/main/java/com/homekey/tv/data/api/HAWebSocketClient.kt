@@ -1,6 +1,7 @@
 package com.homekey.tv.data.api
 
 import android.util.Log
+import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.models.CameraPipAlert
 import com.homekey.tv.data.models.ConnectionStatus
 import com.homekey.tv.data.models.HAEntityState
@@ -68,6 +69,26 @@ class HAWebSocketClient(
 
     fun setActiveDialogEntity(entityId: String?) {
         activeDialogEntity.value = entityId
+    }
+
+    fun observeMonitoredEntities(scope: CoroutineScope, prefs: PreferencesRepository) {
+        scope.launch {
+            combine(prefs.pinnedEntities, prefs.buttonRemaps) { pinned, remaps ->
+                val entityIds = mutableSetOf<String>()
+                pinned.forEach { entityIds.add(it.entityId) }
+                remaps.forEach { remap ->
+                    val actions = listOf(remap.singlePressAction, remap.doublePressAction, remap.longPressAction)
+                    actions.forEach { action ->
+                        if (action != null && (action.type == "TOGGLE_ENTITY" || action.type == "SELECT_SOURCE")) {
+                            action.target?.let { entityIds.add(it) }
+                        }
+                    }
+                }
+                entityIds.toSet()
+            }.collect { monitoredSet ->
+                setBaseMonitoredEntities(monitoredSet)
+            }
+        }
     }
 
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)

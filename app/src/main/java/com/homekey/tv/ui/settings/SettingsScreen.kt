@@ -57,7 +57,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.local.DockConfig
 import com.homekey.tv.data.models.*
 import com.homekey.tv.ui.panel.FocusableButton
 import com.homekey.tv.ui.panel.FocusableIconButton
@@ -476,7 +476,7 @@ fun SettingsTabItem(
 fun LayoutStyleView(
     currentLayout: String,
     popupStyle: String,
-    cameraCompactSize: String = PreferencesManager.CAMERA_COMPACT_SIZE_MEDIUM,
+    cameraCompactSize: String = DockConfig.CAMERA_COMPACT_SIZE_MEDIUM,
     firstChoiceFocusRequester: FocusRequester? = null,
     onSelectLayout: (String) -> Unit,
     onSelectPopupStyle: (String) -> Unit,
@@ -557,8 +557,8 @@ fun LayoutStyleView(
                     title = "Compact Dock Preview",
                     subtitle = "Linear bar and compact camera preview above dock, blurring other icons",
                     icon = Icons.Default.Tune,
-                    isSelected = popupStyle == PreferencesManager.POPUP_STYLE_MINIMAL,
-                    onClick = { onSelectPopupStyle(PreferencesManager.POPUP_STYLE_MINIMAL) },
+                    isSelected = popupStyle == DockConfig.POPUP_STYLE_MINIMAL,
+                    onClick = { onSelectPopupStyle(DockConfig.POPUP_STYLE_MINIMAL) },
                     modifier = Modifier.weight(1f)
                 )
 
@@ -566,15 +566,15 @@ fun LayoutStyleView(
                     title = "Centered Modal",
                     subtitle = "Full modal dialog centered on screen with dimmed backdrop",
                     icon = Icons.Default.Fullscreen,
-                    isSelected = popupStyle == PreferencesManager.POPUP_STYLE_CENTERED,
-                    onClick = { onSelectPopupStyle(PreferencesManager.POPUP_STYLE_CENTERED) },
+                    isSelected = popupStyle == DockConfig.POPUP_STYLE_CENTERED,
+                    onClick = { onSelectPopupStyle(DockConfig.POPUP_STYLE_CENTERED) },
                     modifier = Modifier.weight(1f)
                 )
             }
         }
 
         // Section 3: Compact Camera Preview Size (shown only when Compact Dock Preview is selected)
-        if (popupStyle == PreferencesManager.POPUP_STYLE_MINIMAL) {
+        if (popupStyle == DockConfig.POPUP_STYLE_MINIMAL) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     text = "COMPACT CAMERA PREVIEW SIZE",
@@ -592,8 +592,8 @@ fun LayoutStyleView(
                         title = "Small",
                         subtitle = "Compact adaptive preview matching camera feed",
                         icon = Icons.Default.Tv,
-                        isSelected = cameraCompactSize == PreferencesManager.CAMERA_COMPACT_SIZE_SMALL,
-                        onClick = { onSelectCameraCompactSize(PreferencesManager.CAMERA_COMPACT_SIZE_SMALL) },
+                        isSelected = cameraCompactSize == DockConfig.CAMERA_COMPACT_SIZE_SMALL,
+                        onClick = { onSelectCameraCompactSize(DockConfig.CAMERA_COMPACT_SIZE_SMALL) },
                         modifier = Modifier.weight(1f)
                     )
 
@@ -601,8 +601,8 @@ fun LayoutStyleView(
                         title = "Medium",
                         subtitle = "Balanced adaptive preview matching camera feed (Default)",
                         icon = Icons.Default.Tv,
-                        isSelected = cameraCompactSize == PreferencesManager.CAMERA_COMPACT_SIZE_MEDIUM,
-                        onClick = { onSelectCameraCompactSize(PreferencesManager.CAMERA_COMPACT_SIZE_MEDIUM) },
+                        isSelected = cameraCompactSize == DockConfig.CAMERA_COMPACT_SIZE_MEDIUM,
+                        onClick = { onSelectCameraCompactSize(DockConfig.CAMERA_COMPACT_SIZE_MEDIUM) },
                         modifier = Modifier.weight(1f)
                     )
 
@@ -610,8 +610,8 @@ fun LayoutStyleView(
                         title = "Large",
                         subtitle = "Spacious adaptive preview matching camera feed",
                         icon = Icons.Default.Tv,
-                        isSelected = cameraCompactSize == PreferencesManager.CAMERA_COMPACT_SIZE_LARGE,
-                        onClick = { onSelectCameraCompactSize(PreferencesManager.CAMERA_COMPACT_SIZE_LARGE) },
+                        isSelected = cameraCompactSize == DockConfig.CAMERA_COMPACT_SIZE_LARGE,
+                        onClick = { onSelectCameraCompactSize(DockConfig.CAMERA_COMPACT_SIZE_LARGE) },
                         modifier = Modifier.weight(1f)
                     )
                 }

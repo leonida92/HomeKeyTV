@@ -444,100 +444,100 @@ class HAModelTest {
     fun testPopupStylePreferenceNormalization() {
         // Control popup styles
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.POPUP_STYLE_MINIMAL,
-            com.homekey.tv.data.local.PreferencesManager.normalizePopupStyle("MINIMAL")
+            com.homekey.tv.data.local.DockConfig.POPUP_STYLE_MINIMAL,
+            com.homekey.tv.data.local.DockConfig.normalizePopupStyle("MINIMAL")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.POPUP_STYLE_MINIMAL,
-            com.homekey.tv.data.local.PreferencesManager.normalizePopupStyle("horizontal")
+            com.homekey.tv.data.local.DockConfig.POPUP_STYLE_MINIMAL,
+            com.homekey.tv.data.local.DockConfig.normalizePopupStyle("horizontal")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.POPUP_STYLE_MINIMAL,
-            com.homekey.tv.data.local.PreferencesManager.normalizePopupStyle("MINIMAL_DOCK")
+            com.homekey.tv.data.local.DockConfig.POPUP_STYLE_MINIMAL,
+            com.homekey.tv.data.local.DockConfig.normalizePopupStyle("MINIMAL_DOCK")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.POPUP_STYLE_MINIMAL,
-            com.homekey.tv.data.local.PreferencesManager.normalizePopupStyle("COMPACT")
+            com.homekey.tv.data.local.DockConfig.POPUP_STYLE_MINIMAL,
+            com.homekey.tv.data.local.DockConfig.normalizePopupStyle("COMPACT")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.POPUP_STYLE_MINIMAL,
-            com.homekey.tv.data.local.PreferencesManager.normalizePopupStyle("dock")
+            com.homekey.tv.data.local.DockConfig.POPUP_STYLE_MINIMAL,
+            com.homekey.tv.data.local.DockConfig.normalizePopupStyle("dock")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.POPUP_STYLE_CENTERED,
-            com.homekey.tv.data.local.PreferencesManager.normalizePopupStyle("CENTERED")
+            com.homekey.tv.data.local.DockConfig.POPUP_STYLE_CENTERED,
+            com.homekey.tv.data.local.DockConfig.normalizePopupStyle("CENTERED")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.POPUP_STYLE_CENTERED,
-            com.homekey.tv.data.local.PreferencesManager.normalizePopupStyle(null)
+            com.homekey.tv.data.local.DockConfig.POPUP_STYLE_CENTERED,
+            com.homekey.tv.data.local.DockConfig.normalizePopupStyle(null)
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.POPUP_STYLE_CENTERED,
-            com.homekey.tv.data.local.PreferencesManager.normalizePopupStyle("unknown_style")
+            com.homekey.tv.data.local.DockConfig.POPUP_STYLE_CENTERED,
+            com.homekey.tv.data.local.DockConfig.normalizePopupStyle("unknown_style")
         )
 
         // Camera popup styles
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_POPUP_COMPACT,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraPopupStyle("COMPACT")
+            com.homekey.tv.data.local.DockConfig.CAMERA_POPUP_COMPACT,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraPopupStyle("COMPACT")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_POPUP_COMPACT,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraPopupStyle("minimal")
+            com.homekey.tv.data.local.DockConfig.CAMERA_POPUP_COMPACT,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraPopupStyle("minimal")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_POPUP_COMPACT,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraPopupStyle("DOCK")
+            com.homekey.tv.data.local.DockConfig.CAMERA_POPUP_COMPACT,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraPopupStyle("DOCK")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_POPUP_CENTERED,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraPopupStyle("CENTERED")
+            com.homekey.tv.data.local.DockConfig.CAMERA_POPUP_CENTERED,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraPopupStyle("CENTERED")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_POPUP_CENTERED,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraPopupStyle(null)
+            com.homekey.tv.data.local.DockConfig.CAMERA_POPUP_CENTERED,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraPopupStyle(null)
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_POPUP_CENTERED,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraPopupStyle("random_value")
+            com.homekey.tv.data.local.DockConfig.CAMERA_POPUP_CENTERED,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraPopupStyle("random_value")
         )
 
         // Camera compact sizes
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_COMPACT_SIZE_SMALL,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraCompactSize("SMALL")
+            com.homekey.tv.data.local.DockConfig.CAMERA_COMPACT_SIZE_SMALL,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraCompactSize("SMALL")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_COMPACT_SIZE_SMALL,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraCompactSize("s")
+            com.homekey.tv.data.local.DockConfig.CAMERA_COMPACT_SIZE_SMALL,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraCompactSize("s")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_COMPACT_SIZE_SMALL,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraCompactSize("small_size")
+            com.homekey.tv.data.local.DockConfig.CAMERA_COMPACT_SIZE_SMALL,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraCompactSize("small_size")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_COMPACT_SIZE_LARGE,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraCompactSize("LARGE")
+            com.homekey.tv.data.local.DockConfig.CAMERA_COMPACT_SIZE_LARGE,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraCompactSize("LARGE")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_COMPACT_SIZE_LARGE,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraCompactSize("l")
+            com.homekey.tv.data.local.DockConfig.CAMERA_COMPACT_SIZE_LARGE,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraCompactSize("l")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_COMPACT_SIZE_LARGE,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraCompactSize("large_size")
+            com.homekey.tv.data.local.DockConfig.CAMERA_COMPACT_SIZE_LARGE,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraCompactSize("large_size")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_COMPACT_SIZE_MEDIUM,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraCompactSize("MEDIUM")
+            com.homekey.tv.data.local.DockConfig.CAMERA_COMPACT_SIZE_MEDIUM,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraCompactSize("MEDIUM")
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_COMPACT_SIZE_MEDIUM,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraCompactSize(null)
+            com.homekey.tv.data.local.DockConfig.CAMERA_COMPACT_SIZE_MEDIUM,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraCompactSize(null)
         )
         assertEquals(
-            com.homekey.tv.data.local.PreferencesManager.CAMERA_COMPACT_SIZE_MEDIUM,
-            com.homekey.tv.data.local.PreferencesManager.normalizeCameraCompactSize("arbitrary")
+            com.homekey.tv.data.local.DockConfig.CAMERA_COMPACT_SIZE_MEDIUM,
+            com.homekey.tv.data.local.DockConfig.normalizeCameraCompactSize("arbitrary")
         )
     }
 

@@ -43,7 +43,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.local.DockConfig
 import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.LocalThemePalette
@@ -111,7 +111,7 @@ fun DockOverlayScreen(
     var lastFocusedItemId by remember { mutableStateOf<String?>(null) }
 
     val isCamera = activeDialogEntity?.domain == "camera"
-    val isMinimalActive = activeDialogEntity != null && popupStyle == PreferencesManager.POPUP_STYLE_MINIMAL
+    val isMinimalActive = activeDialogEntity != null && popupStyle == DockConfig.POPUP_STYLE_MINIMAL
     val isCompactCamera = isCamera && isMinimalActive
     val isCenteredActive = activeDialogEntity != null && !isMinimalActive
     val activeDialogEntityId = if (isMinimalActive) activeDialogEntity?.entityId else null

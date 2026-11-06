@@ -32,7 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.local.DockConfig
 import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.LocalThemePalette
@@ -68,7 +68,7 @@ fun CameraDialog(
     serverUrl: String,
     accessToken: String,
     isCompact: Boolean = false,
-    compactSize: String = PreferencesManager.CAMERA_COMPACT_SIZE_MEDIUM,
+    compactSize: String = DockConfig.CAMERA_COMPACT_SIZE_MEDIUM,
     onDismiss: () -> Unit
 ) {
     val palette = LocalThemePalette.current
@@ -235,8 +235,8 @@ fun CameraDialog(
 
     if (isCompact) {
         val (baseVideoHeight, maxVideoWidth) = when (compactSize) {
-            PreferencesManager.CAMERA_COMPACT_SIZE_SMALL -> Pair(180.dp, 380.dp)
-            PreferencesManager.CAMERA_COMPACT_SIZE_LARGE -> Pair(290.dp, 680.dp)
+            DockConfig.CAMERA_COMPACT_SIZE_SMALL -> Pair(180.dp, 380.dp)
+            DockConfig.CAMERA_COMPACT_SIZE_LARGE -> Pair(290.dp, 680.dp)
             else -> Pair(230.dp, 520.dp)
         }
 

@@ -3,7 +3,6 @@ package com.homekey.tv.viewmodel
 import android.annotation.SuppressLint
 import android.app.Application
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.BitmapDrawable
@@ -12,7 +11,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.homekey.tv.data.api.HAWebSocketClient
 import com.homekey.tv.data.api.UpdateManager
-import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.local.DataStorePreferencesRepository
+import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.models.AppUpdateState
 import com.homekey.tv.data.models.ButtonRemapConfig
 import com.homekey.tv.data.models.ConnectionStatus
@@ -20,7 +20,6 @@ import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.InstalledAppInfo
 import com.homekey.tv.data.models.PinnedAppConfig
-import com.homekey.tv.data.models.ThemePreset
 import com.homekey.tv.data.server.WebSetupServerManager
 import com.homekey.tv.service.LocalAdbManager
 import com.homekey.tv.service.RemoteButtonRemapService
@@ -31,7 +30,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
@@ -39,9 +37,16 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class SettingsViewModel(application: Application) : AndroidViewModel(application) {
+class SettingsViewModel(
+    application: Application,
+    private val prefs: PreferencesRepository
+) : AndroidViewModel(application) {
 
-    private val prefs = PreferencesManager.getInstance(application)
+    constructor(application: Application) : this(
+        application,
+        DataStorePreferencesRepository.getInstance(application)
+    )
+
     private val wsClient = HAWebSocketClient.getInstance()
     private val updateManager = UpdateManager(application)
 
@@ -54,33 +59,45 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _updateState = MutableStateFlow<AppUpdateState>(AppUpdateState.Idle)
     val updateState: StateFlow<AppUpdateState> = _updateState.asStateFlow()
 
-    val haEnabled: StateFlow<Boolean> = prefs.haEnabled
-    val serverUrl: StateFlow<String> = prefs.serverUrl
-    val accessToken: StateFlow<String> = prefs.accessToken
-    val panelLayout: StateFlow<String> = prefs.panelLayout
-    val popupStyle: StateFlow<String> = prefs.popupStyle
-    val cameraPopupStyle: StateFlow<String> = prefs.cameraPopupStyle
-    val cameraCompactSize: StateFlow<String> = prefs.cameraCompactSize
-    val recentAppsEnabled: StateFlow<Boolean> = prefs.recentAppsEnabled
-    val recentAppsCount: StateFlow<Int> = prefs.recentAppsCount
+    val haEnabled: StateFlow<Boolean> = prefs.serverConfig.map { it.haEnabled }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.haEnabled)
+    val serverUrl: StateFlow<String> = prefs.serverConfig.map { it.serverUrl }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.serverUrl)
+    val accessToken: StateFlow<String> = prefs.serverConfig.map { it.accessToken }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.accessToken)
+    val pairingPin: StateFlow<String> = prefs.serverConfig.map { it.pairingPin }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.pairingPin)
+
+    val dockLayout: StateFlow<String> = prefs.dockConfig.map { it.layout }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.layout)
+    val panelLayout: StateFlow<String> get() = dockLayout
+    val popupStyle: StateFlow<String> = prefs.dockConfig.map { it.popupStyle }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.popupStyle)
+    val cameraPopupStyle: StateFlow<String> = prefs.dockConfig.map { it.cameraPopupStyle }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.cameraPopupStyle)
+    val cameraCompactSize: StateFlow<String> = prefs.dockConfig.map { it.cameraCompactSize }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.cameraCompactSize)
+
+    val recentAppsEnabled: StateFlow<Boolean> = prefs.recentAppsConfig.map { it.enabled }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.enabled)
+    val recentAppsCount: StateFlow<Int> = prefs.recentAppsConfig.map { it.maxCount }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.maxCount)
+
     val connectionStatus: StateFlow<ConnectionStatus> = wsClient.connectionStatus
-    val themePreset: StateFlow<String> = prefs.themePreset
-    val customThemeColors: StateFlow<Map<String, String>> = prefs.customThemeColors
-    val activePalette: StateFlow<DomainColorPalette> = prefs.activePalette
+    val themePreset: StateFlow<String> = prefs.themeConfig.map { it.preset }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.preset)
+    val customThemeColors: StateFlow<Map<String, String>> = prefs.themeConfig.map { it.customColors }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.customColors)
+    val activePalette: StateFlow<DomainColorPalette> = prefs.themeConfig.map { it.activePalette }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.activePalette)
 
-    // Pairing code shown next to the QR so the phone can authorise /api/save & /api/fetch-entities.
-    val pairingPin: StateFlow<String> = prefs.pairingPin
-
-    // Total entity count, re-emitted only when the number actually changes (used for the header
-    // badge). Keeping the raw full-state map out of the Settings screen avoids recomposing the
-    // whole activity on every HA state_changed event.
+    // Total entity count, re-emitted only when the number actually changes
     val entityCount: StateFlow<Int> = wsClient.entities
         .map { it.size }
         .distinctUntilChanged()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 
-    // Stable, alphabetised entity list used only by the "Toggle HA" target picker. Built off the
-    // main thread.
+    // Stable, alphabetised entity list used only by the "Toggle HA" target picker
     val sortedEntities: StateFlow<List<HAEntityState>> = wsClient.entities
         .map { map -> map.values.sortedBy { it.friendlyName.lowercase() } }
         .flowOn(Dispatchers.Default)
@@ -98,8 +115,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _installedApps = MutableStateFlow<List<InstalledAppInfo>>(emptyList())
     val installedApps: StateFlow<List<InstalledAppInfo>> = _installedApps.asStateFlow()
 
-    // Decoded app icons, keyed by package name. Decoding happens once on the IO thread in
-    // loadInstalledApps() so the grid never converts Drawables during composition.
     private val _appIcons = MutableStateFlow<Map<String, Bitmap>>(emptyMap())
     val appIcons: StateFlow<Map<String, Bitmap>> = _appIcons.asStateFlow()
 
@@ -110,22 +125,26 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     val qrCodeBitmap: StateFlow<Bitmap?> = _qrCodeBitmap.asStateFlow()
 
     init {
-        if (prefs.haEnabled.value) {
+        if (prefs.serverConfig.value.haEnabled) {
             loadSetupQr()
         }
         loadInstalledApps()
     }
 
     fun setHaEnabled(enabled: Boolean) {
-        prefs.setHaEnabled(enabled)
+        viewModelScope.launch {
+            prefs.updateServerConfig { it.copy(haEnabled = enabled) }
+        }
         if (enabled) {
             WebSetupServerManager.start(prefs) {
-                if (prefs.isConfigured && prefs.haEnabled.value) {
-                    wsClient.connect(prefs.serverUrl.value, prefs.accessToken.value)
+                val s = prefs.serverConfig.value
+                if (s.isConfigured && s.haEnabled) {
+                    wsClient.connect(s.serverUrl, s.accessToken)
                 }
             }
-            if (prefs.isConfigured) {
-                wsClient.connect(prefs.serverUrl.value, prefs.accessToken.value)
+            val s = prefs.serverConfig.value
+            if (s.isConfigured) {
+                wsClient.connect(s.serverUrl, s.accessToken)
             }
             loadSetupQr()
         } else {
@@ -140,7 +159,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             if (ip != null) {
                 val url = "http://$ip:8124"
                 _setupUrl.value = url
-                // QR generation is a per-pixel loop; never run it on the main thread.
                 _qrCodeBitmap.value = QRCodeGenerator.generateQRCode(url, 400)
             }
         }
@@ -154,7 +172,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             val apps = mutableListOf<InstalledAppInfo>()
             val seenPackages = mutableSetOf<String>()
 
-            // 1. Query Leanback Launcher (TV apps)
             val leanbackIntent = Intent(Intent.ACTION_MAIN, null).apply {
                 addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
             }
@@ -172,7 +189,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
             }
 
-            // 2. Query Standard Launcher (sideloaded/mobile apps)
             val launcherIntent = Intent(Intent.ACTION_MAIN, null).apply {
                 addCategory(Intent.CATEGORY_LAUNCHER)
             }
@@ -190,7 +206,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
             }
 
-            // 3. Fallback: Query all installed applications with a launch intent
             val installedList = pm.getInstalledApplications(0)
             for (appInfo in installedList) {
                 val pkg = appInfo.packageName
@@ -210,16 +225,12 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             }
 
             val sorted = apps.sortedBy { it.appName.lowercase() }
-
-            // Decode all icons off the main thread once, so the settings grid has no first-frame jank.
             val icons = HashMap<String, Bitmap>()
             for (app in sorted) {
                 app.icon?.let { drawable ->
                     try {
                         drawable.toBitmapSafe()?.let { icons[app.packageName] = it }
-                    } catch (e: Exception) {
-                        // Ignore a single bad icon
-                    }
+                    } catch (_: Exception) {}
                 }
             }
             _appIcons.value = icons
@@ -241,60 +252,108 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
-    fun setPanelLayout(layout: String) {
-        prefs.setPanelLayout(layout)
+    fun setDockLayout(layout: String) {
+        viewModelScope.launch {
+            prefs.updateDockConfig { it.copy(layout = layout) }
+        }
     }
 
+    fun setPanelLayout(layout: String) = setDockLayout(layout)
+
     fun setPopupStyle(style: String) {
-        prefs.setPopupStyle(style)
+        viewModelScope.launch {
+            prefs.updateDockConfig { it.copy(popupStyle = style) }
+        }
     }
 
     fun setCameraPopupStyle(style: String) {
-        prefs.setCameraPopupStyle(style)
+        viewModelScope.launch {
+            prefs.updateDockConfig { it.copy(cameraPopupStyle = style) }
+        }
     }
 
     fun setCameraCompactSize(size: String) {
-        prefs.setCameraCompactSize(size)
+        viewModelScope.launch {
+            prefs.updateDockConfig { it.copy(cameraCompactSize = size) }
+        }
     }
 
     fun setRecentAppsEnabled(enabled: Boolean) {
-        prefs.setRecentAppsEnabled(enabled)
+        viewModelScope.launch {
+            prefs.updateRecentAppsConfig { it.copy(enabled = enabled) }
+        }
     }
 
     fun setRecentAppsCount(count: Int) {
-        prefs.setRecentAppsCount(count)
+        viewModelScope.launch {
+            prefs.updateRecentAppsConfig { it.copy(maxCount = count) }
+        }
     }
 
     fun setThemePreset(preset: String) {
-        prefs.setThemePreset(preset)
+        viewModelScope.launch {
+            prefs.updateThemeConfig { it.copy(preset = preset) }
+        }
     }
 
     fun setCustomDomainColor(domain: String, hex: String) {
-        prefs.setCustomDomainColor(domain, hex)
+        viewModelScope.launch {
+            prefs.updateThemeConfig { it.copy(customColors = it.customColors + (domain to hex)) }
+        }
     }
 
     fun setCustomDomainColors(colors: Map<String, String>) {
-        prefs.setCustomDomainColors(colors)
+        viewModelScope.launch {
+            prefs.updateThemeConfig { it.copy(customColors = it.customColors + colors) }
+        }
     }
 
     fun togglePinnedApp(packageName: String, appName: String) {
-        prefs.togglePinnedApp(packageName, appName)
+        viewModelScope.launch {
+            val current = prefs.pinnedApps.value.toMutableList()
+            val index = current.indexOfFirst { it.packageName == packageName }
+            if (index != -1) {
+                current.removeAt(index)
+            } else {
+                current.add(PinnedAppConfig(packageName = packageName, appName = appName, order = current.size))
+            }
+            prefs.savePinnedApps(current)
+        }
     }
 
     fun saveOrUpdateButtonRemap(config: ButtonRemapConfig) {
-        prefs.saveOrUpdateButtonRemap(config)
+        viewModelScope.launch {
+            val current = prefs.buttonRemaps.value.toMutableList()
+            val index = current.indexOfFirst { it.keyCode == config.keyCode && it.appScope == config.appScope }
+            if (index != -1) {
+                current[index] = config
+            } else {
+                current.add(config)
+            }
+            prefs.saveButtonRemaps(current)
+        }
     }
 
     fun removeButtonRemap(keyCode: Int) {
-        prefs.removeButtonRemap(keyCode)
+        viewModelScope.launch {
+            val current = prefs.buttonRemaps.value.filterNot { it.keyCode == keyCode }
+            prefs.saveButtonRemaps(current)
+        }
     }
 
     fun removeButtonRemap(config: ButtonRemapConfig) {
-        prefs.removeButtonRemap(config)
+        viewModelScope.launch {
+            val current = prefs.buttonRemaps.value.filterNot {
+                it.keyCode == config.keyCode && it.appScope == config.appScope
+            }
+            prefs.saveButtonRemaps(current)
+        }
     }
 
     fun setVolumeFixEnabled(enabled: Boolean) {
-        prefs.setVolumeFixEnabled(enabled)
+        viewModelScope.launch {
+            prefs.setVolumeFixEnabled(enabled)
+        }
     }
 
     fun setLearnMode(active: Boolean) {
@@ -348,7 +407,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
             )
             val context = getApplication<Application>()
 
-            // 1. Try direct Secure Settings write first if WRITE_SECURE_SETTINGS is already granted
             if (LocalAdbManager.tryEnableViaSecureSettings(context)) {
                 for (i in 1..10) {
                     if (RemoteButtonRemapService.isServiceRunning.value) {
@@ -361,7 +419,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 }
             }
 
-            // 2. Perform ADB setup to grant permissions, bypass restricted settings, and bind service
             val result = LocalAdbManager.enableAccessibilityService(
                 context = context,
                 port = port,
@@ -377,7 +434,6 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
 
             when (result) {
                 is LocalAdbManager.AdbResult.Success -> {
-                    // Poll for service to bind up to 3 seconds
                     var isBound = RemoteButtonRemapService.isServiceRunning.value
                     for (i in 1..30) {
                         if (isBound) break

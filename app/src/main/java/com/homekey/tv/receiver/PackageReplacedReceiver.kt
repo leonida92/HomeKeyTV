@@ -4,7 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.util.Log
-import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.local.DataStorePreferencesRepository
 import com.homekey.tv.service.LocalAdbManager
 import com.homekey.tv.service.RemoteButtonRemapService
 import kotlinx.coroutines.CoroutineScope
@@ -20,7 +20,7 @@ class PackageReplacedReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                val prefs = PreferencesManager.getInstance(context)
+                val prefs = DataStorePreferencesRepository.getInstance(context)
                 val hasRemaps = prefs.buttonRemaps.value.isNotEmpty()
                 if (!hasRemaps) {
                     Log.d(TAG, "No button remaps configured, skipping accessibility restoration")

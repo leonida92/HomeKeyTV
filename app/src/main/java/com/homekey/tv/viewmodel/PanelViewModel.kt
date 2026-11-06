@@ -5,7 +5,8 @@ import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.homekey.tv.data.api.HAWebSocketClient
-import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.local.DataStorePreferencesRepository
+import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.models.ConnectionStatus
 import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
@@ -24,9 +25,16 @@ data class DockItem(
     val customIcon: String? = null
 )
 
-class PanelViewModel(application: Application) : AndroidViewModel(application) {
+class PanelViewModel(
+    application: Application,
+    private val prefs: PreferencesRepository
+) : AndroidViewModel(application) {
 
-    private val prefs = PreferencesManager.getInstance(application)
+    constructor(application: Application) : this(
+        application,
+        DataStorePreferencesRepository.getInstance(application)
+    )
+
     private val wsClient = HAWebSocketClient.getInstance()
 
     val connectionStatus: StateFlow<ConnectionStatus> = wsClient.connectionStatus
@@ -34,19 +42,38 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     val errorMessage: StateFlow<String?> = wsClient.errorMessage
     val pinnedConfigs: StateFlow<List<PinnedEntityConfig>> = prefs.pinnedEntities
     val pinnedApps: StateFlow<List<PinnedAppConfig>> = prefs.pinnedApps
-    val panelLayout: StateFlow<String> = prefs.panelLayout
-    val popupStyle: StateFlow<String> = prefs.popupStyle
-    val cameraPopupStyle: StateFlow<String> = prefs.cameraPopupStyle
-    val cameraCompactSize: StateFlow<String> = prefs.cameraCompactSize
-    val recentAppsEnabled: StateFlow<Boolean> = prefs.recentAppsEnabled
-    val recentAppsCount: StateFlow<Int> = prefs.recentAppsCount
-    val recentApps: StateFlow<List<String>> = prefs.recentApps
-    val serverUrl: StateFlow<String> = prefs.serverUrl
-    val accessToken: StateFlow<String> = prefs.accessToken
-    val haEnabled: StateFlow<Boolean> = prefs.haEnabled
-    val themePreset: StateFlow<String> = prefs.themePreset
-    val activePalette: StateFlow<DomainColorPalette> = prefs.activePalette
-    
+
+    val dockLayout: StateFlow<String> = prefs.dockConfig.map { it.layout }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.layout)
+    val panelLayout: StateFlow<String> get() = dockLayout
+    val popupStyle: StateFlow<String> = prefs.dockConfig.map { it.popupStyle }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.popupStyle)
+    val cameraPopupStyle: StateFlow<String> = prefs.dockConfig.map { it.cameraPopupStyle }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.cameraPopupStyle)
+    val cameraCompactSize: StateFlow<String> = prefs.dockConfig.map { it.cameraCompactSize }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.cameraCompactSize)
+
+    val recentAppsEnabled: StateFlow<Boolean> = prefs.recentAppsConfig.map { it.enabled }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.enabled)
+    val recentAppsCount: StateFlow<Int> = prefs.recentAppsConfig.map { it.maxCount }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.maxCount)
+    val recentApps: StateFlow<List<String>> = prefs.recentAppsConfig.map { it.recentPackages }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.recentPackages)
+
+    val serverUrl: StateFlow<String> = prefs.serverConfig.map { it.serverUrl }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.serverUrl)
+    val accessToken: StateFlow<String> = prefs.serverConfig.map { it.accessToken }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.accessToken)
+    val haEnabled: StateFlow<Boolean> = prefs.serverConfig.map { it.haEnabled }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.haEnabled)
+    val themePreset: StateFlow<String> = prefs.themeConfig.map { it.preset }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.preset)
+    val activePalette: StateFlow<DomainColorPalette> = prefs.themeConfig.map { it.activePalette }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.activePalette)
+
+    val isConfigured: StateFlow<Boolean> = prefs.serverConfig.map { it.isConfigured }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.isConfigured)
+
     private val _overlayOpenEpoch = MutableStateFlow(0L)
     val overlayOpenEpoch: StateFlow<Long> = _overlayOpenEpoch.asStateFlow()
 
@@ -70,25 +97,13 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     private val _selectedReorderEntityId = MutableStateFlow<String?>(null)
     val selectedReorderEntityId: StateFlow<String?> = _selectedReorderEntityId.asStateFlow()
 
-    // Reactive config flag: changes whenever the server URL/token prefs change (e.g. after the
-    // phone-setup server saves a config), so the dock can react without a manual re-check.
-    val isConfigured: StateFlow<Boolean> = combine(prefs.serverUrl, prefs.accessToken, prefs.haEnabled) { url, token, haEnabled ->
-        haEnabled && url.isNotBlank() && token.isNotBlank()
-    }.stateIn(viewModelScope, SharingStarted.Eagerly, prefs.isConfigured)
-
-    // Display items: unified list of pinned HA entities and pinned apps.
-    // Upstream work (mapping/filtering) runs on Dispatchers.Default and only the *resulting* list
-    // crosses to the Main-thread collector. distinctUntilChanged() compares the produced DockItem
-    // list, so a state_changed event for an entity that is NOT on the dock no longer recomposes the
-    // dock at all — and events for docked entities emit a new list only when that tile actually
-    // changed (HAEntityState instances are retained for untouched entries).
     val displayEntities: StateFlow<List<DockItem>> = combine(
         allEntities,
         pinnedConfigs,
         pinnedApps,
-        prefs.haEnabled
-    ) { entities, pinned, apps, haEnabled ->
-        buildDockItems(entities, if (haEnabled) pinned else emptyList(), apps)
+        haEnabled
+    ) { entities, pinned, apps, enabled ->
+        buildDockItems(entities, if (enabled) pinned else emptyList(), apps)
     }
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
@@ -132,7 +147,7 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     init {
         connectToHomeAssistant()
         viewModelScope.launch {
-            prefs.haEnabled.collect { enabled ->
+            haEnabled.collect { enabled ->
                 if (enabled) {
                     connectToHomeAssistant()
                 } else {
@@ -144,11 +159,10 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun connectToHomeAssistant() {
-        if (!prefs.haEnabled.value) return
-        val url = prefs.serverUrl.value
-        val token = prefs.accessToken.value
-        if (url.isNotBlank() && token.isNotBlank()) {
-            wsClient.connect(url, token)
+        val server = prefs.serverConfig.value
+        if (!server.haEnabled) return
+        if (server.serverUrl.isNotBlank() && server.accessToken.isNotBlank()) {
+            wsClient.connect(server.serverUrl, server.accessToken)
         }
     }
 
@@ -157,7 +171,9 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun launchApp(packageName: String) {
-        prefs.recordRecentApp(packageName)
+        viewModelScope.launch(Dispatchers.IO) {
+            prefs.recordRecentApp(packageName)
+        }
         val pm = getApplication<Application>().packageManager
         val launchIntent = pm.getLeanbackLaunchIntentForPackage(packageName) ?: pm.getLaunchIntentForPackage(packageName)
         if (launchIntent != null) {
@@ -230,9 +246,13 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
         wsClient.mediaMute(entityId, !currentMute)
     }
 
-    fun setPanelLayout(layout: String) {
-        prefs.setPanelLayout(layout)
+    fun setDockLayout(layout: String) {
+        viewModelScope.launch {
+            prefs.updateDockConfig { it.copy(layout = layout) }
+        }
     }
+
+    fun setPanelLayout(layout: String) = setDockLayout(layout)
 
     fun toggleReorderMode() {
         if (_isReorderMode.value) {
@@ -259,39 +279,11 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun moveEntity(id: String, delta: Int) {
-        if (id.startsWith("app:")) {
-            val pkg = id.removePrefix("app:")
-            val current = prefs.pinnedApps.value.toMutableList()
-            val currentIndex = current.indexOfFirst { it.packageName == pkg }
-            if (currentIndex == -1 || current.size <= 1) return
-
-            val targetIndex = (currentIndex + delta).let {
-                if (it < 0) current.size - 1
-                else if (it >= current.size) 0
-                else it
+        viewModelScope.launch {
+            if (!id.startsWith("app:")) {
+                ensurePinnedListInitialized()
             }
-            if (currentIndex != targetIndex) {
-                val item = current.removeAt(currentIndex)
-                current.add(targetIndex, item)
-                prefs.savePinnedApps(current)
-            }
-        } else {
-            ensurePinnedListInitialized()
-            val current = prefs.pinnedEntities.value.toMutableList()
-            val currentIndex = current.indexOfFirst { it.entityId == id }
-            if (currentIndex == -1 || current.size <= 1) return
-
-            val targetIndex = (currentIndex + delta).let {
-                if (it < 0) current.size - 1
-                else if (it >= current.size) 0
-                else it
-            }
-
-            if (currentIndex != targetIndex) {
-                val item = current.removeAt(currentIndex)
-                current.add(targetIndex, item)
-                prefs.savePinnedEntities(current)
-            }
+            prefs.movePinnedEntity(id, delta)
         }
     }
 
@@ -308,7 +300,9 @@ class PanelViewModel(application: Application) : AndroidViewModel(application) {
                 )
             }
             if (initial.isNotEmpty()) {
-                prefs.savePinnedEntities(initial)
+                viewModelScope.launch {
+                    prefs.savePinnedEntities(initial)
+                }
             }
         }
     }

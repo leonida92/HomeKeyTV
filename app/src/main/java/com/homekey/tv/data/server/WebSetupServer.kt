@@ -1,7 +1,7 @@
 package com.homekey.tv.data.server
 
 import android.util.Log
-import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.models.PinnedEntityConfig
 import fi.iki.elonen.NanoHTTPD
 import kotlinx.serialization.Serializable
@@ -16,10 +16,11 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.IOException
 import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.runBlocking
 
 class WebSetupServer(
     port: Int = 8124,
-    private val preferencesManager: PreferencesManager,
+    private val preferencesRepository: PreferencesRepository,
     private val onConfigUpdated: () -> Unit
 ) : NanoHTTPD(port) {
 
@@ -43,7 +44,7 @@ class WebSetupServer(
     private fun isPinAccepted(pin: String?): Boolean {
         val now = System.currentTimeMillis()
         if (now < lockoutUntil) return false
-        val ok = !pin.isNullOrBlank() && pin == preferencesManager.pairingPin.value
+        val ok = !pin.isNullOrBlank() && pin == preferencesRepository.serverConfig.value.pairingPin
         if (ok) {
             failedPinAttempts = 0
         } else {
@@ -112,11 +113,11 @@ class WebSetupServer(
             method == Method.GET && uri == "/api/status" -> {
                 // Built as structured JSON — never string interpolation (serverUrl is user data).
                 val body = buildJsonObject {
-                    put("configured", preferencesManager.isConfigured)
-                    put("serverUrl", preferencesManager.serverUrl.value)
-                    put("pinnedCount", preferencesManager.pinnedEntities.value.size)
-                    put("layout", preferencesManager.panelLayout.value)
-                    put("themePreset", preferencesManager.themePreset.value)
+                    put("configured", preferencesRepository.serverConfig.value.isConfigured)
+                    put("serverUrl", preferencesRepository.serverConfig.value.serverUrl)
+                    put("pinnedCount", preferencesRepository.pinnedEntities.value.size)
+                    put("layout", preferencesRepository.dockConfig.value.layout)
+                    put("themePreset", preferencesRepository.themeConfig.value.preset)
                 }.toString()
                 newFixedLengthResponse(Response.Status.OK, "application/json", body)
             }
@@ -135,8 +136,8 @@ class WebSetupServer(
                     // token rotation/repair). The saved token is only ever sent to the saved server
                     // — never to a URL the requester chose — so a LAN client that got past the PIN
                     // cannot use the TV's token to probe arbitrary internal hosts (SSRF).
-                    val savedUrl = preferencesManager.serverUrl.value.trim().removeSuffix("/")
-                    val savedToken = preferencesManager.accessToken.value
+                    val savedUrl = preferencesRepository.serverConfig.value.serverUrl.trim().removeSuffix("/")
+                    val savedToken = preferencesRepository.serverConfig.value.accessToken
                     val typedUrl = payload.serverUrl.trim().removeSuffix("/")
                     val typedToken = payload.token.trim()
 
@@ -197,8 +198,8 @@ class WebSetupServer(
 
                     // The page never receives the token back (it is not embedded in the HTML), so
                     // blank fields mean "keep the value already stored on the TV".
-                    val savedUrl = preferencesManager.serverUrl.value.trim().removeSuffix("/")
-                    val savedToken = preferencesManager.accessToken.value
+                    val savedUrl = preferencesRepository.serverConfig.value.serverUrl.trim().removeSuffix("/")
+                    val savedToken = preferencesRepository.serverConfig.value.accessToken
                     val incomingUrl = payload.serverUrl.trim().removeSuffix("/")
                     val incomingToken = payload.token.trim()
                     if (incomingUrl.isBlank() && incomingToken.isBlank()) {
@@ -217,18 +218,18 @@ class WebSetupServer(
                     }
                     val effectiveUrl = incomingUrl.ifBlank { savedUrl }
                     val effectiveToken = incomingToken.ifBlank { savedToken }
-                    preferencesManager.saveServerConfig(effectiveUrl, effectiveToken)
+                    runBlocking { preferencesRepository.updateServerConfig { it.copy(serverUrl = effectiveUrl, accessToken = effectiveToken) } }
 
                     if (!payload.layout.isNullOrBlank()) {
-                        preferencesManager.setPanelLayout(payload.layout)
+                        runBlocking { preferencesRepository.updateDockConfig { it.copy(layout = payload.layout) } }
                     }
 
                     if (!payload.themePreset.isNullOrBlank()) {
-                        preferencesManager.setThemePreset(payload.themePreset)
+                        runBlocking { preferencesRepository.updateThemeConfig { it.copy(preset = payload.themePreset) } }
                     }
 
                     if (payload.customThemeColors != null) {
-                        preferencesManager.setCustomDomainColors(payload.customThemeColors)
+                        runBlocking { preferencesRepository.updateThemeConfig { it.copy(customColors = it.customColors + payload.customThemeColors) } }
                     }
 
                     // null = field absent (leave dock untouched); an explicit empty list clears it.
@@ -242,7 +243,7 @@ class WebSetupServer(
                                 order = idx
                             )
                         }
-                        preferencesManager.savePinnedEntities(pinned)
+                        runBlocking { preferencesRepository.savePinnedEntities(pinned) }
                     }
 
                     onConfigUpdated()
@@ -258,7 +259,7 @@ class WebSetupServer(
                     return forbidden()
                 }
                 val includeToken = session.parameters["includeToken"]?.firstOrNull()?.toBoolean() ?: false
-                val backupJson = preferencesManager.exportBackupJson(includeToken)
+                val backupJson = runBlocking { preferencesRepository.exportBackupJson(includeToken) }
                 val resp = newFixedLengthResponse(Response.Status.OK, "application/json", backupJson)
                 resp.addHeader("Content-Disposition", "attachment; filename=\"homekey_tv_backup.json\"")
                 resp
@@ -288,7 +289,7 @@ class WebSetupServer(
                         return forbidden()
                     }
 
-                    val success = preferencesManager.restoreFromBackupJson(backupContent)
+                    val success = runBlocking { preferencesRepository.restoreFromBackupJson(backupContent) }.isSuccess
                     if (success) {
                         onConfigUpdated()
                         jsonSuccess("Configuration restored successfully!")
@@ -305,14 +306,14 @@ class WebSetupServer(
     }
 
     private fun getWebHtml(): String {
-        val currentUrl = preferencesManager.serverUrl.value
-        val isTokenSaved = preferencesManager.accessToken.value.isNotBlank()
+        val currentUrl = preferencesRepository.serverConfig.value.serverUrl
+        val isTokenSaved = preferencesRepository.serverConfig.value.accessToken.isNotBlank()
         // NOTE: the long-lived access token is deliberately NOT embedded in this page. It is never
         // sent back to the browser; once the TV is configured, /api/* use the saved token server-side.
-        val currentPinned = json.encodeToString(preferencesManager.pinnedEntities.value)
-        val currentLayout = preferencesManager.panelLayout.value
-        val currentThemePreset = preferencesManager.themePreset.value
-        val currentCustomColors = json.encodeToString(preferencesManager.customThemeColors.value)
+        val currentPinned = json.encodeToString(preferencesRepository.pinnedEntities.value)
+        val currentLayout = preferencesRepository.dockConfig.value.layout
+        val currentThemePreset = preferencesRepository.themeConfig.value.preset
+        val currentCustomColors = json.encodeToString(preferencesRepository.themeConfig.value.customColors)
 
         return """
 <!DOCTYPE html>
@@ -1771,8 +1772,8 @@ object WebSetupServerManager {
     private var server: WebSetupServer? = null
 
     @Synchronized
-    fun start(prefs: PreferencesManager, onConfigUpdated: () -> Unit = {}) {
-        if (!prefs.haEnabled.value) {
+    fun start(prefs: PreferencesRepository, onConfigUpdated: () -> Unit = {}) {
+        if (!prefs.serverConfig.value.haEnabled) {
             Log.d(TAG, "HA integration is disabled, not starting WebSetupServer")
             stop()
             return

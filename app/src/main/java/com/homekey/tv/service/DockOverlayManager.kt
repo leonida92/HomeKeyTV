@@ -40,7 +40,7 @@ import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.homekey.tv.data.api.HAWebSocketClient
-import com.homekey.tv.data.local.PreferencesManager
+import com.homekey.tv.data.local.DataStorePreferencesRepository
 import com.homekey.tv.data.models.CameraPipAlert
 import com.homekey.tv.ui.SettingsActivity
 import com.homekey.tv.ui.panel.CameraPipCard
@@ -424,9 +424,9 @@ object DockOverlayManager {
             ?: return
         windowManager = wm
 
-        val prefs = PreferencesManager.getInstance(context)
-        val serverUrl = prefs.serverUrl.value
-        val accessToken = prefs.accessToken.value
+        val prefs = DataStorePreferencesRepository.getInstance(context)
+        val serverUrl = prefs.serverConfig.value.serverUrl
+        val accessToken = prefs.serverConfig.value.accessToken
         if (serverUrl.isBlank()) return
 
         val safeDuration = alert.durationSeconds.coerceIn(3, 120)
