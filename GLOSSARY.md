@@ -59,3 +59,11 @@ _Avoid_: SecurityPopup, DoorDialog
 **Remote Input Engine**:
 Pure Kotlin gesture and timing engine responsible for classifying remote key events, contact bounce filtering, multi-press recognition, and app-scoping resolution.
 _Avoid_: KeyClassifier, GestureRecognizer, InputManager
+
+**Dock Overlay State Engine**:
+Pure policy engine governing quick-access dock visibility, debounce timing, lifecycle transitions, and authoritative back-navigation hierarchy.
+_Avoid_: DockController, OverlayManager, DockStateManager
+
+**Window Overlay Host**:
+Presentation host responsible for attaching, positioning, rendering, and tearing down system overlay window hierarchies.
+_Avoid_: OverlayViewManager, WindowManagerAdapter, DockViewHost

@@ -6,7 +6,6 @@ import android.graphics.PixelFormat
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -30,24 +29,41 @@ import com.homekey.tv.ui.SettingsActivity
 import com.homekey.tv.ui.panel.PanelOverlayScreen
 import com.homekey.tv.ui.theme.HomeAssistantTVTheme
 import com.homekey.tv.viewmodel.PanelViewModel
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import java.lang.ref.WeakReference
 
+/**
+ * Android adapter implementing [DockOverlayController] and [WindowOverlayHost].
+ * Delegates all state, debounce timing, and back navigation decisions to [DockOverlayStateEngine],
+ * and handles Android WindowManager, ComposeView, and Lifecycle mechanics on the UI thread.
+ */
 class DefaultDockOverlayController(
-    private val uptimeProvider: () -> Long = { SystemClock.uptimeMillis() }
-) : DockOverlayController {
+    engine: DockOverlayStateEngine? = null,
+    scheduler: TimeScheduler? = null
+) : DockOverlayController, WindowOverlayHost {
 
     private val tag = "DefaultDockOverlayController"
-    private var lastToggleTime = -TOGGLE_DEBOUNCE_MS
 
-    private val _isShowing = MutableStateFlow(false)
-    override val isShowing: StateFlow<Boolean> = _isShowing.asStateFlow()
+    private val timeScheduler: TimeScheduler by lazy {
+        scheduler ?: try {
+            AndroidTimeScheduler(Handler(Looper.getMainLooper()))
+        } catch (_: Exception) {
+            object : TimeScheduler {
+                override fun currentTimeMs(): Long = System.currentTimeMillis()
+                override fun schedule(delayMs: Long, token: Any, action: () -> Unit) {}
+                override fun cancel(token: Any) {}
+            }
+        }
+    }
+
+    private val stateEngine: DockOverlayStateEngine by lazy {
+        engine ?: DefaultDockOverlayStateEngine(this, timeScheduler)
+    }
+
+    override val isShowing: StateFlow<Boolean> get() = stateEngine.isShowing
+    override val isServiceAttached: Boolean get() = stateEngine.isServiceAttached
 
     private var serviceRef: WeakReference<RemoteButtonRemapService>? = null
-    override val isServiceAttached: Boolean get() = serviceRef?.get() != null
 
     private var windowManager: WindowManager? = null
     private var rootLayout: OverlayFrameLayout? = null
@@ -55,14 +71,158 @@ class DefaultDockOverlayController(
     private var lifecycleOwner: OverlayLifecycleOwner? = null
     private var viewModel: PanelViewModel? = null
 
+    private fun isMainThread(): Boolean {
+        return try {
+            Looper.myLooper() == Looper.getMainLooper()
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    private fun postToMain(action: () -> Unit) {
+        try {
+            if (isMainThread()) {
+                action()
+            } else {
+                Handler(Looper.getMainLooper()).post(action)
+            }
+        } catch (_: Exception) {
+            action()
+        }
+    }
+
+    // --- DockOverlayController Facade ---
+
     override fun attachService(service: RemoteButtonRemapService) {
         serviceRef = WeakReference(service)
+        stateEngine.attachService()
     }
 
     override fun detachService() {
-        teardown()
-        serviceRef = null
+        postToMain {
+            stateEngine.detachService()
+            serviceRef = null
+        }
     }
+
+    override fun show(): Boolean {
+        return if (isMainThread()) {
+            stateEngine.show()
+        } else {
+            postToMain { stateEngine.show() }
+            true
+        }
+    }
+
+    override fun hide() {
+        postToMain { stateEngine.hide() }
+    }
+
+    override fun toggle() {
+        postToMain { stateEngine.toggle() }
+    }
+
+    override fun prewarm() {
+        postToMain { stateEngine.prewarm() }
+    }
+
+    override fun teardown() {
+        postToMain { stateEngine.teardown() }
+    }
+
+    override fun handleBack(): Boolean {
+        return if (isMainThread()) {
+            stateEngine.handleBack()
+        } else {
+            postToMain { stateEngine.handleBack() }
+            isShowing.value
+        }
+    }
+
+    // --- WindowOverlayHost Seam Implementation ---
+
+    override fun dismissActiveModal(): Boolean {
+        return viewModel?.handleBack() ?: false
+    }
+
+    override fun showWindow(): Boolean {
+        val service = serviceRef?.get() ?: run {
+            Log.w(tag, "showWindow: Cannot show overlay, RemoteButtonRemapService is not attached")
+            return false
+        }
+        val layout = rootLayout
+        val wm = windowManager
+        val cv = composeView
+        if (layout != null && layout.isAttachedToWindow && wm != null && cv != null) {
+            return try {
+                wm.updateViewLayout(layout, createLayoutParams(focusable = true))
+                layout.visibility = View.VISIBLE
+                lifecycleOwner?.resume()
+                viewModel?.notifyOverlayShown()
+                cv.requestFocus()
+                Log.d(tag, "Dock overlay shown (warm instant)")
+                true
+            } catch (e: Exception) {
+                Log.e(tag, "Error showing warm overlay view, re-initializing", e)
+                teardownWindow()
+                initWindow(service, initiallyVisible = true)
+            }
+        } else {
+            return initWindow(service, initiallyVisible = true)
+        }
+    }
+
+    override fun hideWindow(): Boolean {
+        val layout = rootLayout ?: return true
+        val wm = windowManager ?: return true
+
+        return try {
+            if (layout.isAttachedToWindow) {
+                layout.visibility = View.GONE
+                wm.updateViewLayout(layout, createLayoutParams(focusable = false))
+                lifecycleOwner?.stop()
+                viewModel?.closeEntityDialog()
+                viewModel?.exitReorderMode()
+                Log.d(tag, "Dock overlay hidden (stopped & kept warm)")
+            }
+            true
+        } catch (e: Exception) {
+            Log.e(tag, "Error hiding overlay", e)
+            teardownWindow()
+            false
+        }
+    }
+
+    override fun prewarmWindow(): Boolean {
+        val service = serviceRef?.get() ?: return false
+        if (rootLayout != null && rootLayout?.isAttachedToWindow == true) {
+            return true
+        }
+        return initWindow(service, initiallyVisible = false)
+    }
+
+    override fun teardownWindow() {
+        try {
+            val wm = windowManager
+            val layout = rootLayout
+            if (wm != null && layout != null && layout.isAttachedToWindow) {
+                layout.onBackAction = null
+                wm.removeViewImmediate(layout)
+            }
+        } catch (e: Exception) {
+            Log.e(tag, "Error tearing down overlay", e)
+        } finally {
+            rootLayout = null
+            composeView = null
+            lifecycleOwner?.destroy()
+            lifecycleOwner = null
+            viewModel = null
+            windowManager = null
+            Log.d(tag, "Dock overlay torn down")
+        }
+    }
+
+    // --- Private Window Initialization ---
 
     private fun createLayoutParams(focusable: Boolean): WindowManager.LayoutParams {
         val flags = if (focusable) {
@@ -88,69 +248,8 @@ class DefaultDockOverlayController(
         }
     }
 
-    override fun toggle() {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            Handler(Looper.getMainLooper()).post { toggle() }
-            return
-        }
-        val now = uptimeProvider()
-        if (now - lastToggleTime < TOGGLE_DEBOUNCE_MS) {
-            Log.d(tag, "toggle: ignoring rapid toggle event (${now - lastToggleTime}ms < ${TOGGLE_DEBOUNCE_MS}ms)")
-            return
-        }
-        lastToggleTime = now
-        if (_isShowing.value) hide() else show()
-    }
-
-    override fun prewarm() {
-        val service = serviceRef?.get() ?: return
-        Handler(Looper.getMainLooper()).postDelayed({
-            if (rootLayout != null && rootLayout?.isAttachedToWindow == true) {
-                return@postDelayed
-            }
-            initWindow(service, initiallyVisible = false)
-        }, 500L)
-    }
-
-    override fun show(): Boolean {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            Handler(Looper.getMainLooper()).post { show() }
-            return true
-        }
-        val service = serviceRef?.get() ?: run {
-            Log.w(tag, "show: Cannot show overlay, RemoteButtonRemapService is not attached")
-            return false
-        }
-        if (_isShowing.value) return true
-        lastToggleTime = uptimeProvider()
-
-        val layout = rootLayout
-        val wm = windowManager
-        val cv = composeView
-        if (layout != null && layout.isAttachedToWindow && wm != null && cv != null) {
-            try {
-                wm.updateViewLayout(layout, createLayoutParams(focusable = true))
-                layout.visibility = View.VISIBLE
-                lifecycleOwner?.resume()
-                viewModel?.notifyOverlayShown()
-                cv.requestFocus()
-                _isShowing.update { true }
-                Log.d(tag, "Dock overlay shown (warm instant)")
-                return true
-            } catch (e: Exception) {
-                Log.e(tag, "Error showing warm overlay view, re-initializing", e)
-                teardown()
-                initWindow(service, initiallyVisible = true)
-                return true
-            }
-        } else {
-            initWindow(service, initiallyVisible = true)
-            return true
-        }
-    }
-
-    private fun initWindow(service: RemoteButtonRemapService, initiallyVisible: Boolean) {
-        try {
+    private fun initWindow(service: RemoteButtonRemapService, initiallyVisible: Boolean): Boolean {
+        return try {
             val wm = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
             windowManager = wm
 
@@ -233,90 +332,19 @@ class DefaultDockOverlayController(
                 owner.resume()
                 vm.notifyOverlayShown()
                 cv.requestFocus()
-                _isShowing.update { true }
                 Log.d(tag, "Dock overlay shown (fresh)")
             } else {
                 layout.visibility = View.GONE
                 val params = createLayoutParams(focusable = false)
                 wm.addView(layout, params)
                 owner.stop()
-                _isShowing.update { false }
                 Log.d(tag, "Dock overlay pre-warmed in background")
             }
+            true
         } catch (e: Exception) {
             Log.e(tag, "Error initializing overlay window", e)
-            teardown()
+            teardownWindow()
+            false
         }
-    }
-
-    override fun handleBack(): Boolean {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            Handler(Looper.getMainLooper()).post { handleBack() }
-            return _isShowing.value
-        }
-        val vm = viewModel
-        if (vm != null && vm.handleBack()) {
-            return true
-        }
-        if (_isShowing.value) {
-            hide()
-            return true
-        }
-        return false
-    }
-
-    override fun hide() {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            Handler(Looper.getMainLooper()).post { hide() }
-            return
-        }
-        lastToggleTime = uptimeProvider()
-        _isShowing.update { false }
-        val layout = rootLayout ?: return
-        val wm = windowManager ?: return
-
-        try {
-            if (layout.isAttachedToWindow) {
-                layout.visibility = View.GONE
-                wm.updateViewLayout(layout, createLayoutParams(focusable = false))
-                lifecycleOwner?.stop()
-                viewModel?.closeEntityDialog()
-                viewModel?.exitReorderMode()
-                Log.d(tag, "Dock overlay hidden (stopped & kept warm)")
-            }
-        } catch (e: Exception) {
-            Log.e(tag, "Error hiding overlay", e)
-            teardown()
-        }
-    }
-
-    override fun teardown() {
-        if (Looper.myLooper() != Looper.getMainLooper()) {
-            Handler(Looper.getMainLooper()).post { teardown() }
-            return
-        }
-        _isShowing.update { false }
-        try {
-            val wm = windowManager
-            val layout = rootLayout
-            if (wm != null && layout != null && layout.isAttachedToWindow) {
-                layout.onBackAction = null
-                wm.removeViewImmediate(layout)
-            }
-        } catch (e: Exception) {
-            Log.e(tag, "Error tearing down overlay", e)
-        } finally {
-            rootLayout = null
-            composeView = null
-            lifecycleOwner?.destroy()
-            lifecycleOwner = null
-            viewModel = null
-            windowManager = null
-            Log.d(tag, "Dock overlay torn down")
-        }
-    }
-
-    companion object {
-        private const val TOGGLE_DEBOUNCE_MS = 350L
     }
 }

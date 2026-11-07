@@ -16,6 +16,7 @@ Enforced during code reviews and automated verification.
 - **No Fire-and-Forget Mutations**: Do not launch detached, un-awaited coroutines (`scope.launch`) inside repository write methods. The caller must know when persistence completes.
 - **Atomic State Updates**: Mutate in-memory `MutableStateFlow` instances using atomic `.update { ... }` rather than direct assignment (`.value = ...`).
 - **StateFlow Adapter Synchronization**: When a service companion or adapter wraps a domain engine's `StateFlow`, UI reset operations must propagate back to the underlying engine to prevent equality-based event conflation on re-entry.
+- **Derived StateFlow Projections**: When a secondary `StateFlow` (e.g. `isShowing: StateFlow<Boolean>`) is a direct projection of a primary domain state machine (`DockOverlayState`), mutate through a single authoritative transition function or project it directly (`state.map { ... }`). Never maintain disconnected, independent state updates that risk dual-source drift.
 - **Guard Rails**: Write operations with feature flags (e.g. `recordRecentApp`) must check enablement flags (`enabled == true`) before performing mutations or disk writes.
 
 ## 3. Architecture Seams & Decoupling
@@ -24,6 +25,7 @@ Enforced during code reviews and automated verification.
 - **Network Decoupling & ACL**: All Home Assistant wire protocol translation is isolated in `HAMessageCodec`. Network socket I/O is abstracted behind `HATransport`. Orchestration, reconnection backoff, and entity reconciliation belong in `HomeAssistantRepository`.
 - **No Speculative APIs**: Repository interfaces and wire message encoders must strictly reflect genuine caller intents and reactive domain state, omitting synthetic test hooks or speculative parameters (e.g. unbuilt PIN codes, unused flags). Expose only operations invoked by active UI callers.
 - **Pure Input & Policy Engines**: Timing-sensitive gesture recognition and key classification (debouncing, multi-press, long-press, app-scoping) must be isolated into pure Kotlin engines with pluggable time abstractions (`TimeScheduler`) to enable deterministic JVM unit testing without Android SDK or Looper dependencies.
+- **Overlay Back-Navigation Precedence**: Overlay back handlers (`handleBack(): Boolean`) must guard on active overlay visibility before evaluating sub-modal or dialog dismissal (`if (!isShowing) return false`) to prevent background or pre-warmed view hierarchies from intercepting OS back presses from third-party foreground applications.
 - **Test Doubles**: Every public repository and transport interface must have an in-memory fake (`FakePreferencesRepository`, `FakeHomeAssistantRepository`, `FakeHATransport`) to preserve fast, offline unit testability.
 
 ## 4. Verification & Testing
