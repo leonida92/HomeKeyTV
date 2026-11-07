@@ -4,10 +4,10 @@
 
 HomeKey TV is a low-latency Home Assistant TV overlay and smart home dock designed for Android TV (Google TV / Fire OS). Built using Jetpack Compose for TV and Kotlin coroutines, it provides a persistent, instant overlay on top of any running TV application or video stream without interrupting playback.
 
-- **Current Version**: `1.8.1` (`versionCode = 32`)
+- **Current Version**: `1.9.0` (`versionCode = 33`)
 - **Current Git Commit**: Tracking `main` (Dual-Endpoint Network Failover, MJPEG Pipeline Protection, and Modular Dock UI)
-- **Target Device**: Android TV connected at `192.168.1.50:5555` (HomeKey TV v1.8.1 active)
-- **Build Status**: All unit tests passing (`./gradlew testDebugUnitTest`), release APK assembled and installed (`HomeKeyTV-v1.8.1.apk`)
+- **Target Device**: Android TV connected at `192.168.1.50:5555` (HomeKey TV v1.9.0 active)
+- **Build Status**: All unit tests passing (`./gradlew testDebugUnitTest`), release APK assembled and installed (`HomeKeyTV-v1.9.0.apk`)
 - **Architecture Documentation**: See `docs/adr/` (`0001`, `0002`, `0003`, `0007`, `0008`) and `GLOSSARY.md`.
 
 ---
