@@ -27,6 +27,8 @@ Enforced during code reviews and automated verification.
 - **Pure Input & Policy Engines**: Timing-sensitive gesture recognition and key classification (debouncing, multi-press, long-press, app-scoping) must be isolated into pure Kotlin engines with pluggable time abstractions (`TimeScheduler`) to enable deterministic JVM unit testing without Android SDK or Looper dependencies.
 - **Overlay Back-Navigation Precedence**: Overlay back handlers (`handleBack(): Boolean`) must guard on active overlay visibility before evaluating sub-modal or dialog dismissal (`if (!isShowing) return false`) to prevent background or pre-warmed view hierarchies from intercepting OS back presses from third-party foreground applications.
 - **Test Doubles**: Every public repository and transport interface must have an in-memory fake (`FakePreferencesRepository`, `FakeHomeAssistantRepository`, `FakeHATransport`) to preserve fast, offline unit testability.
+- **Dynamic Media Route Synchronization**: Media decoders, camera snapshots, and asset fetchers must consume `activeServerUrl: StateFlow<String>`, never static `serverConfig.serverUrl`, ensuring active route parity during dual-endpoint failover (ADR 0008).
+- **Pluggable Endpoint Probing**: Connection failover coordinators and opportunistic failback routines must accept an injectable probe lambda (`suspend (String) -> Boolean`) to allow 100% deterministic, offline JVM testing of network transitions.
 
 ## 4. Verification & Testing
 
@@ -34,4 +36,4 @@ Enforced during code reviews and automated verification.
 - **Deterministic Test Fixtures**: Model serialization and equality tests must supply explicit, static timestamps (e.g. `1_700_000_000_000L`) rather than relying on dynamic clock defaults (`System.currentTimeMillis()`). Serialization tests must configure `encodeDefaults = true`.
 - **Coroutines Testing**: Use `runTest` from `kotlinx-coroutines-test`. ViewModels using `viewModelScope` require `Dispatchers.setMain(testDispatcher)` in `@Before` and `resetMain()` in `@After`. Long-running collectors must run in `backgroundScope` or cancel their test `Job` in `@After` to prevent `UncompletedCoroutinesError`.
 - **Framework Null Safety**: Framework services accessed inside ViewModels or background tasks must be null-safe (`?.packageManager ?: return`) for headless JVM unit testability.
-- **Build Cleanliness**: `./gradlew testDebugUnitTest` and `./gradlew assembleDebug` must pass with zero errors before merging.
+- **Build Cleanliness**: `./gradlew testDebugUnitTest`, `./gradlew assembleDebug`, and `./gradlew assembleRelease` must pass with zero errors before merging. Release builds enforce Proguard/R8 and `lintVitalRelease` checks that debug builds skip.

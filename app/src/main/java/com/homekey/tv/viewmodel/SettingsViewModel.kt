@@ -177,7 +177,7 @@ class SettingsViewModel(
     @SuppressLint("QueryPermissionsNeeded")
     fun loadInstalledApps() {
         viewModelScope.launch(Dispatchers.IO) {
-            val app = getApplication<Application>() ?: return@launch
+            val app = getApplication<Application>()
             val pm = app.packageManager ?: return@launch
             val myPkg = app.packageName ?: ""
             val apps = mutableListOf<InstalledAppInfo>()
@@ -237,10 +237,10 @@ class SettingsViewModel(
 
             val sorted = apps.sortedBy { it.appName.lowercase() }
             val icons = HashMap<String, Bitmap>()
-            for (app in sorted) {
-                app.icon?.let { drawable ->
+            for (installedApp in sorted) {
+                installedApp.icon?.let { drawable ->
                     try {
-                        drawable.toBitmapSafe()?.let { icons[app.packageName] = it }
+                        drawable.toBitmapSafe()?.let { icons[installedApp.packageName] = it }
                     } catch (_: Exception) {}
                 }
             }

@@ -30,3 +30,6 @@ jobs:
 
       - name: Assemble debug APK
         run: ./gradlew assembleDebug --no-daemon
+
+      - name: Assemble release APK
+        run: ./gradlew assembleRelease --no-daemon
