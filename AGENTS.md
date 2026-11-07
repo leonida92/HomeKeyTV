@@ -15,6 +15,7 @@ Coding standards and architectural rules live in `CODING_STANDARDS.md`. Review a
 - **Target Device**: Google Streamer Android TV at `192.168.1.50:5555`.
 - **ADB Executable**: `C:\Users\user\AppData\Local\Android\Sdk\platform-tools\adb.exe`.
 - **Deployment**: Always chain connection with commands (`adb connect 192.168.1.50:5555; adb install ...`). Always install release APK (`./gradlew assembleRelease` -> `HomeKeyTV-v*.apk`) to avoid debug overlay UI stutter.
+- **Verification**: After deployment, launch the app (`adb shell monkey -p com.homekey.tv -c android.intent.category.LAUNCHER 1`), obtain PID (`adb shell pidof com.homekey.tv`), and inspect logcat with `adb logcat --pid=<pid> -d` to verify startup and toggle traces immediately.
 
 ## Agent skills
 

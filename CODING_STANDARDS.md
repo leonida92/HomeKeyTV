@@ -15,6 +15,7 @@ Enforced during code reviews and automated verification.
 - **Genuine Suspending Calls**: Repository mutation methods marked `suspend` must genuinely suspend on IO via `withContext(Dispatchers.IO) { haDataStore.edit { ... } }`.
 - **No Fire-and-Forget Mutations**: Do not launch detached, un-awaited coroutines (`scope.launch`) inside repository write methods. The caller must know when persistence completes.
 - **Atomic State Updates**: Mutate in-memory `MutableStateFlow` instances using atomic `.update { ... }` rather than direct assignment (`.value = ...`).
+- **StateFlow Adapter Synchronization**: When a service companion or adapter wraps a domain engine's `StateFlow`, UI reset operations must propagate back to the underlying engine to prevent equality-based event conflation on re-entry.
 - **Guard Rails**: Write operations with feature flags (e.g. `recordRecentApp`) must check enablement flags (`enabled == true`) before performing mutations or disk writes.
 
 ## 3. Architecture Seams & Decoupling
