@@ -8,14 +8,18 @@ import kotlinx.serialization.json.JsonObject
 
 interface HomeAssistantRepository {
     val connectionStatus: StateFlow<ConnectionStatus>
+    val activeServerUrl: StateFlow<String>
     val entities: StateFlow<Map<String, HAEntityState>>
     val pipAlert: StateFlow<CameraPipAlert?>
     val errorMessage: StateFlow<String?>
 
-    fun connect(serverUrl: String, token: String)
+    fun connect(serverUrl: String, fallbackServerUrl: String = "", token: String)
+    fun connect(serverUrl: String, token: String) = connect(serverUrl, "", token)
     fun disconnect()
     fun dismissPipAlert()
     fun setActiveDialogEntity(entityId: String?)
+    fun notifyOverlayShown() {}
+    fun probeLocalFailback() {}
 
     fun toggleEntity(entityId: String)
     fun turnOn(entityId: String, brightness: Int? = null)

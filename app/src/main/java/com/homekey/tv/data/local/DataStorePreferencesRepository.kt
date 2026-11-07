@@ -82,6 +82,7 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
 
         if (initialPrefs != null) {
             val serverUrl = initialPrefs[PreferencesKeys.SERVER_URL] ?: ""
+            val fallbackServerUrl = initialPrefs[PreferencesKeys.FALLBACK_SERVER_URL] ?: ""
             val haEnabled = initialPrefs[PreferencesKeys.HA_ENABLED] ?: true
             val layout = DockConfig.normalizeLayout(initialPrefs[PreferencesKeys.PANEL_LAYOUT])
             val popupStyle = DockConfig.normalizePopupStyle(initialPrefs[PreferencesKeys.POPUP_STYLE])
@@ -165,6 +166,7 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
 
             _serverConfig.value = ServerConfig(
                 serverUrl = serverUrl,
+                fallbackServerUrl = fallbackServerUrl,
                 accessToken = token,
                 pairingPin = pin,
                 haEnabled = haEnabled
@@ -178,6 +180,7 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
         scope.launch {
             appContext.haDataStore.data.collect { prefs ->
                 val serverUrl = prefs[PreferencesKeys.SERVER_URL] ?: _serverConfig.value.serverUrl
+                val fallbackServerUrl = prefs[PreferencesKeys.FALLBACK_SERVER_URL] ?: _serverConfig.value.fallbackServerUrl
                 val haEnabled = prefs[PreferencesKeys.HA_ENABLED] ?: _serverConfig.value.haEnabled
                 val pin = prefs[PreferencesKeys.PAIRING_PIN] ?: _serverConfig.value.pairingPin
                 val encToken = prefs[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN]
@@ -185,7 +188,7 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
                     TinkKeystoreCrypto.decrypt(appContext, encToken)
                 } else _serverConfig.value.accessToken
 
-                val newServerConfig = ServerConfig(serverUrl, token, pin, haEnabled)
+                val newServerConfig = ServerConfig(serverUrl, fallbackServerUrl, token, pin, haEnabled)
                 if (newServerConfig != _serverConfig.value) {
                     _serverConfig.value = newServerConfig
                 }
@@ -235,13 +238,19 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
     override suspend fun updateServerConfig(transform: (ServerConfig) -> ServerConfig) {
         val updated = transform(_serverConfig.value)
         val cleanUrl = updated.serverUrl.trim().removeSuffix("/")
+        val cleanFallbackUrl = updated.fallbackServerUrl.trim().removeSuffix("/")
         val cleanToken = updated.accessToken.trim()
-        val normalized = updated.copy(serverUrl = cleanUrl, accessToken = cleanToken)
+        val normalized = updated.copy(
+            serverUrl = cleanUrl,
+            fallbackServerUrl = cleanFallbackUrl,
+            accessToken = cleanToken
+        )
 
         withContext(Dispatchers.IO) {
             val enc = if (cleanToken.isNotBlank()) TinkKeystoreCrypto.encrypt(appContext, cleanToken) else ""
             appContext.haDataStore.edit { p ->
                 p[PreferencesKeys.SERVER_URL] = cleanUrl
+                p[PreferencesKeys.FALLBACK_SERVER_URL] = cleanFallbackUrl
                 p[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN] = enc
                 p.remove(PreferencesKeys.ACCESS_TOKEN)
                 p[PreferencesKeys.HA_ENABLED] = normalized.haEnabled
@@ -442,6 +451,7 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
     override suspend fun exportBackupJson(includeToken: Boolean): String {
         val backup = HomeKeyBackup(
             serverUrl = _serverConfig.value.serverUrl,
+            fallbackServerUrl = _serverConfig.value.fallbackServerUrl,
             accessToken = if (includeToken) _serverConfig.value.accessToken else null,
             dockLayout = _dockConfig.value.layout,
             panelLayout = _dockConfig.value.layout,
@@ -465,6 +475,7 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
         return try {
             val backup = json.decodeFromString<HomeKeyBackup>(jsonString)
             val cleanUrl = backup.serverUrl.trim().removeSuffix("/")
+            val cleanFallbackUrl = backup.fallbackServerUrl.trim().removeSuffix("/")
             val cleanToken = backup.accessToken?.ifBlank { null } ?: _serverConfig.value.accessToken
             val dockLayout = DockConfig.normalizeLayout(backup.resolvedDockLayout)
             val popupStyle = DockConfig.normalizePopupStyle(backup.popupStyle)
@@ -496,6 +507,9 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
                     if (cleanUrl.isNotBlank()) {
                         p[PreferencesKeys.SERVER_URL] = cleanUrl
                     }
+                    if (cleanFallbackUrl.isNotBlank()) {
+                        p[PreferencesKeys.FALLBACK_SERVER_URL] = cleanFallbackUrl
+                    }
                     if (encToken != null) {
                         p[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN] = encToken
                         p.remove(PreferencesKeys.ACCESS_TOKEN)
@@ -519,6 +533,7 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
             _serverConfig.update {
                 it.copy(
                     serverUrl = if (cleanUrl.isNotBlank()) cleanUrl else it.serverUrl,
+                    fallbackServerUrl = if (cleanFallbackUrl.isNotBlank()) cleanFallbackUrl else it.fallbackServerUrl,
                     accessToken = cleanToken,
                     haEnabled = haEnabled
                 )
@@ -611,6 +626,7 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
 
     private object PreferencesKeys {
         val SERVER_URL = stringPreferencesKey("ha_server_url")
+        val FALLBACK_SERVER_URL = stringPreferencesKey("ha_fallback_server_url")
         val ACCESS_TOKEN = stringPreferencesKey("ha_access_token")
         val ENCRYPTED_ACCESS_TOKEN = stringPreferencesKey("ha_encrypted_access_token")
         val PANEL_LAYOUT = stringPreferencesKey("ha_panel_layout")

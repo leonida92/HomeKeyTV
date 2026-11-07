@@ -93,6 +93,9 @@ fun SettingsScreen(
     val haEnabled by viewModel.haEnabled.collectAsState()
     val themePreset by viewModel.themePreset.collectAsState()
     val customThemeColors by viewModel.customThemeColors.collectAsState()
+    val serverUrl by viewModel.serverUrl.collectAsState()
+    val fallbackServerUrl by viewModel.fallbackServerUrl.collectAsState()
+    val activeServerUrl by viewModel.activeServerUrl.collectAsState()
     val activePalette by viewModel.activePalette.collectAsState()
     val appVersion = viewModel.appVersion
 
@@ -302,6 +305,9 @@ fun SettingsScreen(
                         setupUrl = setupUrl,
                         qrBitmap = qrBitmap,
                         pairingPin = pairingPin,
+                        serverUrl = serverUrl,
+                        fallbackServerUrl = fallbackServerUrl,
+                        activeServerUrl = activeServerUrl,
                         onUpToTab = { tab0FocusRequester.requestFocus() }
                     )
                     1 -> LayoutStyleView(
@@ -1406,6 +1412,9 @@ fun PhoneSetupView(
     setupUrl: String?,
     qrBitmap: Bitmap?,
     pairingPin: String,
+    serverUrl: String = "",
+    fallbackServerUrl: String = "",
+    activeServerUrl: String = "",
     onUpToTab: () -> Unit
 ) {
     Column(
@@ -1515,6 +1524,41 @@ fun PhoneSetupView(
                                     color = HA_Yellow_On,
                                     letterSpacing = 8.sp
                                 )
+                            }
+                        }
+                        if (serverUrl.isNotBlank()) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(Color(0xFF0F172A))
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(6.dp)
+                                            .clip(CircleShape)
+                                            .background(if (activeServerUrl.isNotBlank()) HA_Green_On else HA_Yellow_On)
+                                    )
+                                    Text(
+                                        text = "Active: " + (if (activeServerUrl.isNotBlank()) activeServerUrl else serverUrl),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = Color.White
+                                    )
+                                }
+                                if (fallbackServerUrl.isNotBlank()) {
+                                    Text(
+                                        text = "Fallback: " + fallbackServerUrl,
+                                        fontSize = 10.sp,
+                                        color = TV_Text_Secondary
+                                    )
+                                }
                             }
                         }
                     }

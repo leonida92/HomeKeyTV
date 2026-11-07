@@ -36,6 +36,11 @@ class PreferencesRepositoryTest {
 
         repo.updateServerConfig { it.copy(haEnabled = true, serverUrl = "") }
         assertFalse(repo.serverConfig.value.isConfigured)
+
+        repo.updateServerConfig {
+            it.copy(serverUrl = "", fallbackServerUrl = "https://nabu.casa.test", accessToken = "token123", haEnabled = true)
+        }
+        assertTrue(repo.serverConfig.value.isConfigured)
     }
 
     @Test

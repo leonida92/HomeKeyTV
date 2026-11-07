@@ -70,6 +70,9 @@ class SettingsViewModel(
         .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.haEnabled)
     val serverUrl: StateFlow<String> = prefs.serverConfig.map { it.serverUrl }
         .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.serverUrl)
+    val fallbackServerUrl: StateFlow<String> = prefs.serverConfig.map { it.fallbackServerUrl }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.fallbackServerUrl)
+    val activeServerUrl: StateFlow<String> = haRepo.activeServerUrl
     val accessToken: StateFlow<String> = prefs.serverConfig.map { it.accessToken }
         .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.accessToken)
     val pairingPin: StateFlow<String> = prefs.serverConfig.map { it.pairingPin }
@@ -146,12 +149,12 @@ class SettingsViewModel(
             WebSetupServerManager.start(prefs) {
                 val s = prefs.serverConfig.value
                 if (s.isConfigured && s.haEnabled) {
-                    haRepo.connect(s.serverUrl, s.accessToken)
+                    haRepo.connect(s.serverUrl, s.fallbackServerUrl, s.accessToken)
                 }
             }
             val s = prefs.serverConfig.value
             if (s.isConfigured) {
-                haRepo.connect(s.serverUrl, s.accessToken)
+                haRepo.connect(s.serverUrl, s.fallbackServerUrl, s.accessToken)
             }
             loadSetupQr()
         } else {

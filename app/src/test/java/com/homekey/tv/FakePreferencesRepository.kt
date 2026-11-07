@@ -150,6 +150,7 @@ class FakePreferencesRepository(
     override suspend fun exportBackupJson(includeToken: Boolean): String {
         val backup = HomeKeyBackup(
             serverUrl = _serverConfig.value.serverUrl,
+            fallbackServerUrl = _serverConfig.value.fallbackServerUrl,
             accessToken = if (includeToken) _serverConfig.value.accessToken else null,
             dockLayout = _dockConfig.value.layout,
             panelLayout = _dockConfig.value.layout,
@@ -175,6 +176,7 @@ class FakePreferencesRepository(
             _serverConfig.update {
                 it.copy(
                     serverUrl = backup.serverUrl,
+                    fallbackServerUrl = backup.fallbackServerUrl,
                     accessToken = backup.accessToken ?: it.accessToken,
                     haEnabled = backup.haEnabled
                 )

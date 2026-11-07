@@ -44,14 +44,14 @@ class HATVApplication : Application() {
 
         if (server.haEnabled) {
             if (server.isConfigured) {
-                haRepository.connect(server.serverUrl, server.accessToken)
+                haRepository.connect(server.serverUrl, server.fallbackServerUrl, server.accessToken)
             }
 
             // Keep WebSetupServer running in background on port 8124 for instant phone access
             WebSetupServerManager.start(preferencesRepository) {
                 val current = preferencesRepository.serverConfig.value
                 if (current.isConfigured && current.haEnabled) {
-                    haRepository.connect(current.serverUrl, current.accessToken)
+                    haRepository.connect(current.serverUrl, current.fallbackServerUrl, current.accessToken)
                 }
             }
         }

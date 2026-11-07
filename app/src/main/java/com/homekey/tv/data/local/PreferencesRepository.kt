@@ -9,12 +9,13 @@ import kotlinx.serialization.Serializable
 
 data class ServerConfig(
     val serverUrl: String = "",
+    val fallbackServerUrl: String = "",
     val accessToken: String = "",
     val pairingPin: String = "",
     val haEnabled: Boolean = true
 ) {
     val isConfigured: Boolean
-        get() = haEnabled && serverUrl.isNotBlank() && accessToken.isNotBlank()
+        get() = haEnabled && (serverUrl.isNotBlank() || fallbackServerUrl.isNotBlank()) && accessToken.isNotBlank()
 }
 
 data class DockConfig(
@@ -85,6 +86,7 @@ data class RecentAppsConfig(
 @Serializable
 data class HomeKeyBackup(
     val serverUrl: String = "",
+    val fallbackServerUrl: String = "",
     val accessToken: String? = null,
     val dockLayout: String = "DOCK_BOTTOM",
     val panelLayout: String? = null, // for backwards compatibility with earlier backup files

@@ -76,6 +76,7 @@ class WebSetupServer(
     @Serializable
     data class SetupPayload(
         val serverUrl: String = "",
+        val fallbackServerUrl: String? = null,
         val token: String = "",
         val layout: String? = null,
         val pin: String = "",
@@ -88,6 +89,7 @@ class WebSetupServer(
     @Serializable
     data class FetchPayload(
         val serverUrl: String = "",
+        val fallbackServerUrl: String? = null,
         val token: String = "",
         val pin: String = ""
     )
@@ -115,6 +117,7 @@ class WebSetupServer(
                 val body = buildJsonObject {
                     put("configured", preferencesRepository.serverConfig.value.isConfigured)
                     put("serverUrl", preferencesRepository.serverConfig.value.serverUrl)
+                    put("fallbackServerUrl", preferencesRepository.serverConfig.value.fallbackServerUrl)
                     put("pinnedCount", preferencesRepository.pinnedEntities.value.size)
                     put("layout", preferencesRepository.dockConfig.value.layout)
                     put("themePreset", preferencesRepository.themeConfig.value.preset)
@@ -218,7 +221,9 @@ class WebSetupServer(
                     }
                     val effectiveUrl = incomingUrl.ifBlank { savedUrl }
                     val effectiveToken = incomingToken.ifBlank { savedToken }
-                    runBlocking { preferencesRepository.updateServerConfig { it.copy(serverUrl = effectiveUrl, accessToken = effectiveToken) } }
+                    val incomingFallback = payload.fallbackServerUrl?.trim()?.removeSuffix("/")
+                    val effectiveFallback = incomingFallback ?: preferencesRepository.serverConfig.value.fallbackServerUrl
+                    runBlocking { preferencesRepository.updateServerConfig { it.copy(serverUrl = effectiveUrl, fallbackServerUrl = effectiveFallback, accessToken = effectiveToken) } }
 
                     if (!payload.layout.isNullOrBlank()) {
                         runBlocking { preferencesRepository.updateDockConfig { it.copy(layout = payload.layout) } }
@@ -307,6 +312,7 @@ class WebSetupServer(
 
     private fun getWebHtml(): String {
         val currentUrl = preferencesRepository.serverConfig.value.serverUrl
+        val currentFallbackUrl = preferencesRepository.serverConfig.value.fallbackServerUrl
         val isTokenSaved = preferencesRepository.serverConfig.value.accessToken.isNotBlank()
         // NOTE: the long-lived access token is deliberately NOT embedded in this page. It is never
         // sent back to the browser; once the TV is configured, /api/* use the saved token server-side.
@@ -847,7 +853,13 @@ class WebSetupServer(
                 <div class="form-group">
                     <label>Home Assistant URL</label>
                     <input type="url" id="haUrl" placeholder="http://192.168.1.100:8123 or https://xxx.ui.nabu.casa" value="$currentUrl">
-                    <p class="help-text">Local IP or your Nabu Casa remote URL</p>
+                    <p class="help-text">Local LAN IP for 0ms low-latency dock response</p>
+                </div>
+
+                <div class="form-group">
+                    <label>Fallback / Cloud URL (Optional)</label>
+                    <input type="url" id="haFallbackUrl" placeholder="https://xxx.ui.nabu.casa or external URL" value="$currentFallbackUrl">
+                    <p class="help-text">Automatic failover endpoint for remote or guest Wi-Fi access</p>
                 </div>
 
                 <div class="form-group">
@@ -1643,6 +1655,7 @@ class WebSetupServer(
 
             const payload = {
                 serverUrl: url,
+                fallbackServerUrl: (document.getElementById('haFallbackUrl') ? document.getElementById('haFallbackUrl').value.trim() : ''),
                 token: token,
                 pin: pin,
                 layout: layout,

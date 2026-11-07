@@ -13,8 +13,16 @@ Configuration governing dock placement geometry (bottom, left, or right), modal 
 _Avoid_: PanelLayout, PopupPreferences
 
 **ServerConfig**:
-Configuration defining the Home Assistant server endpoint URL, access token, mobile setup pairing PIN, and integration status.
+Configuration defining the primary Home Assistant server endpoint URL, optional fallback remote endpoint URL, access token, mobile setup pairing PIN, and integration status.
 _Avoid_: ConnectionSettings, AuthConfig
+
+**Dual-Endpoint Failover**:
+Automatic transport transition from primary local LAN endpoint to fallback remote endpoint upon socket timeout or connection refusal.
+_Avoid_: CloudFallback, RedundantConnection
+
+**Opportunistic Failback**:
+Automatic background probing of the primary local LAN endpoint to restore sub-millisecond local operation when the TV returns to the home network.
+_Avoid_: LocalReconnect, AutoSwitchBack
 
 **ThemeConfig**:
 Configuration defining the active visual theme preset, user custom domain hex color overrides, and resolved domain color palette.

@@ -10,12 +10,15 @@ import com.homekey.tv.data.models.OptimisticToggle
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.serialization.json.*
+import okhttp3.OkHttpClient
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 class DefaultHomeAssistantRepository(
     private val transport: HATransport,
     private val prefs: PreferencesRepository,
-    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+    private val endpointProbe: suspend (String) -> Boolean = { url -> defaultHttpProbe(url) }
 ) : HomeAssistantRepository {
 
     private val tag = "DefaultHomeAssistantRepo"
@@ -36,16 +39,24 @@ class DefaultHomeAssistantRepository(
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     override val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
 
+    private val _activeServerUrl = MutableStateFlow("")
+    override val activeServerUrl: StateFlow<String> = _activeServerUrl.asStateFlow()
+
     private val _entities = MutableStateFlow<Map<String, HAEntityState>>(emptyMap())
     override val entities: StateFlow<Map<String, HAEntityState>> = _entities.asStateFlow()
 
     private val _errorMessage = MutableStateFlow<String?>(null)
     override val errorMessage: StateFlow<String?> = _errorMessage.asStateFlow()
 
-    @Volatile private var currentUrl: String = ""
+    @Volatile private var primaryUrl: String = ""
+    @Volatile private var fallbackUrl: String = ""
     @Volatile private var currentToken: String = ""
+    @Volatile private var isUsingFallback: Boolean = false
+    @Volatile private var primaryConsecutiveFailures: Int = 0
     @Volatile private var reconnectAttempt = 0
     @Volatile private var reconnectJob: Job? = null
+    @Volatile private var timeoutJob: Job? = null
+    @Volatile private var failbackJob: Job? = null
 
     init {
         // Collect messages from transport
@@ -74,9 +85,18 @@ class DefaultHomeAssistantRepository(
                         }
                     }
                     is TransportEvent.Failure -> {
-                        Log.e(tag, "Transport failure: ${event.throwable.message}", event.throwable)
+                        Log.e(tag, "Transport failure on ${_activeServerUrl.value}: ${event.throwable.message}", event.throwable)
+                        timeoutJob?.cancel()
                         _connectionStatus.update { ConnectionStatus.FAILED }
                         _errorMessage.update { event.throwable.localizedMessage ?: "Connection failed" }
+                        if (!isUsingFallback && fallbackUrl.isNotBlank()) {
+                            primaryConsecutiveFailures++
+                            if (primaryConsecutiveFailures >= 2) {
+                                Log.w(tag, "Primary failed ($primaryConsecutiveFailures times). Triggering immediate failover to $fallbackUrl")
+                                triggerFailover()
+                                return@collect
+                            }
+                        }
                         scheduleReconnect()
                     }
                 }
@@ -120,40 +140,80 @@ class DefaultHomeAssistantRepository(
         }
     }
 
-    override fun connect(serverUrl: String, token: String) {
-        if (serverUrl.isBlank() || token.isBlank()) {
+    override fun connect(serverUrl: String, fallbackServerUrl: String, token: String) {
+        val cleanPrimary = serverUrl.trim().removeSuffix("/")
+        val cleanFallback = fallbackServerUrl.trim().removeSuffix("/")
+        val cleanToken = token.trim()
+
+        if ((cleanPrimary.isBlank() && cleanFallback.isBlank()) || cleanToken.isBlank()) {
             _connectionStatus.update { ConnectionStatus.FAILED }
             _errorMessage.update { "Server URL and Access Token are required" }
             return
         }
 
-        val cleanUrl = serverUrl.trim().removeSuffix("/")
-        val cleanToken = token.trim()
-
+        val activeTarget = if (cleanPrimary.isNotBlank()) cleanPrimary else cleanFallback
         if (_connectionStatus.value == ConnectionStatus.AUTHENTICATED &&
-            currentUrl == cleanUrl && currentToken == cleanToken) {
-            Log.d(tag, "Already authenticated and connected to $cleanUrl")
+            primaryUrl == cleanPrimary && fallbackUrl == cleanFallback && currentToken == cleanToken &&
+            _activeServerUrl.value == activeTarget) {
+            Log.d(tag, "Already authenticated and connected to $activeTarget")
             return
         }
 
-        currentUrl = cleanUrl
+        primaryUrl = cleanPrimary
+        fallbackUrl = cleanFallback
         currentToken = cleanToken
+        reconnectAttempt = 0
+        primaryConsecutiveFailures = 0
 
+        if (primaryUrl.isBlank() && fallbackUrl.isNotBlank()) {
+            isUsingFallback = true
+            startConnection(fallbackUrl)
+            return
+        }
+
+        isUsingFallback = false
+        startConnection(primaryUrl)
+    }
+
+    private fun startConnection(targetUrl: String) {
         disconnect(updateStatus = false)
 
-        val wsUrl = buildWsUrl(currentUrl)
-        Log.d(tag, "Connecting to WebSocket: $wsUrl")
+        _activeServerUrl.update { targetUrl }
+        val wsUrl = buildWsUrl(targetUrl)
+        Log.d(tag, "Connecting to WebSocket: $wsUrl (fallback=$isUsingFallback)")
         _connectionStatus.update { ConnectionStatus.CONNECTING }
         _errorMessage.update { null }
 
+        timeoutJob?.cancel()
+        if (!isUsingFallback && fallbackUrl.isNotBlank()) {
+            timeoutJob = scope.launch {
+                delay(FAILOVER_TIMEOUT_MS)
+                if (_connectionStatus.value != ConnectionStatus.AUTHENTICATED && !isUsingFallback) {
+                    Log.w(tag, "Primary LAN connection timed out after ${FAILOVER_TIMEOUT_MS}ms. Triggering failover to $fallbackUrl")
+                    triggerFailover()
+                }
+            }
+        }
+
         transport.connect(wsUrl)
+    }
+
+    private fun triggerFailover() {
+        if (fallbackUrl.isBlank() || isUsingFallback) return
+        timeoutJob?.cancel()
+        isUsingFallback = true
+        reconnectAttempt = 0
+        startConnection(fallbackUrl)
     }
 
     override fun disconnect() = disconnect(updateStatus = true)
 
     private fun disconnect(updateStatus: Boolean) {
+        timeoutJob?.cancel()
+        timeoutJob = null
         reconnectJob?.cancel()
         reconnectJob = null
+        stopOpportunisticFailbackLoop()
         try {
             transport.disconnect(1000, "User disconnected")
         } catch (e: Exception) {
@@ -175,6 +235,50 @@ class DefaultHomeAssistantRepository(
         activeDialogEntity.update { entityId }
     }
 
+    override fun notifyOverlayShown() {
+        if (isUsingFallback && primaryUrl.isNotBlank()) {
+            probeAndFailback()
+        }
+    }
+
+    override fun probeLocalFailback() {
+        probeAndFailback()
+    }
+
+    private fun startOpportunisticFailbackLoop() {
+        failbackJob?.cancel()
+        failbackJob = scope.launch {
+            while (isActive && isUsingFallback && primaryUrl.isNotBlank()) {
+                delay(FAILBACK_CADENCE_MS)
+                probeAndFailback()
+            }
+        }
+    }
+
+    private fun stopOpportunisticFailbackLoop() {
+        failbackJob?.cancel()
+        failbackJob = null
+    }
+
+    private fun probeAndFailback() {
+        if (!isUsingFallback || primaryUrl.isBlank()) return
+        scope.launch {
+            val reachable = try {
+                endpointProbe(primaryUrl)
+            } catch (_: Exception) {
+                false
+            }
+            if (reachable && isUsingFallback) {
+                Log.d(tag, "Primary LAN endpoint $primaryUrl is reachable. Returning from fallback.")
+                stopOpportunisticFailbackLoop()
+                isUsingFallback = false
+                primaryConsecutiveFailures = 0
+                reconnectAttempt = 0
+                startConnection(primaryUrl)
+            }
+        }
+    }
+
     private fun buildWsUrl(baseUrl: String): String {
         return when {
             baseUrl.startsWith("https://") -> baseUrl.replaceFirst("https://", "wss://") + "/api/websocket"
@@ -187,14 +291,15 @@ class DefaultHomeAssistantRepository(
     }
 
     private fun scheduleReconnect() {
-        if (currentUrl.isBlank() || currentToken.isBlank()) return
+        val targetUrl = if (isUsingFallback) fallbackUrl.ifBlank { primaryUrl } else primaryUrl
+        if (targetUrl.isBlank() || currentToken.isBlank()) return
         reconnectJob?.cancel()
         reconnectJob = scope.launch {
             val backoffSeconds = (2L shl reconnectAttempt.coerceAtMost(4)).coerceAtMost(30L)
             reconnectAttempt++
-            Log.d(tag, "Attempting reconnect in ${backoffSeconds}s (attempt $reconnectAttempt)...")
+            Log.d(tag, "Attempting reconnect in ${backoffSeconds}s (attempt $reconnectAttempt) to $targetUrl...")
             delay(backoffSeconds * 1000)
-            connect(currentUrl, currentToken)
+            startConnection(targetUrl)
         }
     }
 
@@ -206,13 +311,21 @@ class DefaultHomeAssistantRepository(
             }
 
             is HAInboundMessage.AuthOk -> {
-                Log.d(tag, "Auth OK! Requesting initial states & subscribing to updates")
+                Log.d(tag, "Auth OK on ${_activeServerUrl.value}! Requesting initial states & subscribing to updates")
+                timeoutJob?.cancel()
                 reconnectAttempt = 0
+                primaryConsecutiveFailures = 0
                 _connectionStatus.update { ConnectionStatus.AUTHENTICATED }
                 _errorMessage.update { null }
                 fetchInitialStates()
                 resubscribeEntities()
                 subscribeToNotifyEvents()
+
+                if (isUsingFallback) {
+                    startOpportunisticFailbackLoop()
+                } else {
+                    stopOpportunisticFailbackLoop()
+                }
             }
 
             is HAInboundMessage.AuthInvalid -> {
@@ -502,5 +615,30 @@ class DefaultHomeAssistantRepository(
         val cmd = HAMessageCodec.encodeCallService(id, domain, service, serviceData, entityId)
         Log.d(tag, "Sending service call: $cmd")
         transport.send(cmd)
+    }
+
+    companion object {
+        const val FAILOVER_TIMEOUT_MS = 3000L
+        const val FAILBACK_CADENCE_MS = 60000L
+
+        private val probeClient: OkHttpClient by lazy {
+            OkHttpClient.Builder()
+                .connectTimeout(2000, TimeUnit.MILLISECONDS)
+                .readTimeout(2000, TimeUnit.MILLISECONDS)
+                .build()
+        }
+
+        private fun defaultHttpProbe(baseUrl: String): Boolean {
+            if (baseUrl.isBlank()) return false
+            return try {
+                val probeUrl = baseUrl.trim().removeSuffix("/") + "/manifest.json"
+                val request = okhttp3.Request.Builder().url(probeUrl).head().build()
+                probeClient.newCall(request).execute().use { response ->
+                    response.isSuccessful || response.code in 400..499
+                }
+            } catch (_: Exception) {
+                false
+            }
+        }
     }
 }

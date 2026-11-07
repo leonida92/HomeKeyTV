@@ -181,4 +181,46 @@ class HomeAssistantRepositoryTest {
         repository.unlock("lock.front_door")
         assertTrue(fakeTransport.sentMessages.any { it.contains("call_service") && it.contains("\"service\":\"unlock\"") && it.contains("lock.front_door") })
     }
+
+    @Test
+    fun dual_endpoint_failover_transitions_to_fallback_and_opportunistically_fails_back() = runTest(testDispatcher) {
+        var isProbeReachable = false
+        val customRepo = DefaultHomeAssistantRepository(
+            transport = fakeTransport,
+            prefs = fakePrefs,
+            scope = repoScope,
+            endpointProbe = { _ -> isProbeReachable }
+        )
+
+        customRepo.connect(
+            serverUrl = "http://192.168.1.100:8123",
+            fallbackServerUrl = "https://nabu.casa.test",
+            token = "my_token"
+        )
+
+        assertEquals("http://192.168.1.100:8123", customRepo.activeServerUrl.value)
+        assertEquals("ws://192.168.1.100:8123/api/websocket", fakeTransport.lastConnectedUrl)
+
+        // First failure on primary
+        fakeTransport.emitEvent(com.homekey.tv.data.api.TransportEvent.Failure(java.io.IOException("Connection refused")))
+        assertEquals("http://192.168.1.100:8123", customRepo.activeServerUrl.value)
+
+        // Second failure triggers immediate failover
+        fakeTransport.emitEvent(com.homekey.tv.data.api.TransportEvent.Failure(java.io.IOException("Host unreachable")))
+        assertEquals("https://nabu.casa.test", customRepo.activeServerUrl.value)
+        assertEquals("wss://nabu.casa.test/api/websocket", fakeTransport.lastConnectedUrl)
+
+        // Authenticate on fallback
+        fakeTransport.emitMessage("""{"type":"auth_required"}""")
+        fakeTransport.emitMessage("""{"type":"auth_ok"}""")
+        assertEquals(ConnectionStatus.AUTHENTICATED, customRepo.connectionStatus.value)
+
+        // Opportunistic failback probe returns true on dock open
+        isProbeReachable = true
+        customRepo.notifyOverlayShown()
+
+        // Restores primary local LAN
+        assertEquals("http://192.168.1.100:8123", customRepo.activeServerUrl.value)
+        assertEquals("ws://192.168.1.100:8123/api/websocket", fakeTransport.lastConnectedUrl)
+    }
 }

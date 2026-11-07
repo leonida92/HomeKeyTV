@@ -119,7 +119,7 @@ class DefaultCameraPipOverlayController(
         val wm = (uiContext.getSystemService(Context.WINDOW_SERVICE) as? WindowManager) ?: return
         windowManager = wm
 
-        val serverUrl = prefs.serverConfig.value.serverUrl
+        val serverUrl = haRepository.activeServerUrl.value.ifBlank { prefs.serverConfig.value.serverUrl }
         val accessToken = prefs.serverConfig.value.accessToken
         if (serverUrl.isBlank()) return
 

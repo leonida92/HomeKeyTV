@@ -14,6 +14,9 @@ class FakeHomeAssistantRepository : HomeAssistantRepository {
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
     override val connectionStatus: StateFlow<ConnectionStatus> = _connectionStatus.asStateFlow()
 
+    private val _activeServerUrl = MutableStateFlow("")
+    override val activeServerUrl: StateFlow<String> = _activeServerUrl.asStateFlow()
+
     private val _entities = MutableStateFlow<Map<String, HAEntityState>>(emptyMap())
     override val entities: StateFlow<Map<String, HAEntityState>> = _entities.asStateFlow()
 
@@ -29,12 +32,21 @@ class FakeHomeAssistantRepository : HomeAssistantRepository {
         _connectionStatus.update { status }
     }
 
+    fun setActiveServerUrl(url: String) {
+        _activeServerUrl.update { url }
+    }
+
     fun setEntities(entityMap: Map<String, HAEntityState>) {
         _entities.update { entityMap }
     }
 
-    override fun connect(serverUrl: String, token: String) {
+    override fun connect(serverUrl: String, fallbackServerUrl: String, token: String) {
+        _activeServerUrl.update { serverUrl.ifBlank { fallbackServerUrl } }
         _connectionStatus.update { ConnectionStatus.AUTHENTICATED }
+    }
+
+    override fun connect(serverUrl: String, token: String) {
+        connect(serverUrl, "", token)
     }
 
     override fun disconnect() {
@@ -46,6 +58,10 @@ class FakeHomeAssistantRepository : HomeAssistantRepository {
     }
 
     override fun setActiveDialogEntity(entityId: String?) {}
+
+    override fun notifyOverlayShown() {}
+
+    override fun probeLocalFailback() {}
 
     override fun toggleEntity(entityId: String) {
         serviceCalls.add("toggle:$entityId")

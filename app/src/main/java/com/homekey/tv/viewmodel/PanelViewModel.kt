@@ -66,8 +66,9 @@ class PanelViewModel(
     val recentApps: StateFlow<List<String>> = prefs.recentAppsConfig.map { it.recentPackages }
         .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.recentPackages)
 
-    val serverUrl: StateFlow<String> = prefs.serverConfig.map { it.serverUrl }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.serverUrl)
+    val serverUrl: StateFlow<String> = haRepo.activeServerUrl
+        .map { active -> active.ifBlank { prefs.serverConfig.value.serverUrl } }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, haRepo.activeServerUrl.value.ifBlank { prefs.serverConfig.value.serverUrl })
     val accessToken: StateFlow<String> = prefs.serverConfig.map { it.accessToken }
         .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.accessToken)
     val haEnabled: StateFlow<Boolean> = prefs.serverConfig.map { it.haEnabled }
@@ -85,6 +86,7 @@ class PanelViewModel(
 
     fun notifyOverlayShown() {
         _overlayOpenEpoch.value = android.os.SystemClock.uptimeMillis()
+        haRepo.notifyOverlayShown()
     }
 
     private var lastOpenedDialogEntity: HAEntityState? = null
@@ -167,8 +169,8 @@ class PanelViewModel(
     fun connectToHomeAssistant() {
         val server = prefs.serverConfig.value
         if (!server.haEnabled) return
-        if (server.serverUrl.isNotBlank() && server.accessToken.isNotBlank()) {
-            haRepo.connect(server.serverUrl, server.accessToken)
+        if (server.isConfigured) {
+            haRepo.connect(server.serverUrl, server.fallbackServerUrl, server.accessToken)
         }
     }
 
