@@ -22,6 +22,7 @@ Enforced during code reviews and automated verification.
 - **Interface Segregation**: ViewModels, services, and receivers must depend on `PreferencesRepository` and `HomeAssistantRepository`, never directly on concrete DataStore implementations or network sockets.
 - **Network Decoupling & ACL**: All Home Assistant wire protocol translation is isolated in `HAMessageCodec`. Network socket I/O is abstracted behind `HATransport`. Orchestration, reconnection backoff, and entity reconciliation belong in `HomeAssistantRepository`.
 - **No Speculative APIs**: Repository interfaces and wire message encoders must strictly reflect genuine caller intents and reactive domain state, omitting synthetic test hooks or speculative parameters (e.g. unbuilt PIN codes, unused flags). Expose only operations invoked by active UI callers.
+- **Pure Input & Policy Engines**: Timing-sensitive gesture recognition and key classification (debouncing, multi-press, long-press, app-scoping) must be isolated into pure Kotlin engines with pluggable time abstractions (`TimeScheduler`) to enable deterministic JVM unit testing without Android SDK or Looper dependencies.
 - **Test Doubles**: Every public repository and transport interface must have an in-memory fake (`FakePreferencesRepository`, `FakeHomeAssistantRepository`, `FakeHATransport`) to preserve fast, offline unit testability.
 
 ## 4. Verification & Testing

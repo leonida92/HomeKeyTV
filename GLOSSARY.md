@@ -55,3 +55,7 @@ _Avoid_: SpeedPopup, FanSettings
 **Lock Control**:
 Dedicated TV overlay controls for security locks, providing dynamic status visuals (locked green / unlocked red) and two-step unlock confirmation.
 _Avoid_: SecurityPopup, DoorDialog
+
+**Remote Input Engine**:
+Pure Kotlin gesture and timing engine responsible for classifying remote key events, contact bounce filtering, multi-press recognition, and app-scoping resolution.
+_Avoid_: KeyClassifier, GestureRecognizer, InputManager

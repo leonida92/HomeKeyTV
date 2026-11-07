@@ -19,7 +19,17 @@ data class ButtonRemapConfig(
     val doublePressAction: RemapAction? = null,
     val longPressAction: RemapAction? = null,
     val appScope: String? = null // null = global (all apps), or specific packageName e.g. "com.limelight"
-)
+) {
+    val isDockToggle: Boolean
+        get() = singlePressAction?.type == "OPEN_DOCK" ||
+                doublePressAction?.type == "OPEN_DOCK" ||
+                longPressAction?.type == "OPEN_DOCK"
+
+    val isPassThroughOnly: Boolean
+        get() = singlePressAction?.type == "PASS_THROUGH" &&
+                doublePressAction == null &&
+                longPressAction == null
+}
 
 @Serializable
 data class PinnedAppConfig(
