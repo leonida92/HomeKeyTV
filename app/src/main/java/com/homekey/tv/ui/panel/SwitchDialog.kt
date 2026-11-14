@@ -213,3 +213,177 @@ fun SwitchDialog(
         }
     }
 }
+
+@Composable
+fun MinimalSwitchPopup(
+    entity: HAEntityState,
+    isVertical: Boolean = false,
+    onToggle: () -> Unit,
+    onTurnOn: () -> Unit,
+    onTurnOff: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isOn = entity.state.equals("on", ignoreCase = true)
+
+    val initialFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        try {
+            initialFocus.requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    if (isVertical) {
+        MinimalVerticalCardContainer {
+            // Header: Icon + Title + State + Close
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(if (isOn) Color(0x334CAF50) else Color(0x22475569)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PowerSettingsNew,
+                        contentDescription = null,
+                        tint = if (isOn) Color(0xFF4CAF50) else Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entity.friendlyName,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TV_Text_Primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = if (isOn) "ON" else "OFF",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isOn) Color(0xFF4CAF50) else TV_Text_Secondary
+                    )
+                }
+                MinimalIconButton(
+                    icon = Icons.Default.Close,
+                    description = "Close",
+                    onClick = onDismiss
+                )
+            }
+
+            MinimalCardDivider()
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                MinimalChip(
+                    text = "OFF",
+                    isSelected = !isOn,
+                    modifier = Modifier.weight(1f),
+                    onClick = onTurnOff
+                )
+                MinimalChip(
+                    text = "TOGGLE",
+                    isSelected = false,
+                    modifier = Modifier
+                        .weight(1.2f)
+                        .focusRequester(initialFocus),
+                    onClick = onToggle
+                )
+                MinimalChip(
+                    text = "ON",
+                    isSelected = isOn,
+                    modifier = Modifier.weight(1f),
+                    onClick = onTurnOn
+                )
+            }
+        }
+    } else {
+        MinimalBarContainer {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(end = 12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(if (isOn) Color(0x334CAF50) else Color(0x22475569)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.PowerSettingsNew,
+                        contentDescription = null,
+                        tint = if (isOn) Color(0xFF4CAF50) else Color.White,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = entity.friendlyName,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TV_Text_Primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = if (isOn) "ON" else "OFF",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isOn) Color(0xFF4CAF50) else TV_Text_Secondary
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(28.dp)
+                    .background(Color(0x33FFFFFF))
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+
+            MinimalChip(
+                text = "TURN OFF",
+                isSelected = !isOn,
+                onClick = onTurnOff
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            MinimalChip(
+                text = "TOGGLE",
+                isSelected = false,
+                modifier = Modifier.focusRequester(initialFocus),
+                onClick = onToggle
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            MinimalChip(
+                text = "TURN ON",
+                isSelected = isOn,
+                onClick = onTurnOn
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            MinimalIconButton(
+                icon = Icons.Default.Close,
+                description = "Close",
+                onClick = onDismiss
+            )
+        }
+    }
+}

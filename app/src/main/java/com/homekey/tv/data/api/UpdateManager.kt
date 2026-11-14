@@ -17,14 +17,26 @@ import java.io.FileOutputStream
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
-class UpdateManager(private val context: Context) {
+interface AppUpdateRepository {
+    suspend fun checkForUpdates(currentVersion: String): AppUpdateState
+    suspend fun downloadApk(downloadUrl: String, onProgress: (Int) -> Unit): Result<File>
+}
+
+interface AppInstaller {
+    fun promptInstallApk(apkFile: File)
+    fun openBrowserUrl(url: String)
+}
+
+class UpdateManager(private val context: Context) : AppUpdateRepository, AppInstaller {
 
     private val tag = "UpdateManager"
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true }
-    private val httpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(20, TimeUnit.SECONDS)
-        .build()
+    private val json by lazy { Json { ignoreUnknownKeys = true; isLenient = true } }
+    private val httpClient by lazy {
+        OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .build()
+    }
 
     companion object {
         const val GITHUB_OWNER = "leonida92"
@@ -49,7 +61,7 @@ class UpdateManager(private val context: Context) {
         }
     }
 
-    suspend fun checkForUpdates(currentVersion: String): AppUpdateState = withContext(Dispatchers.IO) {
+    override suspend fun checkForUpdates(currentVersion: String): AppUpdateState = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
                 .url(GITHUB_API_URL)
@@ -89,7 +101,7 @@ class UpdateManager(private val context: Context) {
         }
     }
 
-    suspend fun downloadApk(downloadUrl: String, onProgress: (Int) -> Unit): Result<File> = withContext(Dispatchers.IO) {
+    override suspend fun downloadApk(downloadUrl: String, onProgress: (Int) -> Unit): Result<File> = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
                 .url(downloadUrl)
@@ -131,7 +143,7 @@ class UpdateManager(private val context: Context) {
         }
     }
 
-    fun promptInstallApk(apkFile: File) {
+    override fun promptInstallApk(apkFile: File) {
         try {
             if (!context.packageManager.canRequestPackageInstalls()) {
                 val manageIntent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
@@ -154,7 +166,7 @@ class UpdateManager(private val context: Context) {
         }
     }
 
-    fun openBrowserUrl(url: String) {
+    override fun openBrowserUrl(url: String) {
         try {
             val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).apply {
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK

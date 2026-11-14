@@ -1,8 +1,5 @@
 package com.homekey.tv.ui.panel
 
-import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.Drawable
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -13,6 +10,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import com.homekey.tv.data.models.DomainColorPalette
+import com.homekey.tv.util.drawableToBitmapSafe
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
@@ -49,21 +47,7 @@ fun rememberAppIconBitmap(packageName: String?): ImageBitmap? {
 }
 
 fun drawableToImageBitmap(drawable: Drawable): ImageBitmap? {
-    return try {
-        if (drawable is BitmapDrawable && drawable.bitmap != null) {
-            drawable.bitmap.asImageBitmap()
-        } else {
-            val width = if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 96
-            val height = if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 96
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            drawable.setBounds(0, 0, canvas.width, canvas.height)
-            drawable.draw(canvas)
-            bitmap.asImageBitmap()
-        }
-    } catch (e: Exception) {
-        null
-    }
+    return drawableToBitmapSafe(drawable)?.asImageBitmap()
 }
 
 internal fun getActiveColor(domain: String, palette: DomainColorPalette = DomainColorPalette.CLASSIC): Color {

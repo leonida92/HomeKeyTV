@@ -1,31 +1,35 @@
 package com.homekey.tv.viewmodel
 
-import android.annotation.SuppressLint
 import android.app.Application
-import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.Canvas
-import android.graphics.drawable.BitmapDrawable
-import android.graphics.drawable.Drawable
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.homekey.tv.data.api.AppInstaller
+import com.homekey.tv.data.api.AppUpdateRepository
 import com.homekey.tv.data.api.HomeAssistantRepository
 import com.homekey.tv.data.api.UpdateManager
 import com.homekey.tv.data.local.DataStorePreferencesRepository
+import com.homekey.tv.data.local.DockConfig
 import com.homekey.tv.data.local.PreferencesRepository
+import com.homekey.tv.data.local.RecentAppsConfig
+import com.homekey.tv.data.local.ServerConfig
+import com.homekey.tv.data.local.ThemeConfig
 import com.homekey.tv.data.models.AppUpdateState
 import com.homekey.tv.data.models.ButtonRemapConfig
 import com.homekey.tv.data.models.ConnectionStatus
-import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.InstalledAppInfo
 import com.homekey.tv.data.models.PinnedAppConfig
-import com.homekey.tv.data.server.WebSetupServerManager
+import com.homekey.tv.service.AdbAccessibilityProvisioner
 import com.homekey.tv.service.LocalAdbManager
-import com.homekey.tv.service.RemoteButtonRemapService
-import com.homekey.tv.util.NetworkUtils
-import com.homekey.tv.util.QRCodeGenerator
+import com.homekey.tv.service.RemoteInputCoordinator
+import com.homekey.tv.util.AndroidInstalledAppsProvider
+import com.homekey.tv.util.DefaultSetupQrProvider
+import com.homekey.tv.util.InstalledAppsProvider
+import com.homekey.tv.util.SetupQrProvider
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -34,19 +38,26 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import java.io.File
 
 class SettingsViewModel(
     application: Application,
     private val prefs: PreferencesRepository,
-    private val haRepo: HomeAssistantRepository = HomeAssistantRepository.getInstance()
+    private val haRepo: HomeAssistantRepository = HomeAssistantRepository.getInstance(),
+    private val remoteInputCoordinator: RemoteInputCoordinator = RemoteInputCoordinator.getInstance(),
+    private val adbProvisioner: AdbAccessibilityProvisioner = AdbAccessibilityProvisioner.getInstance(),
+    appUpdateRepository: AppUpdateRepository? = null,
+    appInstaller: AppInstaller? = null,
+    private val installedAppsProvider: InstalledAppsProvider = AndroidInstalledAppsProvider(application),
+    private val setupQrProvider: SetupQrProvider = DefaultSetupQrProvider,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) : AndroidViewModel(application) {
 
     constructor(application: Application) : this(
         application,
-        DataStorePreferencesRepository.getInstance(application),
-        HomeAssistantRepository.getInstance()
+        DataStorePreferencesRepository.getInstance(application)
     )
 
     constructor(application: Application, prefs: PreferencesRepository) : this(
@@ -55,10 +66,13 @@ class SettingsViewModel(
         HomeAssistantRepository.getInstance()
     )
 
-    private val updateManager = UpdateManager(application)
+    private val defaultUpdateManager: UpdateManager? =
+        if (appUpdateRepository == null || appInstaller == null) UpdateManager(application) else null
+    private val appUpdateRepository: AppUpdateRepository = appUpdateRepository ?: defaultUpdateManager!!
+    private val appInstaller: AppInstaller = appInstaller ?: defaultUpdateManager!!
 
     val appVersion: String = try {
-        application.packageManager.getPackageInfo(application.packageName, 0).versionName ?: "1.6.6"
+        application.packageManager?.getPackageInfo(application.packageName, 0)?.versionName ?: "1.6.6"
     } catch (_: Exception) {
         "1.6.6"
     }
@@ -66,40 +80,13 @@ class SettingsViewModel(
     private val _updateState = MutableStateFlow<AppUpdateState>(AppUpdateState.Idle)
     val updateState: StateFlow<AppUpdateState> = _updateState.asStateFlow()
 
-    val haEnabled: StateFlow<Boolean> = prefs.serverConfig.map { it.haEnabled }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.haEnabled)
-    val serverUrl: StateFlow<String> = prefs.serverConfig.map { it.serverUrl }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.serverUrl)
-    val fallbackServerUrl: StateFlow<String> = prefs.serverConfig.map { it.fallbackServerUrl }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.fallbackServerUrl)
+    val serverConfig: StateFlow<ServerConfig> = prefs.serverConfig
+    val dockConfig: StateFlow<DockConfig> = prefs.dockConfig
+    val themeConfig: StateFlow<ThemeConfig> = prefs.themeConfig
+    val recentAppsConfig: StateFlow<RecentAppsConfig> = prefs.recentAppsConfig
+
     val activeServerUrl: StateFlow<String> = haRepo.activeServerUrl
-    val accessToken: StateFlow<String> = prefs.serverConfig.map { it.accessToken }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.accessToken)
-    val pairingPin: StateFlow<String> = prefs.serverConfig.map { it.pairingPin }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.pairingPin)
-
-    val dockLayout: StateFlow<String> = prefs.dockConfig.map { it.layout }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.layout)
-    val panelLayout: StateFlow<String> get() = dockLayout
-    val popupStyle: StateFlow<String> = prefs.dockConfig.map { it.popupStyle }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.popupStyle)
-    val cameraPopupStyle: StateFlow<String> = prefs.dockConfig.map { it.cameraPopupStyle }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.cameraPopupStyle)
-    val cameraCompactSize: StateFlow<String> = prefs.dockConfig.map { it.cameraCompactSize }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.cameraCompactSize)
-
-    val recentAppsEnabled: StateFlow<Boolean> = prefs.recentAppsConfig.map { it.enabled }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.enabled)
-    val recentAppsCount: StateFlow<Int> = prefs.recentAppsConfig.map { it.maxCount }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.maxCount)
-
     val connectionStatus: StateFlow<ConnectionStatus> = haRepo.connectionStatus
-    val themePreset: StateFlow<String> = prefs.themeConfig.map { it.preset }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.preset)
-    val customThemeColors: StateFlow<Map<String, String>> = prefs.themeConfig.map { it.customColors }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.customColors)
-    val activePalette: StateFlow<DomainColorPalette> = prefs.themeConfig.map { it.activePalette }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.activePalette)
 
     // Total entity count, re-emitted only when the number actually changes
     val entityCount: StateFlow<Int> = haRepo.entities
@@ -115,9 +102,9 @@ class SettingsViewModel(
 
     val pinnedApps: StateFlow<List<PinnedAppConfig>> = prefs.pinnedApps
     val buttonRemaps: StateFlow<List<ButtonRemapConfig>> = prefs.buttonRemaps
-    val isAccessibilityEnabled: StateFlow<Boolean> = RemoteButtonRemapService.isServiceRunning
+    val isAccessibilityEnabled: StateFlow<Boolean> = remoteInputCoordinator.isServiceRunning
     val volumeFixEnabled: StateFlow<Boolean> = prefs.volumeFixEnabled
-    val learnedKey: StateFlow<Pair<Int, String>?> = RemoteButtonRemapService.lastLearnedKeyCode
+    val learnedKey: StateFlow<Pair<Int, String>?> = remoteInputCoordinator.learnedKey
 
     private val _adbSetupState = MutableStateFlow<AdbSetupState>(AdbSetupState.Idle)
     val adbSetupState: StateFlow<AdbSetupState> = _adbSetupState.asStateFlow()
@@ -146,120 +133,26 @@ class SettingsViewModel(
             prefs.updateServerConfig { it.copy(haEnabled = enabled) }
         }
         if (enabled) {
-            WebSetupServerManager.start(prefs) {
-                val s = prefs.serverConfig.value
-                if (s.isConfigured && s.haEnabled) {
-                    haRepo.connect(s.serverUrl, s.fallbackServerUrl, s.accessToken)
-                }
-            }
-            val s = prefs.serverConfig.value
-            if (s.isConfigured) {
-                haRepo.connect(s.serverUrl, s.fallbackServerUrl, s.accessToken)
-            }
             loadSetupQr()
-        } else {
-            WebSetupServerManager.stop()
-            haRepo.disconnect()
         }
     }
 
     fun loadSetupQr() {
-        viewModelScope.launch(Dispatchers.Default) {
-            val ip = withContext(Dispatchers.IO) { NetworkUtils.getLocalIpAddress() }
+        viewModelScope.launch {
+            val ip = setupQrProvider.getLocalIpAddress()
             if (ip != null) {
                 val url = "http://$ip:8124"
-                _setupUrl.value = url
-                _qrCodeBitmap.value = QRCodeGenerator.generateQRCode(url, 400)
+                _setupUrl.update { url }
+                _qrCodeBitmap.update { setupQrProvider.generateQrCode(url, 400) }
             }
         }
     }
 
-    @SuppressLint("QueryPermissionsNeeded")
     fun loadInstalledApps() {
-        viewModelScope.launch(Dispatchers.IO) {
-            val app = getApplication<Application>()
-            val pm = app.packageManager ?: return@launch
-            val myPkg = app.packageName ?: ""
-            val apps = mutableListOf<InstalledAppInfo>()
-            val seenPackages = mutableSetOf<String>()
-
-            val leanbackIntent = Intent(Intent.ACTION_MAIN, null).apply {
-                addCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
-            }
-            val leanbackList = pm.queryIntentActivities(leanbackIntent, 0)
-            for (info in leanbackList) {
-                val pkg = info.activityInfo.packageName
-                if (pkg != myPkg && seenPackages.add(pkg)) {
-                    apps.add(
-                        InstalledAppInfo(
-                            packageName = pkg,
-                            appName = info.loadLabel(pm).toString(),
-                            icon = info.loadIcon(pm)
-                        )
-                    )
-                }
-            }
-
-            val launcherIntent = Intent(Intent.ACTION_MAIN, null).apply {
-                addCategory(Intent.CATEGORY_LAUNCHER)
-            }
-            val standardList = pm.queryIntentActivities(launcherIntent, 0)
-            for (info in standardList) {
-                val pkg = info.activityInfo.packageName
-                if (pkg != myPkg && seenPackages.add(pkg)) {
-                    apps.add(
-                        InstalledAppInfo(
-                            packageName = pkg,
-                            appName = info.loadLabel(pm).toString(),
-                            icon = info.loadIcon(pm)
-                        )
-                    )
-                }
-            }
-
-            val installedList = pm.getInstalledApplications(0)
-            for (appInfo in installedList) {
-                val pkg = appInfo.packageName
-                if (pkg != myPkg && !seenPackages.contains(pkg)) {
-                    val launchIntent = pm.getLaunchIntentForPackage(pkg)
-                    if (launchIntent != null) {
-                        seenPackages.add(pkg)
-                        apps.add(
-                            InstalledAppInfo(
-                                packageName = pkg,
-                                appName = appInfo.loadLabel(pm).toString(),
-                                icon = appInfo.loadIcon(pm)
-                            )
-                        )
-                    }
-                }
-            }
-
-            val sorted = apps.sortedBy { it.appName.lowercase() }
-            val icons = HashMap<String, Bitmap>()
-            for (installedApp in sorted) {
-                installedApp.icon?.let { drawable ->
-                    try {
-                        drawable.toBitmapSafe()?.let { icons[installedApp.packageName] = it }
-                    } catch (_: Exception) {}
-                }
-            }
-            _appIcons.value = icons
-            _installedApps.value = sorted
-        }
-    }
-
-    private fun Drawable.toBitmapSafe(): Bitmap? {
-        return if (this is BitmapDrawable && bitmap != null) {
-            bitmap
-        } else {
-            val width = if (intrinsicWidth > 0) intrinsicWidth else 96
-            val height = if (intrinsicHeight > 0) intrinsicHeight else 96
-            val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            setBounds(0, 0, canvas.width, canvas.height)
-            draw(canvas)
-            bitmap
+        viewModelScope.launch {
+            val snapshot = installedAppsProvider.loadInstalledApps()
+            _appIcons.update { snapshot.icons }
+            _installedApps.update { snapshot.apps }
         }
     }
 
@@ -268,8 +161,6 @@ class SettingsViewModel(
             prefs.updateDockConfig { it.copy(layout = layout) }
         }
     }
-
-    fun setPanelLayout(layout: String) = setDockLayout(layout)
 
     fun setPopupStyle(style: String) {
         viewModelScope.launch {
@@ -368,114 +259,124 @@ class SettingsViewModel(
     }
 
     fun setLearnMode(active: Boolean) {
-        RemoteButtonRemapService.setLearnMode(active)
+        remoteInputCoordinator.setLearnMode(active)
     }
 
     fun clearLearnedKey() {
-        RemoteButtonRemapService.clearLearnedKey()
+        remoteInputCoordinator.clearLearnedKey()
     }
 
     fun checkForUpdates() {
         viewModelScope.launch {
-            _updateState.value = AppUpdateState.Checking
-            val result = updateManager.checkForUpdates(appVersion)
-            _updateState.value = result
+            _updateState.update { AppUpdateState.Checking }
+            val result = appUpdateRepository.checkForUpdates(appVersion)
+            _updateState.update { result }
         }
     }
 
     fun downloadAndInstallUpdate(downloadUrl: String) {
         viewModelScope.launch {
-            _updateState.value = AppUpdateState.Downloading(0)
-            val result = updateManager.downloadApk(downloadUrl) { progress ->
-                _updateState.value = AppUpdateState.Downloading(progress)
+            _updateState.update { AppUpdateState.Downloading(0) }
+            val result = appUpdateRepository.downloadApk(downloadUrl) { progress ->
+                _updateState.update { AppUpdateState.Downloading(progress) }
             }
             result.onSuccess { apkFile ->
-                _updateState.value = AppUpdateState.ReadyToInstall(apkFile)
-                updateManager.promptInstallApk(apkFile)
+                _updateState.update { AppUpdateState.ReadyToInstall(apkFile) }
+                appInstaller.promptInstallApk(apkFile)
             }.onFailure { error ->
-                _updateState.value = AppUpdateState.Error(error.message ?: "Download failed")
+                _updateState.update { AppUpdateState.Error(error.message ?: "Download failed") }
             }
         }
     }
 
-    fun installApk(file: java.io.File) {
-        updateManager.promptInstallApk(file)
+    fun installApk(file: File) {
+        appInstaller.promptInstallApk(file)
     }
 
     fun openReleaseUrl(url: String) {
-        updateManager.openBrowserUrl(url)
+        appInstaller.openBrowserUrl(url)
     }
 
     fun resetUpdateState() {
-        _updateState.value = AppUpdateState.Idle
+        _updateState.update { AppUpdateState.Idle }
     }
 
     fun enableAccessibilityViaAdb(port: Int = LocalAdbManager.DEFAULT_PORT) {
         if (_adbSetupState.value is AdbSetupState.Connecting) return
-        viewModelScope.launch(Dispatchers.IO) {
-            _adbSetupState.value = AdbSetupState.Connecting(
-                "Connecting to local ADB (127.0.0.1:$port)...\nIf prompted on screen, check 'Always allow' and press OK."
-            )
+        viewModelScope.launch(ioDispatcher) {
+            _adbSetupState.update {
+                AdbSetupState.Connecting(
+                    "Connecting to local ADB (127.0.0.1:$port)...\nIf prompted on screen, check 'Always allow' and press OK."
+                )
+            }
             val context = getApplication<Application>()
 
-            if (LocalAdbManager.tryEnableViaSecureSettings(context)) {
+            if (adbProvisioner.tryEnableViaSecureSettings(context)) {
                 for (i in 1..10) {
-                    if (RemoteButtonRemapService.isServiceRunning.value) {
-                        _adbSetupState.value = AdbSetupState.Success(
-                            "Permissions active! Accessibility service is connected."
-                        )
+                    if (remoteInputCoordinator.isServiceRunning.value) {
+                        _adbSetupState.update {
+                            AdbSetupState.Success(
+                                "Permissions active! Accessibility service is connected."
+                            )
+                        }
                         return@launch
                     }
-                    kotlinx.coroutines.delay(100)
+                    delay(100)
                 }
             }
 
-            val result = LocalAdbManager.enableAccessibilityService(
+            val result = adbProvisioner.enableAccessibilityService(
                 context = context,
                 port = port,
                 onConnecting = {
-                    _adbSetupState.value = AdbSetupState.Connecting(
-                        "Connecting to local ADB (127.0.0.1:$port)...\nIf prompted on screen, check 'Always allow' and press OK."
-                    )
+                    _adbSetupState.update {
+                        AdbSetupState.Connecting(
+                            "Connecting to local ADB (127.0.0.1:$port)...\nIf prompted on screen, check 'Always allow' and press OK."
+                        )
+                    }
                 },
                 onStatusUpdate = { status ->
-                    _adbSetupState.value = AdbSetupState.Connecting(status)
+                    _adbSetupState.update { AdbSetupState.Connecting(status) }
                 }
             )
 
             when (result) {
                 is LocalAdbManager.AdbResult.Success -> {
-                    var isBound = RemoteButtonRemapService.isServiceRunning.value
+                    var isBound = remoteInputCoordinator.isServiceRunning.value
                     for (i in 1..30) {
                         if (isBound) break
-                        kotlinx.coroutines.delay(100)
-                        isBound = RemoteButtonRemapService.isServiceRunning.value
+                        delay(100)
+                        isBound = remoteInputCoordinator.isServiceRunning.value
                     }
                     if (isBound) {
-                        _adbSetupState.value = AdbSetupState.Success(
-                            "Permissions granted! Accessibility service is now active."
-                        )
+                        _adbSetupState.update {
+                            AdbSetupState.Success(
+                                "Permissions granted! Accessibility service is now active."
+                            )
+                        }
                     } else {
-                        _adbSetupState.value = AdbSetupState.Success(
-                            "Permissions configured. Service should connect shortly."
-                        )
+                        _adbSetupState.update {
+                            AdbSetupState.Success(
+                                "Permissions configured. Service should connect shortly."
+                            )
+                        }
                     }
                 }
                 is LocalAdbManager.AdbResult.AdbDisabled -> {
-                    _adbSetupState.value = AdbSetupState.Error(result.message)
+                    _adbSetupState.update { AdbSetupState.Error(result.message) }
                 }
                 is LocalAdbManager.AdbResult.AuthTimeout -> {
-                    _adbSetupState.value = AdbSetupState.Error(result.message)
+                    _adbSetupState.update { AdbSetupState.Error(result.message) }
                 }
                 is LocalAdbManager.AdbResult.Error -> {
-                    _adbSetupState.value = AdbSetupState.Error(result.message)
+                    _adbSetupState.update { AdbSetupState.Error(result.message) }
                 }
             }
         }
     }
 
     fun resetAdbSetupState() {
-        _adbSetupState.value = AdbSetupState.Idle
+        _adbSetupState.update { AdbSetupState.Idle }
     }
 }
 

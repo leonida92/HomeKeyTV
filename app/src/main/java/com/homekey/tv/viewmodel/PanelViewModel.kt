@@ -4,15 +4,21 @@ import android.app.Application
 import android.content.Intent
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.homekey.tv.data.api.CameraFeedState
 import com.homekey.tv.data.api.HomeAssistantRepository
+import com.homekey.tv.data.api.MjpegCameraStreamClient
 import com.homekey.tv.data.local.DataStorePreferencesRepository
+import com.homekey.tv.data.local.DockConfig
 import com.homekey.tv.data.local.PreferencesRepository
+import com.homekey.tv.data.local.RecentAppsConfig
+import com.homekey.tv.data.local.ServerConfig
+import com.homekey.tv.data.local.ThemeConfig
 import com.homekey.tv.data.models.ConnectionStatus
-import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.PinnedAppConfig
 import com.homekey.tv.data.models.PinnedEntityConfig
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 
@@ -22,7 +28,8 @@ data class DockItem(
     val isApp: Boolean = false,
     val packageName: String? = null,
     val entity: HAEntityState? = null,
-    val customIcon: String? = null
+    val customIcon: String? = null,
+    val resolvedHumidity: Float? = null
 )
 
 class PanelViewModel(
@@ -49,43 +56,16 @@ class PanelViewModel(
     val pinnedConfigs: StateFlow<List<PinnedEntityConfig>> = prefs.pinnedEntities
     val pinnedApps: StateFlow<List<PinnedAppConfig>> = prefs.pinnedApps
 
-    val dockLayout: StateFlow<String> = prefs.dockConfig.map { it.layout }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.layout)
-    val panelLayout: StateFlow<String> get() = dockLayout
-    val popupStyle: StateFlow<String> = prefs.dockConfig.map { it.popupStyle }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.popupStyle)
-    val cameraPopupStyle: StateFlow<String> = prefs.dockConfig.map { it.cameraPopupStyle }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.cameraPopupStyle)
-    val cameraCompactSize: StateFlow<String> = prefs.dockConfig.map { it.cameraCompactSize }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.dockConfig.value.cameraCompactSize)
-
-    val recentAppsEnabled: StateFlow<Boolean> = prefs.recentAppsConfig.map { it.enabled }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.enabled)
-    val recentAppsCount: StateFlow<Int> = prefs.recentAppsConfig.map { it.maxCount }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.maxCount)
-    val recentApps: StateFlow<List<String>> = prefs.recentAppsConfig.map { it.recentPackages }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.recentAppsConfig.value.recentPackages)
-
-    val serverUrl: StateFlow<String> = haRepo.activeServerUrl
-        .map { active -> active.ifBlank { prefs.serverConfig.value.serverUrl } }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, haRepo.activeServerUrl.value.ifBlank { prefs.serverConfig.value.serverUrl })
-    val accessToken: StateFlow<String> = prefs.serverConfig.map { it.accessToken }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.accessToken)
-    val haEnabled: StateFlow<Boolean> = prefs.serverConfig.map { it.haEnabled }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.haEnabled)
-    val themePreset: StateFlow<String> = prefs.themeConfig.map { it.preset }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.preset)
-    val activePalette: StateFlow<DomainColorPalette> = prefs.themeConfig.map { it.activePalette }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.themeConfig.value.activePalette)
-
-    val isConfigured: StateFlow<Boolean> = prefs.serverConfig.map { it.isConfigured }
-        .stateIn(viewModelScope, SharingStarted.Eagerly, prefs.serverConfig.value.isConfigured)
+    val dockConfig: StateFlow<DockConfig> = prefs.dockConfig
+    val themeConfig: StateFlow<ThemeConfig> = prefs.themeConfig
+    val recentAppsConfig: StateFlow<RecentAppsConfig> = prefs.recentAppsConfig
+    val serverConfig: StateFlow<ServerConfig> = prefs.serverConfig
 
     private val _overlayOpenEpoch = MutableStateFlow(0L)
     val overlayOpenEpoch: StateFlow<Long> = _overlayOpenEpoch.asStateFlow()
 
     fun notifyOverlayShown() {
-        _overlayOpenEpoch.value = android.os.SystemClock.uptimeMillis()
+        _overlayOpenEpoch.update { android.os.SystemClock.uptimeMillis() }
         haRepo.notifyOverlayShown()
     }
 
@@ -99,6 +79,13 @@ class PanelViewModel(
         else entities[id] ?: (if (lastOpenedDialogEntity?.entityId == id) lastOpenedDialogEntity else null)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    val activeDialogHumidity: StateFlow<Float?> = combine(
+        activeDialogEntity,
+        allEntities
+    ) { entity, entities ->
+        entity?.resolveClimateHumidity(entities)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     private val _isReorderMode = MutableStateFlow(false)
     val isReorderMode: StateFlow<Boolean> = _isReorderMode.asStateFlow()
 
@@ -109,9 +96,9 @@ class PanelViewModel(
         allEntities,
         pinnedConfigs,
         pinnedApps,
-        haEnabled
-    ) { entities, pinned, apps, enabled ->
-        buildDockItems(entities, if (enabled) pinned else emptyList(), apps)
+        serverConfig
+    ) { entities, pinned, apps, server ->
+        buildDockItems(entities, if (server.haEnabled) pinned else emptyList(), apps)
     }
         .flowOn(Dispatchers.Default)
         .distinctUntilChanged()
@@ -133,7 +120,8 @@ class PanelViewModel(
                         displayName = p.customName ?: entity.friendlyName,
                         isApp = false,
                         entity = entity,
-                        customIcon = p.customIcon
+                        customIcon = p.customIcon,
+                        resolvedHumidity = entity.resolveClimateHumidity(entities)
                     )
                 )
             }
@@ -155,14 +143,17 @@ class PanelViewModel(
     init {
         connectToHomeAssistant()
         viewModelScope.launch {
-            haEnabled.collect { enabled ->
-                if (enabled) {
-                    connectToHomeAssistant()
-                } else {
-                    closeEntityDialog()
-                    haRepo.disconnect()
+            serverConfig
+                .map { it.haEnabled }
+                .distinctUntilChanged()
+                .collect { enabled ->
+                    if (enabled) {
+                        connectToHomeAssistant()
+                    } else {
+                        closeEntityDialog()
+                        haRepo.disconnect()
+                    }
                 }
-            }
         }
     }
 
@@ -179,14 +170,15 @@ class PanelViewModel(
     }
 
     fun launchApp(packageName: String) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch {
             prefs.recordRecentApp(packageName)
         }
-        val pm = getApplication<Application>().packageManager
+        val app = getApplication<Application>()
+        val pm = app.packageManager ?: return
         val launchIntent = pm.getLeanbackLaunchIntentForPackage(packageName) ?: pm.getLaunchIntentForPackage(packageName)
         if (launchIntent != null) {
             launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            getApplication<Application>().startActivity(launchIntent)
+            app.startActivity(launchIntent)
         }
     }
 
@@ -210,12 +202,12 @@ class PanelViewModel(
 
     fun openEntityDialog(entity: HAEntityState) {
         lastOpenedDialogEntity = entity
-        _activeDialogEntityId.value = entity.entityId
+        _activeDialogEntityId.update { entity.entityId }
         haRepo.setActiveDialogEntity(entity.entityId)
     }
 
     fun closeEntityDialog() {
-        _activeDialogEntityId.value = null
+        _activeDialogEntityId.update { null }
         lastOpenedDialogEntity = null
         haRepo.setActiveDialogEntity(null)
     }
@@ -283,20 +275,44 @@ class PanelViewModel(
         haRepo.mediaMute(entityId, !currentMute)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
+    fun observeCameraFeed(
+        entityId: String,
+        reconnectTrigger: Flow<Int> = flowOf(0),
+        maxTargetWidthPx: Int = MjpegCameraStreamClient.DEFAULT_MAX_TARGET_WIDTH_PX
+    ): Flow<CameraFeedState> {
+        val effectiveServerUrlFlow = combine(
+            haRepo.activeServerUrl,
+            prefs.serverConfig
+        ) { active, server ->
+            active.ifBlank { server.serverUrl.ifBlank { server.fallbackServerUrl } }
+        }.distinctUntilChanged()
+
+        return prefs.serverConfig
+            .map { it.accessToken }
+            .distinctUntilChanged()
+            .flatMapLatest { accessToken ->
+                MjpegCameraStreamClient.getInstance().observeStream(
+                    entityId = entityId,
+                    serverUrlFlow = effectiveServerUrlFlow,
+                    accessToken = accessToken,
+                    reconnectTrigger = reconnectTrigger,
+                    maxTargetWidthPx = maxTargetWidthPx
+                )
+            }
+    }
+
     fun setDockLayout(layout: String) {
         viewModelScope.launch {
             prefs.updateDockConfig { it.copy(layout = layout) }
         }
     }
 
-    fun setPanelLayout(layout: String) = setDockLayout(layout)
-
     fun toggleReorderMode() {
         if (_isReorderMode.value) {
             _isReorderMode.update { false }
             _selectedReorderEntityId.update { null }
         } else {
-            ensurePinnedListInitialized()
             _isReorderMode.update { true }
             _selectedReorderEntityId.update { null }
         }
@@ -308,39 +324,12 @@ class PanelViewModel(
     }
 
     fun selectEntityForReorder(id: String) {
-        if (_selectedReorderEntityId.value == id) {
-            _selectedReorderEntityId.value = null
-        } else {
-            _selectedReorderEntityId.value = id
-        }
+        _selectedReorderEntityId.update { current -> if (current == id) null else id }
     }
 
     fun moveEntity(id: String, delta: Int) {
         viewModelScope.launch {
-            if (!id.startsWith("app:")) {
-                ensurePinnedListInitialized()
-            }
             prefs.movePinnedEntity(id, delta)
-        }
-    }
-
-    private fun ensurePinnedListInitialized() {
-        if (prefs.pinnedEntities.value.isEmpty()) {
-            val currentDisplay = displayEntities.value.filter { !it.isApp && it.entity != null }
-            val initial = currentDisplay.mapIndexed { idx, item ->
-                PinnedEntityConfig(
-                    entityId = item.entity!!.entityId,
-                    customName = item.displayName,
-                    customCategory = item.entity.domain,
-                    customIcon = item.customIcon,
-                    order = idx
-                )
-            }
-            if (initial.isNotEmpty()) {
-                viewModelScope.launch {
-                    prefs.savePinnedEntities(initial)
-                }
-            }
         }
     }
 }

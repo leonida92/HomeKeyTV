@@ -31,7 +31,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.unit.dp
 import com.homekey.tv.data.models.DomainColorPalette
-import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.LocalThemePalette
 import com.homekey.tv.ui.theme.HA_Yellow_On
 import com.homekey.tv.viewmodel.DockItem
@@ -44,7 +43,6 @@ private const val DIALOG_LONG_PRESS_MS = 550L
 @Composable
 fun DockTile(
     item: DockItem,
-    allEntities: Map<String, HAEntityState> = emptyMap(),
     index: Int,
     isReorderMode: Boolean,
     isSelectedForReorder: Boolean,
@@ -87,7 +85,7 @@ fun DockTile(
     val isUnavailable = if (isApp) false else (entity?.isUnavailable == true)
     val appIconBitmap = if (isApp) rememberAppIconBitmap(item.packageName) else null
 
-    LaunchedEffect(isFocused, entity?.state, entity?.currentTemperature, entity?.currentHumidity) {
+    LaunchedEffect(isFocused, entity?.state, entity?.currentTemperature, entity?.currentHumidity, item.resolvedHumidity) {
         if (isFocused) {
             var humidity: Float? = null
             val stateText = if (isApp) {
@@ -98,15 +96,7 @@ fun DockTile(
                     entity?.domain == "light" && isOn && entity.brightness != null -> "${((entity.brightness!! / 255f) * 100).toInt()}%"
                     entity?.domain == "climate" -> {
                         val temp = "${entity.currentTemperature ?: entity.targetTemperature ?: 0f}°"
-                        humidity = entity.currentHumidity ?: run {
-                            val baseId = entity.entityId.removePrefix("climate.")
-                            allEntities["sensor.${baseId}_humidity"]?.state?.toFloatOrNull()
-                                ?: allEntities.values.firstOrNull {
-                                    it.domain == "sensor" &&
-                                    it.attributes["device_class"]?.toString()?.contains("humidity", ignoreCase = true) == true &&
-                                    (it.entityId.contains(baseId, ignoreCase = true) || it.friendlyName.contains(entity.friendlyName, ignoreCase = true))
-                                }?.state?.toFloatOrNull()
-                        }
+                        humidity = item.resolvedHumidity ?: entity.currentHumidity
                         temp
                     }
                     entity?.domain == "sensor" -> "${entity.state} ${entity.unitOfMeasurement ?: ""}".trim()

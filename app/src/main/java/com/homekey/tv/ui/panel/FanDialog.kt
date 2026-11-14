@@ -1,7 +1,6 @@
 package com.homekey.tv.ui.panel
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -187,10 +186,10 @@ fun FanDialog(
                     66 to "Med",
                     100 to "High"
                 ).forEach { (pct, label) ->
-                    FanPresetChip(
+                    MinimalChip(
                         text = label,
                         isSelected = isOn && (percentage in (pct - 15)..(pct + 15)),
-                        color = fanColor,
+                        selectedColor = fanColor,
                         onClick = {
                             percentage = pct
                             debounceJob?.cancel()
@@ -213,7 +212,6 @@ fun MinimalFanPopup(
 ) {
     val palette = LocalThemePalette.current
     val fanColor = palette.getColorForDomain("fan")
-    val offColor = palette.getOffBackgroundColor()
 
     val initialFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
@@ -226,144 +224,191 @@ fun MinimalFanPopup(
     val statusText = if (entity.isOn) "$currentPct%" else "OFF"
 
     if (isVertical) {
-        Column(
-            modifier = Modifier
-                .width(240.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(offColor)
-                .padding(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        MinimalVerticalCardContainer {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(fanColor.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Air,
-                        contentDescription = null,
-                        tint = fanColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = entity.friendlyName,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = statusText,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = fanColor
-                    )
-                }
+                FanMinimalIdentity(
+                    friendlyName = entity.friendlyName,
+                    statusText = statusText,
+                    fanColor = fanColor,
+                    modifier = Modifier.weight(1f)
+                )
+                MinimalIconButton(
+                    icon = Icons.Default.Close,
+                    description = "Close",
+                    onClick = onDismiss
+                )
             }
 
-            // Power + Steppers
+            MinimalCardDivider()
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
             ) {
-                FanMiniButton(
-                    icon = Icons.Default.PowerSettingsNew,
-                    description = "Power",
-                    focusRequester = initialFocus,
-                    onClick = onToggle
-                )
-                FanMiniButton(
-                    icon = Icons.Default.Remove,
-                    description = "Decrease",
-                    onClick = { onSetPercentage((currentPct - 10).coerceIn(0, 100)) }
-                )
-                FanMiniButton(
-                    icon = Icons.Default.Add,
-                    description = "Increase",
-                    onClick = { onSetPercentage((currentPct + 10).coerceIn(0, 100)) }
+                FanMinimalControlButtons(
+                    currentPct = currentPct,
+                    initialFocus = initialFocus,
+                    onToggle = onToggle,
+                    onSetPercentage = onSetPercentage
                 )
             }
 
-            // Presets
+            MinimalCardDivider()
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                listOf(33 to "Low", 66 to "Med", 100 to "High").forEach { (pct, label) ->
-                    FanPresetChip(text = label, isSelected = entity.isOn && currentPct == pct, color = fanColor, onClick = { onSetPercentage(pct) })
-                }
+                FanMinimalPresets(
+                    isOn = entity.isOn,
+                    currentPct = currentPct,
+                    fanColor = fanColor,
+                    onSetPercentage = onSetPercentage
+                )
             }
         }
     } else {
-        // Horizontal Minimal Card
-        Row(
-            modifier = Modifier
-                .wrapContentWidth()
-                .height(58.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(offColor)
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(fanColor.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Air,
-                    contentDescription = null,
-                    tint = fanColor,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Column {
-                Text(
-                    text = entity.friendlyName,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = statusText,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = fanColor
-                )
-            }
+        MinimalBarContainer {
+            FanMinimalIdentity(
+                friendlyName = entity.friendlyName,
+                statusText = statusText,
+                fanColor = fanColor
+            )
 
             Spacer(modifier = Modifier.width(14.dp))
             Box(modifier = Modifier.width(1.dp).height(28.dp).background(Color(0x33FFFFFF)))
             Spacer(modifier = Modifier.width(14.dp))
 
-            FanMiniButton(Icons.Default.PowerSettingsNew, "Power", focusRequester = initialFocus, onClick = onToggle)
-            Spacer(modifier = Modifier.width(8.dp))
-            FanMiniButton(Icons.Default.Remove, "Decrease", onClick = { onSetPercentage((currentPct - 10).coerceIn(0, 100)) })
-            Spacer(modifier = Modifier.width(8.dp))
-            FanMiniButton(Icons.Default.Add, "Increase", onClick = { onSetPercentage((currentPct + 10).coerceIn(0, 100)) })
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FanMinimalControlButtons(
+                    currentPct = currentPct,
+                    initialFocus = initialFocus,
+                    onToggle = onToggle,
+                    onSetPercentage = onSetPercentage
+                )
+            }
 
             Spacer(modifier = Modifier.width(14.dp))
-            listOf(33 to "Low", 66 to "Med", 100 to "High").forEach { (pct, label) ->
-                FanPresetChip(text = label, isSelected = entity.isOn && currentPct == pct, color = fanColor, onClick = { onSetPercentage(pct) })
-                Spacer(modifier = Modifier.width(6.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                FanMinimalPresets(
+                    isOn = entity.isOn,
+                    currentPct = currentPct,
+                    fanColor = fanColor,
+                    onSetPercentage = onSetPercentage
+                )
             }
+
+            Spacer(modifier = Modifier.width(12.dp))
+            MinimalIconButton(
+                icon = Icons.Default.Close,
+                description = "Close",
+                onClick = onDismiss
+            )
         }
+    }
+}
+
+@Composable
+private fun FanMinimalIdentity(
+    friendlyName: String,
+    statusText: String,
+    fanColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(fanColor.copy(alpha = 0.2f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.Air,
+                contentDescription = null,
+                tint = fanColor,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column {
+            Text(
+                text = friendlyName,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = TV_Text_Primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = statusText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = fanColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun FanMinimalControlButtons(
+    currentPct: Int,
+    initialFocus: FocusRequester,
+    onToggle: () -> Unit,
+    onSetPercentage: (Int) -> Unit
+) {
+    val buttonTint = Color.White
+    val buttonBg = Color(0x332C3852)
+    MinimalIconButton(
+        icon = Icons.Default.PowerSettingsNew,
+        description = "Power",
+        modifier = Modifier.focusRequester(initialFocus),
+        tint = buttonTint,
+        containerColor = buttonBg,
+        onClick = onToggle
+    )
+    MinimalIconButton(
+        icon = Icons.Default.Remove,
+        description = "Decrease",
+        tint = buttonTint,
+        containerColor = buttonBg,
+        onClick = { onSetPercentage((currentPct - 10).coerceIn(0, 100)) }
+    )
+    MinimalIconButton(
+        icon = Icons.Default.Add,
+        description = "Increase",
+        tint = buttonTint,
+        containerColor = buttonBg,
+        onClick = { onSetPercentage((currentPct + 10).coerceIn(0, 100)) }
+    )
+}
+
+@Composable
+private fun FanMinimalPresets(
+    isOn: Boolean,
+    currentPct: Int,
+    fanColor: Color,
+    onSetPercentage: (Int) -> Unit
+) {
+    listOf(33 to "Low", 66 to "Med", 100 to "High").forEach { (pct, label) ->
+        MinimalChip(
+            text = label,
+            isSelected = isOn && currentPct == pct,
+            selectedColor = fanColor,
+            onClick = { onSetPercentage(pct) }
+        )
     }
 }
 
@@ -407,34 +452,6 @@ private fun FanActionButton(
             Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(18.dp))
             Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
         }
-    }
-}
-
-@Composable
-private fun FanMiniButton(
-    icon: ImageVector,
-    description: String,
-    focusRequester: FocusRequester? = null,
-    onClick: () -> Unit
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isFocused by interactionSource.collectIsFocusedAsState()
-
-    Box(
-        modifier = Modifier
-            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(if (isFocused) TV_Surface_Focused else Color(0x332C3852))
-            .border(if (isFocused) 2.dp else 0.dp, if (isFocused) TV_Border_Focused else Color.Transparent, CircleShape)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(18.dp))
     }
 }
 
@@ -486,55 +503,6 @@ private fun FanSliderTrack(
             fontSize = 11.sp,
             color = Color(0x88FFFFFF),
             modifier = Modifier.align(Alignment.Center)
-        )
-    }
-}
-
-@Composable
-private fun FanPresetChip(
-    text: String,
-    isSelected: Boolean,
-    color: Color,
-    onClick: () -> Unit
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isFocused by interactionSource.collectIsFocusedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.10f else 1.0f,
-        animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
-        label = "chip_scale"
-    )
-
-    val bgColor by animateColorAsState(
-        targetValue = when {
-            isFocused -> TV_Surface_Focused
-            isSelected -> color
-            else -> Color(0x332C3852)
-        },
-        label = "chip_bg"
-    )
-
-    Box(
-        modifier = Modifier
-            .scale(scale)
-            .height(32.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(bgColor)
-            .border(if (isFocused) 2.dp else 0.dp, if (isFocused) TV_Border_Focused else Color.Transparent, RoundedCornerShape(8.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .padding(horizontal = 14.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (isSelected) Color.White else Color(0xCCFFFFFF)
         )
     }
 }

@@ -9,13 +9,171 @@ import android.util.Log
 import dadb.AdbKeyPair
 import dadb.Dadb
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.net.ConnectException
 import java.net.SocketTimeoutException
 import kotlin.coroutines.resume
+
+interface AdbAccessibilityProvisioner {
+    fun tryEnableViaSecureSettings(context: Context): Boolean
+
+    suspend fun enableAccessibilityService(
+        context: Context,
+        host: String = "127.0.0.1",
+        port: Int = LocalAdbManager.DEFAULT_PORT,
+        onConnecting: () -> Unit = {},
+        onStatusUpdate: (String) -> Unit = {}
+    ): LocalAdbManager.AdbResult
+
+    companion object {
+        @Volatile
+        private var instance: AdbAccessibilityProvisioner? = null
+
+        fun getInstance(): AdbAccessibilityProvisioner {
+            return instance ?: synchronized(this) {
+                instance ?: DefaultAdbAccessibilityProvisioner().also { instance = it }
+            }
+        }
+
+        fun initialize(provisioner: AdbAccessibilityProvisioner) {
+            instance = provisioner
+        }
+    }
+}
+
+class DefaultAdbAccessibilityProvisioner : AdbAccessibilityProvisioner {
+
+    override fun tryEnableViaSecureSettings(context: Context): Boolean {
+        return try {
+            val resolver = context.contentResolver
+            val current = Settings.Secure.getString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
+            if (current != null && current.contains("RemoteButtonRemapService")) {
+                Settings.Secure.putInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+                Log.d(TAG, "RemoteButtonRemapService already present in Secure Settings")
+                return true
+            }
+
+            val withoutService = LocalAdbManager.removeAccessibilityService(current)
+            val merged = LocalAdbManager.mergeAccessibilityServices(withoutService, LocalAdbManager.SERVICE_NAME)
+
+            Settings.Secure.putString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, merged)
+            Settings.Secure.putInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
+            Log.d(TAG, "Successfully wrote accessibility settings directly via Secure Settings")
+            true
+        } catch (e: Exception) {
+            Log.w(TAG, "Direct Secure Settings write not possible or failed: ${e.message}")
+            false
+        }
+    }
+
+    override suspend fun enableAccessibilityService(
+        context: Context,
+        host: String,
+        port: Int,
+        onConnecting: () -> Unit,
+        onStatusUpdate: (String) -> Unit
+    ): LocalAdbManager.AdbResult = withContext(Dispatchers.IO) {
+        try {
+            val keyPair = LocalAdbManager.getOrCreateKeyPair(context)
+            onConnecting()
+
+            var effectivePort = port
+
+            val (dadb, connectedPort) = try {
+                Log.d(TAG, "Connecting to ADB at $host:$effectivePort...")
+                onStatusUpdate("Connecting to ADB at $host:$effectivePort...")
+                Pair(
+                    Dadb.create(
+                        host = host,
+                        port = effectivePort,
+                        keyPair = keyPair,
+                        connectTimeout = 5000,
+                        socketTimeout = 45000
+                    ),
+                    effectivePort
+                )
+            } catch (e: ConnectException) {
+                if (host == "127.0.0.1" && port == LocalAdbManager.DEFAULT_PORT) {
+                    Log.d(TAG, "Port 5555 refused. Checking for Android 11+ dynamic Wireless Debugging port...")
+                    onStatusUpdate("Port 5555 closed. Searching for Wireless Debugging port...")
+                    val discovered = LocalAdbManager.discoverLocalAdbPort(context, 2500)
+                    if (discovered != null && discovered != LocalAdbManager.DEFAULT_PORT) {
+                        Log.d(TAG, "Discovered active ADB port $discovered via mDNS. Connecting...")
+                        onStatusUpdate("Found Wireless Debugging on port $discovered. Connecting...")
+                        Pair(
+                            Dadb.create(
+                                host = host,
+                                port = discovered,
+                                keyPair = keyPair,
+                                connectTimeout = 5000,
+                                socketTimeout = 45000
+                            ),
+                            discovered
+                        )
+                    } else {
+                        throw e
+                    }
+                } else {
+                    throw e
+                }
+            }
+            effectivePort = connectedPort
+            dadb.use { client ->
+                Log.d(TAG, "ADB connected successfully to $host:$effectivePort")
+                onStatusUpdate("Connected! Configuring system permissions...")
+
+                // 1. Grant permissions and appops FIRST.
+                // On Android 13/14, ACCESS_RESTRICTED_SETTINGS must be allowed BEFORE enabling
+                // the accessibility service in Secure Settings, otherwise AccessibilityManagerService
+                // blocks and rejects the service.
+                try {
+                    client.shell("appops set ${LocalAdbManager.PACKAGE_NAME} ACCESS_RESTRICTED_SETTINGS allow")
+                    client.shell("pm grant ${LocalAdbManager.PACKAGE_NAME} android.permission.WRITE_SECURE_SETTINGS")
+                    client.shell("appops set ${LocalAdbManager.PACKAGE_NAME} REQUEST_INSTALL_PACKAGES allow")
+                    client.shell("appops set ${LocalAdbManager.PACKAGE_NAME} SYSTEM_ALERT_WINDOW allow")
+                } catch (pe: Exception) {
+                    Log.w(TAG, "Permission/appops grant warning: ${pe.message}")
+                }
+
+                // 2. Read existing accessibility services
+                val current = client.shell("settings get secure enabled_accessibility_services").output.trim()
+                Log.d(TAG, "Current enabled_accessibility_services: $current")
+
+                // 3. Write merged service string only if not already registered
+                if (!current.contains("RemoteButtonRemapService")) {
+                    val withoutService = LocalAdbManager.removeAccessibilityService(current)
+                    val merged = LocalAdbManager.mergeAccessibilityServices(withoutService, LocalAdbManager.SERVICE_NAME)
+                    Log.d(TAG, "Writing enabled_accessibility_services: $merged")
+                    client.shell("settings put secure enabled_accessibility_services $merged")
+                }
+                client.shell("settings put secure accessibility_enabled 1")
+
+                Log.d(TAG, "ADB accessibility configuration complete")
+                LocalAdbManager.AdbResult.Success
+            }
+        } catch (e: ConnectException) {
+            Log.e(TAG, "Connection refused connecting to $host:$port", e)
+            LocalAdbManager.AdbResult.AdbDisabled(
+                "Cannot connect to $host:$port. On Android 11+, enable 'Wireless debugging' in TV Developer Options or enter the dynamic port."
+            )
+        } catch (e: SocketTimeoutException) {
+            Log.e(TAG, "Connection timed out waiting for authorization", e)
+            LocalAdbManager.AdbResult.AuthTimeout(
+                "Timed out waiting for authorization. Please accept the 'Allow USB debugging' prompt on your TV screen."
+            )
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to execute ADB configuration", e)
+            LocalAdbManager.AdbResult.Error(e.message ?: "Unknown ADB error occurred")
+        }
+    }
+
+    companion object {
+        private const val TAG = "LocalAdbManager"
+    }
+}
 
 object LocalAdbManager {
     private const val TAG = "LocalAdbManager"
@@ -84,33 +242,6 @@ object LocalAdbManager {
         }
 
         return AdbKeyPair.read(privateKeyFile, publicKeyFile)
-    }
-
-    /**
-     * Attempts to configure and enable [RemoteButtonRemapService] directly via [android.content.ContentResolver].
-     * Succeeds only if WRITE_SECURE_SETTINGS has already been granted to this app.
-     */
-    fun tryEnableViaSecureSettings(context: Context): Boolean {
-        return try {
-            val resolver = context.contentResolver
-            val current = Settings.Secure.getString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            if (current != null && current.contains("RemoteButtonRemapService")) {
-                Settings.Secure.putInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
-                Log.d(TAG, "RemoteButtonRemapService already present in Secure Settings")
-                return true
-            }
-
-            val withoutService = removeAccessibilityService(current)
-            val merged = mergeAccessibilityServices(withoutService, SERVICE_NAME)
-
-            Settings.Secure.putString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, merged)
-            Settings.Secure.putInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
-            Log.d(TAG, "Successfully wrote accessibility settings directly via Secure Settings")
-            true
-        } catch (e: Exception) {
-            Log.w(TAG, "Direct Secure Settings write not possible or failed: ${e.message}")
-            false
-        }
     }
 
     /**
@@ -241,114 +372,6 @@ object LocalAdbManager {
                     multicastLock.release()
                 }
             } catch (_: Exception) {}
-        }
-    }
-
-    /**
-     * Connects to local loopback ADB on [host]:[port], executes the necessary settings and
-     * permission grants to activate [RemoteButtonRemapService], and closes the connection.
-     * On connection refused at port 5555, automatically queries mDNS for dynamic Android 11+ ports.
-     */
-    fun enableAccessibilityService(
-        context: Context,
-        host: String = "127.0.0.1",
-        port: Int = DEFAULT_PORT,
-        onConnecting: () -> Unit = {},
-        onStatusUpdate: (String) -> Unit = {}
-    ): AdbResult {
-        return try {
-            val keyPair = getOrCreateKeyPair(context)
-            onConnecting()
-
-            var effectivePort = port
-
-            val (dadb, connectedPort) = try {
-                Log.d(TAG, "Connecting to ADB at $host:$effectivePort...")
-                onStatusUpdate("Connecting to ADB at $host:$effectivePort...")
-                Pair(
-                    Dadb.create(
-                        host = host,
-                        port = effectivePort,
-                        keyPair = keyPair,
-                        connectTimeout = 5000,
-                        socketTimeout = 45000
-                    ),
-                    effectivePort
-                )
-            } catch (e: ConnectException) {
-                if (host == "127.0.0.1" && port == DEFAULT_PORT) {
-                    Log.d(TAG, "Port 5555 refused. Checking for Android 11+ dynamic Wireless Debugging port...")
-                    onStatusUpdate("Port 5555 closed. Searching for Wireless Debugging port...")
-                    val discovered = runBlocking(Dispatchers.IO) {
-                        discoverLocalAdbPort(context, 2500)
-                    }
-                    if (discovered != null && discovered != DEFAULT_PORT) {
-                        Log.d(TAG, "Discovered active ADB port $discovered via mDNS. Connecting...")
-                        onStatusUpdate("Found Wireless Debugging on port $discovered. Connecting...")
-                        Pair(
-                            Dadb.create(
-                                host = host,
-                                port = discovered,
-                                keyPair = keyPair,
-                                connectTimeout = 5000,
-                                socketTimeout = 45000
-                            ),
-                            discovered
-                        )
-                    } else {
-                        throw e
-                    }
-                } else {
-                    throw e
-                }
-            }
-            effectivePort = connectedPort
-            dadb.use { client ->
-                Log.d(TAG, "ADB connected successfully to $host:$effectivePort")
-                onStatusUpdate("Connected! Configuring system permissions...")
-
-                // 1. Grant permissions and appops FIRST.
-                // On Android 13/14, ACCESS_RESTRICTED_SETTINGS must be allowed BEFORE enabling
-                // the accessibility service in Secure Settings, otherwise AccessibilityManagerService
-                // blocks and rejects the service.
-                try {
-                    client.shell("appops set $PACKAGE_NAME ACCESS_RESTRICTED_SETTINGS allow")
-                    client.shell("pm grant $PACKAGE_NAME android.permission.WRITE_SECURE_SETTINGS")
-                    client.shell("appops set $PACKAGE_NAME REQUEST_INSTALL_PACKAGES allow")
-                    client.shell("appops set $PACKAGE_NAME SYSTEM_ALERT_WINDOW allow")
-                } catch (pe: Exception) {
-                    Log.w(TAG, "Permission/appops grant warning: ${pe.message}")
-                }
-
-                // 2. Read existing accessibility services
-                val current = client.shell("settings get secure enabled_accessibility_services").output.trim()
-                Log.d(TAG, "Current enabled_accessibility_services: $current")
-
-                // 3. Write merged service string only if not already registered
-                if (!current.contains("RemoteButtonRemapService")) {
-                    val withoutService = removeAccessibilityService(current)
-                    val merged = mergeAccessibilityServices(withoutService, SERVICE_NAME)
-                    Log.d(TAG, "Writing enabled_accessibility_services: $merged")
-                    client.shell("settings put secure enabled_accessibility_services $merged")
-                }
-                client.shell("settings put secure accessibility_enabled 1")
-
-                Log.d(TAG, "ADB accessibility configuration complete")
-                AdbResult.Success
-            }
-        } catch (e: ConnectException) {
-            Log.e(TAG, "Connection refused connecting to $host:$port", e)
-            AdbResult.AdbDisabled(
-                "Cannot connect to $host:$port. On Android 11+, enable 'Wireless debugging' in TV Developer Options or enter the dynamic port."
-            )
-        } catch (e: SocketTimeoutException) {
-            Log.e(TAG, "Connection timed out waiting for authorization", e)
-            AdbResult.AuthTimeout(
-                "Timed out waiting for authorization. Please accept the 'Allow USB debugging' prompt on your TV screen."
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to execute ADB configuration", e)
-            AdbResult.Error(e.message ?: "Unknown ADB error occurred")
         }
     }
 }

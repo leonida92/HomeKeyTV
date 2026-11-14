@@ -1,7 +1,6 @@
 package com.homekey.tv.ui.panel
 
 import android.graphics.Bitmap
-import android.util.Log
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -26,25 +25,19 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.homekey.tv.data.api.CameraFeedState
 import com.homekey.tv.data.models.CameraPipAlert
-import kotlinx.coroutines.*
-import okhttp3.Request
-import java.util.concurrent.CancellationException
-import kotlin.math.abs
-
-private const val TAG = "CameraPipCard"
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 
 @Composable
 fun CameraPipCard(
     alert: CameraPipAlert,
-    serverUrl: String,
-    accessToken: String,
+    feedFlow: Flow<CameraFeedState>,
     modifier: Modifier = Modifier,
     onDismiss: () -> Unit = {}
 ) {
     var currentBitmap by remember { mutableStateOf<Bitmap?>(null) }
-    var detectedAspectRatio by remember { mutableFloatStateOf(16f / 9f) }
-    var isLive by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var secondsRemaining by remember { mutableIntStateOf(alert.durationSeconds) }
 
@@ -63,121 +56,27 @@ fun CameraPipCard(
         }
     }
 
-    val cleanBaseUrl = remember(serverUrl) { serverUrl.trim().removeSuffix("/") }
-    val streamUrl = remember(cleanBaseUrl, alert.entityId) { "$cleanBaseUrl/api/camera_proxy_stream/${alert.entityId}" }
-    val snapshotUrl = remember(cleanBaseUrl, alert.entityId) { "$cleanBaseUrl/api/camera_proxy/${alert.entityId}" }
-
-    // MJPEG software-decoded stream with snapshot polling fallback
-    LaunchedEffect(alert.entityId, streamUrl, snapshotUrl) {
-        isLive = false
+    // Collect pre-wired software-decoded stream with snapshot polling fallback synced to active route
+    LaunchedEffect(alert.entityId, feedFlow) {
+        currentBitmap = null
         errorMessage = null
-
-        withContext(Dispatchers.IO) {
-            try {
-                val request = Request.Builder()
-                    .url(streamUrl)
-                    .header("Authorization", "Bearer $accessToken")
-                    .build()
-
-                val call = cameraHttpClient.newCall(request)
-                val cancelHandle = currentCoroutineContext()[Job]?.invokeOnCompletion {
-                    call.cancel()
+        feedFlow.collect { feedState ->
+            when (feedState) {
+                is CameraFeedState.Connecting -> {
+                    errorMessage = null
                 }
-                try {
-                    call.execute().use { response ->
-                        if (response.isSuccessful) {
-                            val body = response.body
-                            if (body != null) {
-                                body.byteStream().use { inputStream ->
-                                    withContext(Dispatchers.Main) {
-                                        isLive = true
-                                    }
-                                    parseMjpegStream(
-                                        inputStream = inputStream,
-                                        onFrameDecoded = { bitmap ->
-                                            val ratio = bitmap.width.toFloat() / bitmap.height.toFloat()
-                                            if (abs(ratio - detectedAspectRatio) > 0.05f) {
-                                                detectedAspectRatio = ratio
-                                            }
-                                            currentBitmap = bitmap
-                                            if (!isLive) isLive = true
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } catch (ce: CancellationException) {
-                    call.cancel()
-                    throw ce
-                } catch (e: Exception) {
-                    call.cancel()
-                    Log.w(TAG, "MJPEG stream ended: ${e.message}")
-                } finally {
-                    cancelHandle?.dispose()
+                is CameraFeedState.Streaming -> {
+                    currentBitmap = feedState.bitmap
+                    errorMessage = null
                 }
-            } catch (ce: CancellationException) {
-                throw ce
-            } catch (e: Exception) {
-                Log.w(TAG, "MJPEG connection error: ${e.message}")
-            }
-
-            // Fallback to snapshot polling if stream ended or was unavailable
-            if (isActive) {
-                while (isActive) {
-                    val snapRequest = Request.Builder()
-                        .url(snapshotUrl)
-                        .header("Authorization", "Bearer $accessToken")
-                        .build()
-
-                    val snapCall = cameraHttpClient.newCall(snapRequest)
-                    val snapCancelHandle = currentCoroutineContext()[Job]?.invokeOnCompletion {
-                        snapCall.cancel()
+                is CameraFeedState.Error -> {
+                    if (currentBitmap == null) {
+                        errorMessage = feedState.message
                     }
-                    try {
-                        snapCall.execute().use { response ->
-                            if (response.isSuccessful) {
-                                val bytes = response.body?.bytes()
-                                if (bytes != null && bytes.isNotEmpty()) {
-                                    val bmp = decodeSampledBitmap(bytes)
-                                    if (bmp != null) {
-                                        withContext(Dispatchers.Main) {
-                                            val ratio = bmp.width.toFloat() / bmp.height.toFloat()
-                                            if (abs(ratio - detectedAspectRatio) > 0.05f) {
-                                                detectedAspectRatio = ratio
-                                            }
-                                            currentBitmap = bmp
-                                            isLive = true
-                                        }
-                                    }
-                                }
-                            } else {
-                                withContext(Dispatchers.Main) {
-                                    if (currentBitmap == null) {
-                                        errorMessage = "Camera offline"
-                                    }
-                                }
-                            }
-                        }
-                    } catch (ce: CancellationException) {
-                        snapCall.cancel()
-                        throw ce
-                    } catch (e: Exception) {
-                        snapCall.cancel()
-                        withContext(Dispatchers.Main) {
-                            if (currentBitmap == null) {
-                                errorMessage = e.message ?: "Connection error"
-                            }
-                        }
-                    } finally {
-                        snapCancelHandle?.dispose()
-                    }
-                    delay(1500L)
                 }
             }
         }
     }
-
     // Pulse animation for alert badge
     val infiniteTransition = rememberInfiniteTransition(label = "pip_pulse")
     val pulseAlpha by infiniteTransition.animateFloat(

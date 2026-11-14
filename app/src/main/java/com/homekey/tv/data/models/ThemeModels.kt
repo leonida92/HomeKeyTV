@@ -3,8 +3,83 @@ package com.homekey.tv.data.models
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 
 val LocalThemePalette = staticCompositionLocalOf { DomainColorPalette.CLASSIC }
+
+@Serializable
+data class DomainThemeMetadata(
+    val key: String,
+    val label: String
+)
+
+@Serializable
+data class PortalThemePreset(
+    val id: String,
+    val name: String,
+    val desc: String,
+    val colors: Map<String, String>
+)
+
+@Serializable
+data class ThemePortalCatalog(
+    val presets: Map<String, PortalThemePreset>,
+    val presetOrder: List<String>,
+    val domains: List<DomainThemeMetadata>
+)
+
+/**
+ * Single-source theme catalog shared between Android UI and the mobile web setup portal.
+ */
+object ThemeCatalog {
+    val domainMetadata: List<DomainThemeMetadata> = listOf(
+        DomainThemeMetadata("light", "Lights"),
+        DomainThemeMetadata("switch", "Switches & Outlets"),
+        DomainThemeMetadata("climate", "Climate & AC"),
+        DomainThemeMetadata("camera", "Camera Feeds"),
+        DomainThemeMetadata("media_player", "Media Players"),
+        DomainThemeMetadata("cover", "Covers & Blinds"),
+        DomainThemeMetadata("fan", "Fans & Purifiers"),
+        DomainThemeMetadata("lock", "Lock Control"),
+        DomainThemeMetadata("vacuum", "Robot Vacuums"),
+        DomainThemeMetadata("scene", "Scenes & Scripts"),
+        DomainThemeMetadata("sensor", "Sensors"),
+        DomainThemeMetadata("off_background", "Off-State Background"),
+        DomainThemeMetadata("icon_color", "Active Icon Color")
+    )
+
+    private val catalogJson = Json { encodeDefaults = true }
+
+    fun toPortalCatalog(): ThemePortalCatalog {
+        val presets = linkedMapOf<String, PortalThemePreset>()
+        for (preset in ThemePreset.entries) {
+            val colors = if (preset == ThemePreset.CUSTOM) {
+                emptyMap()
+            } else {
+                val palette = DomainColorPalette.forPreset(preset)
+                domainMetadata.associate { meta ->
+                    meta.key to palette.getColorHexForDomain(meta.key)
+                }
+            }
+            presets[preset.id] = PortalThemePreset(
+                id = preset.id,
+                name = preset.displayName,
+                desc = preset.description,
+                colors = colors
+            )
+        }
+        return ThemePortalCatalog(
+            presets = presets,
+            presetOrder = ThemePreset.entries.map { it.id },
+            domains = domainMetadata
+        )
+    }
+
+    fun toPortalCatalogJson(): String = catalogJson.encodeToString(toPortalCatalog())
+}
+
+fun toPortalCatalogJson(): String = ThemeCatalog.toPortalCatalogJson()
 
 enum class ThemePreset(val id: String, val displayName: String, val description: String) {
     CLASSIC("classic", "HomeKey Classic", "Original vivid smart home palette"),

@@ -15,10 +15,9 @@ import androidx.datastore.preferences.preferencesDataStore
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
 import com.homekey.tv.data.models.ButtonRemapConfig
-import com.homekey.tv.data.models.DomainColorPalette
 import com.homekey.tv.data.models.PinnedAppConfig
 import com.homekey.tv.data.models.PinnedEntityConfig
-import com.homekey.tv.data.models.ThemePreset
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,10 +28,11 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 import java.util.concurrent.ThreadLocalRandom
 
 private val Context.haDataStore: DataStore<Preferences> by preferencesDataStore(
@@ -42,10 +42,43 @@ private val Context.haDataStore: DataStore<Preferences> by preferencesDataStore(
     }
 )
 
-class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
-    private val appContext = context.applicationContext
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+internal data class LegacyTokenMigration(
+    val token: String,
+    val clear: () -> Unit
+)
+
+class DataStorePreferencesRepository internal constructor(
+    private val dataStore: DataStore<Preferences>,
+    private val tokenCipher: TokenCipher,
+    private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+    private val legacyTokenMigrator: (() -> LegacyTokenMigration?)? = null,
+    private val defaultVolumeFixEnabled: Boolean = Build.VERSION.SDK_INT <= Build.VERSION_CODES.P
+) : PreferencesRepository {
+
+    constructor(context: Context) : this(
+        dataStore = context.applicationContext.haDataStore,
+        tokenCipher = TinkKeystoreCrypto(context.applicationContext),
+        scope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+        legacyTokenMigrator = {
+            val secure = createSecurePrefs(context.applicationContext)
+            val legacyToken = secure?.getString(KEY_ACCESS_TOKEN, null)
+            if (!legacyToken.isNullOrEmpty()) {
+                LegacyTokenMigration(
+                    token = legacyToken,
+                    clear = {
+                        try {
+                            secure.edit().clear().apply()
+                        } catch (_: Exception) {}
+                    }
+                )
+            } else {
+                null
+            }
+        }
+    )
+
+    private val json = HomeKeyBackupCodec.json
+    private val writeMutex = Mutex()
 
     private val _serverConfig = MutableStateFlow(ServerConfig())
     override val serverConfig: StateFlow<ServerConfig> = _serverConfig.asStateFlow()
@@ -68,49 +101,64 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
     private val _buttonRemaps = MutableStateFlow<List<ButtonRemapConfig>>(emptyList())
     override val buttonRemaps: StateFlow<List<ButtonRemapConfig>> = _buttonRemaps.asStateFlow()
 
-    private val _volumeFixEnabled = MutableStateFlow(Build.VERSION.SDK_INT <= Build.VERSION_CODES.P)
+    private val _volumeFixEnabled = MutableStateFlow(defaultVolumeFixEnabled)
     override val volumeFixEnabled: StateFlow<Boolean> = _volumeFixEnabled.asStateFlow()
 
     init {
         // Load initial preferences synchronously on IO to eliminate cold-start latency
-        val initialPrefs = try {
-            runBlocking(Dispatchers.IO) { appContext.haDataStore.data.first() }
+        val initialSnapshot = try {
+            runBlocking(Dispatchers.IO) {
+                val prefs = dataStore.data.first()
+                val existingPin = prefs[PreferencesKeys.PAIRING_PIN] ?: ""
+                val resolvedPin = if (existingPin.isBlank() || existingPin.length < 6) {
+                    val newPin = ThreadLocalRandom.current().nextInt(100000, 1000000).toString()
+                    try {
+                        dataStore.edit { p ->
+                            p[PreferencesKeys.PAIRING_PIN] = newPin
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Failed persisting initial pairing PIN: ${e.message}")
+                    }
+                    newPin
+                } else {
+                    existingPin
+                }
+                prefs to resolvedPin
+            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed reading initial DataStore snapshot: ${e.message}")
             null
         }
 
-        if (initialPrefs != null) {
+        if (initialSnapshot != null) {
+            val (initialPrefs, pin) = initialSnapshot
             val serverUrl = initialPrefs[PreferencesKeys.SERVER_URL] ?: ""
             val fallbackServerUrl = initialPrefs[PreferencesKeys.FALLBACK_SERVER_URL] ?: ""
             val haEnabled = initialPrefs[PreferencesKeys.HA_ENABLED] ?: true
-            val layout = DockConfig.normalizeLayout(initialPrefs[PreferencesKeys.PANEL_LAYOUT])
-            val popupStyle = DockConfig.normalizePopupStyle(initialPrefs[PreferencesKeys.POPUP_STYLE])
-            val cameraPopupStyle = DockConfig.normalizeCameraPopupStyle(initialPrefs[PreferencesKeys.CAMERA_POPUP_STYLE])
-            val cameraCompactSize = DockConfig.normalizeCameraCompactSize(initialPrefs[PreferencesKeys.CAMERA_COMPACT_SIZE])
-            val recentEnabled = initialPrefs[PreferencesKeys.RECENT_APPS_ENABLED] ?: false
-            val recentCount = (initialPrefs[PreferencesKeys.RECENT_APPS_COUNT] ?: 3).coerceIn(1, 5)
             val themePreset = initialPrefs[PreferencesKeys.THEME_PRESET] ?: "classic"
-            val volumeFix = initialPrefs[PreferencesKeys.VOLUME_FIX_ENABLED] ?: (Build.VERSION.SDK_INT <= Build.VERSION_CODES.P)
-
+            val volumeFix = initialPrefs[PreferencesKeys.VOLUME_FIX_ENABLED] ?: defaultVolumeFixEnabled
             val customColors = loadCustomThemeColors(initialPrefs[PreferencesKeys.CUSTOM_THEME_COLORS])
-            val palette = calculateActivePalette(themePreset, customColors)
 
-            _dockConfig.value = DockConfig(
-                layout = layout,
-                popupStyle = popupStyle,
-                cameraPopupStyle = cameraPopupStyle,
-                cameraCompactSize = cameraCompactSize
+            _dockConfig.value = PreferencesDomainOps.normalizeDockConfig(
+                DockConfig(
+                    layout = initialPrefs[PreferencesKeys.PANEL_LAYOUT] ?: DockConfig.LAYOUT_BOTTOM,
+                    popupStyle = initialPrefs[PreferencesKeys.POPUP_STYLE] ?: DockConfig.POPUP_STYLE_CENTERED,
+                    cameraPopupStyle = initialPrefs[PreferencesKeys.CAMERA_POPUP_STYLE] ?: DockConfig.CAMERA_POPUP_CENTERED,
+                    cameraCompactSize = initialPrefs[PreferencesKeys.CAMERA_COMPACT_SIZE] ?: DockConfig.CAMERA_COMPACT_SIZE_MEDIUM
+                )
             )
-            _themeConfig.value = ThemeConfig(
-                preset = themePreset,
-                customColors = customColors,
-                activePalette = palette
+            _themeConfig.value = PreferencesDomainOps.normalizeThemeConfig(
+                ThemeConfig(
+                    preset = themePreset,
+                    customColors = customColors
+                )
             )
-            _recentAppsConfig.value = RecentAppsConfig(
-                enabled = recentEnabled,
-                maxCount = recentCount,
-                recentPackages = loadRecentApps(initialPrefs[PreferencesKeys.RECENT_APPS_LIST])
+            _recentAppsConfig.value = PreferencesDomainOps.normalizeRecentAppsConfig(
+                RecentAppsConfig(
+                    enabled = initialPrefs[PreferencesKeys.RECENT_APPS_ENABLED] ?: false,
+                    maxCount = initialPrefs[PreferencesKeys.RECENT_APPS_COUNT] ?: 3,
+                    recentPackages = loadRecentApps(initialPrefs[PreferencesKeys.RECENT_APPS_LIST])
+                )
             )
             _volumeFixEnabled.value = volumeFix
 
@@ -122,44 +170,29 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
             var token = ""
             val encryptedToken = initialPrefs[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN]
             if (!encryptedToken.isNullOrEmpty()) {
-                token = TinkKeystoreCrypto.decrypt(appContext, encryptedToken)
+                token = tokenCipher.decrypt(encryptedToken)
             } else {
                 val migratedPlain = initialPrefs[PreferencesKeys.ACCESS_TOKEN]
                 if (!migratedPlain.isNullOrEmpty()) {
                     token = migratedPlain
                     scope.launch(Dispatchers.IO) {
-                        val enc = TinkKeystoreCrypto.encrypt(appContext, token)
-                        appContext.haDataStore.edit { p ->
+                        val enc = tokenCipher.encrypt(token)
+                        dataStore.edit { p ->
                             p[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN] = enc
                             p.remove(PreferencesKeys.ACCESS_TOKEN)
                         }
                     }
                 } else {
-                    val secure = createSecurePrefs(appContext)
-                    val legacyToken = secure?.getString(KEY_ACCESS_TOKEN, null)
-                    if (!legacyToken.isNullOrEmpty()) {
-                        token = legacyToken
+                    val legacy = legacyTokenMigrator?.invoke()
+                    if (legacy != null) {
+                        token = legacy.token
                         scope.launch(Dispatchers.IO) {
-                            val enc = TinkKeystoreCrypto.encrypt(appContext, token)
-                            appContext.haDataStore.edit { p ->
+                            val enc = tokenCipher.encrypt(token)
+                            dataStore.edit { p ->
                                 p[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN] = enc
                             }
-                            try {
-                                secure.edit().clear().apply()
-                            } catch (_: Exception) {}
+                            legacy.clear()
                         }
-                    }
-                }
-            }
-
-            // Resolve or generate pairing PIN
-            var pin = initialPrefs[PreferencesKeys.PAIRING_PIN] ?: ""
-            if (pin.isBlank() || pin.length < 6) {
-                pin = ThreadLocalRandom.current().nextInt(100000, 1000000).toString()
-                val newPin = pin
-                scope.launch(Dispatchers.IO) {
-                    appContext.haDataStore.edit { p ->
-                        p[PreferencesKeys.PAIRING_PIN] = newPin
                     }
                 }
             }
@@ -178,188 +211,183 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
 
         // Continuously collect DataStore updates in background
         scope.launch {
-            appContext.haDataStore.data.collect { prefs ->
+            dataStore.data.collect { prefs ->
                 val serverUrl = prefs[PreferencesKeys.SERVER_URL] ?: _serverConfig.value.serverUrl
                 val fallbackServerUrl = prefs[PreferencesKeys.FALLBACK_SERVER_URL] ?: _serverConfig.value.fallbackServerUrl
                 val haEnabled = prefs[PreferencesKeys.HA_ENABLED] ?: _serverConfig.value.haEnabled
                 val pin = prefs[PreferencesKeys.PAIRING_PIN] ?: _serverConfig.value.pairingPin
                 val encToken = prefs[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN]
-                val token = if (!encToken.isNullOrEmpty()) {
-                    TinkKeystoreCrypto.decrypt(appContext, encToken)
-                } else _serverConfig.value.accessToken
+                val token = if (PreferencesKeys.ENCRYPTED_ACCESS_TOKEN in prefs) {
+                    if (!encToken.isNullOrEmpty()) tokenCipher.decrypt(encToken) else ""
+                } else {
+                    _serverConfig.value.accessToken
+                }
 
                 val newServerConfig = ServerConfig(serverUrl, fallbackServerUrl, token, pin, haEnabled)
                 if (newServerConfig != _serverConfig.value) {
-                    _serverConfig.value = newServerConfig
+                    _serverConfig.update { newServerConfig }
                 }
 
-                val layout = DockConfig.normalizeLayout(prefs[PreferencesKeys.PANEL_LAYOUT] ?: _dockConfig.value.layout)
-                val popupStyle = DockConfig.normalizePopupStyle(prefs[PreferencesKeys.POPUP_STYLE] ?: _dockConfig.value.popupStyle)
-                val cameraPopupStyle = DockConfig.normalizeCameraPopupStyle(prefs[PreferencesKeys.CAMERA_POPUP_STYLE] ?: _dockConfig.value.cameraPopupStyle)
-                val cameraCompactSize = DockConfig.normalizeCameraCompactSize(prefs[PreferencesKeys.CAMERA_COMPACT_SIZE] ?: _dockConfig.value.cameraCompactSize)
-                val newDockConfig = DockConfig(layout, popupStyle, cameraPopupStyle, cameraCompactSize)
+                val newDockConfig = PreferencesDomainOps.normalizeDockConfig(
+                    DockConfig(
+                        layout = prefs[PreferencesKeys.PANEL_LAYOUT] ?: _dockConfig.value.layout,
+                        popupStyle = prefs[PreferencesKeys.POPUP_STYLE] ?: _dockConfig.value.popupStyle,
+                        cameraPopupStyle = prefs[PreferencesKeys.CAMERA_POPUP_STYLE] ?: _dockConfig.value.cameraPopupStyle,
+                        cameraCompactSize = prefs[PreferencesKeys.CAMERA_COMPACT_SIZE] ?: _dockConfig.value.cameraCompactSize
+                    )
+                )
                 if (newDockConfig != _dockConfig.value) {
-                    _dockConfig.value = newDockConfig
+                    _dockConfig.update { newDockConfig }
                 }
 
-                val recentEnabled = prefs[PreferencesKeys.RECENT_APPS_ENABLED] ?: _recentAppsConfig.value.enabled
-                val recentCount = (prefs[PreferencesKeys.RECENT_APPS_COUNT] ?: _recentAppsConfig.value.maxCount).coerceIn(1, 5)
-                val recentList = prefs[PreferencesKeys.RECENT_APPS_LIST]?.let { loadRecentApps(it) } ?: _recentAppsConfig.value.recentPackages
-                val newRecent = RecentAppsConfig(recentEnabled, recentCount, recentList)
+                val newRecent = PreferencesDomainOps.normalizeRecentAppsConfig(
+                    RecentAppsConfig(
+                        enabled = prefs[PreferencesKeys.RECENT_APPS_ENABLED] ?: _recentAppsConfig.value.enabled,
+                        maxCount = prefs[PreferencesKeys.RECENT_APPS_COUNT] ?: _recentAppsConfig.value.maxCount,
+                        recentPackages = prefs[PreferencesKeys.RECENT_APPS_LIST]?.let { loadRecentApps(it) } ?: _recentAppsConfig.value.recentPackages
+                    )
+                )
                 if (newRecent != _recentAppsConfig.value) {
-                    _recentAppsConfig.value = newRecent
+                    _recentAppsConfig.update { newRecent }
                 }
 
                 val themePreset = prefs[PreferencesKeys.THEME_PRESET] ?: _themeConfig.value.preset
                 val customColors = prefs[PreferencesKeys.CUSTOM_THEME_COLORS]?.let { loadCustomThemeColors(it) } ?: _themeConfig.value.customColors
-                val palette = calculateActivePalette(themePreset, customColors)
-                val newTheme = ThemeConfig(themePreset, customColors, palette)
+                val newTheme = PreferencesDomainOps.normalizeThemeConfig(
+                    ThemeConfig(preset = themePreset, customColors = customColors)
+                )
                 if (newTheme != _themeConfig.value) {
-                    _themeConfig.value = newTheme
+                    _themeConfig.update { newTheme }
                 }
 
-                prefs[PreferencesKeys.VOLUME_FIX_ENABLED]?.let { if (it != _volumeFixEnabled.value) _volumeFixEnabled.value = it }
+                prefs[PreferencesKeys.VOLUME_FIX_ENABLED]?.let { enabled ->
+                    if (enabled != _volumeFixEnabled.value) _volumeFixEnabled.update { enabled }
+                }
                 prefs[PreferencesKeys.PINNED_ENTITIES]?.let { raw ->
                     val parsed = loadPinnedEntities(raw)
-                    if (parsed != _pinnedEntities.value) _pinnedEntities.value = parsed
+                    if (parsed != _pinnedEntities.value) _pinnedEntities.update { parsed }
                 }
                 prefs[PreferencesKeys.PINNED_APPS]?.let { raw ->
                     val parsed = loadPinnedApps(raw)
-                    if (parsed != _pinnedApps.value) _pinnedApps.value = parsed
+                    if (parsed != _pinnedApps.value) _pinnedApps.update { parsed }
                 }
                 prefs[PreferencesKeys.BUTTON_REMAPS]?.let { raw ->
                     val parsed = loadButtonRemaps(raw)
-                    if (parsed != _buttonRemaps.value) _buttonRemaps.value = parsed
+                    if (parsed != _buttonRemaps.value) _buttonRemaps.update { parsed }
                 }
             }
         }
     }
 
     override suspend fun updateServerConfig(transform: (ServerConfig) -> ServerConfig) {
-        val updated = transform(_serverConfig.value)
-        val cleanUrl = updated.serverUrl.trim().removeSuffix("/")
-        val cleanFallbackUrl = updated.fallbackServerUrl.trim().removeSuffix("/")
-        val cleanToken = updated.accessToken.trim()
-        val normalized = updated.copy(
-            serverUrl = cleanUrl,
-            fallbackServerUrl = cleanFallbackUrl,
-            accessToken = cleanToken
-        )
+        writeMutex.withLock {
+            val updated = transform(_serverConfig.value)
+            val normalized = PreferencesDomainOps.normalizeServerConfig(updated)
 
-        withContext(Dispatchers.IO) {
-            val enc = if (cleanToken.isNotBlank()) TinkKeystoreCrypto.encrypt(appContext, cleanToken) else ""
-            appContext.haDataStore.edit { p ->
-                p[PreferencesKeys.SERVER_URL] = cleanUrl
-                p[PreferencesKeys.FALLBACK_SERVER_URL] = cleanFallbackUrl
-                p[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN] = enc
-                p.remove(PreferencesKeys.ACCESS_TOKEN)
-                p[PreferencesKeys.HA_ENABLED] = normalized.haEnabled
-                if (normalized.pairingPin.isNotBlank()) {
-                    p[PreferencesKeys.PAIRING_PIN] = normalized.pairingPin
+            withContext(Dispatchers.IO) {
+                val enc = if (normalized.accessToken.isNotBlank()) tokenCipher.encrypt(normalized.accessToken) else ""
+                dataStore.edit { p ->
+                    p[PreferencesKeys.SERVER_URL] = normalized.serverUrl
+                    p[PreferencesKeys.FALLBACK_SERVER_URL] = normalized.fallbackServerUrl
+                    p[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN] = enc
+                    p.remove(PreferencesKeys.ACCESS_TOKEN)
+                    p[PreferencesKeys.HA_ENABLED] = normalized.haEnabled
+                    if (normalized.pairingPin.isNotBlank()) {
+                        p[PreferencesKeys.PAIRING_PIN] = normalized.pairingPin
+                    }
                 }
             }
+            _serverConfig.update { normalized }
         }
-        _serverConfig.update { normalized }
     }
 
     override suspend fun updateDockConfig(transform: (DockConfig) -> DockConfig) {
-        val updated = transform(_dockConfig.value)
-        val normalized = DockConfig(
-            layout = DockConfig.normalizeLayout(updated.layout),
-            popupStyle = DockConfig.normalizePopupStyle(updated.popupStyle),
-            cameraPopupStyle = DockConfig.normalizeCameraPopupStyle(updated.cameraPopupStyle),
-            cameraCompactSize = DockConfig.normalizeCameraCompactSize(updated.cameraCompactSize)
-        )
-        withContext(Dispatchers.IO) {
-            appContext.haDataStore.edit { p ->
-                p[PreferencesKeys.PANEL_LAYOUT] = normalized.layout
-                p[PreferencesKeys.POPUP_STYLE] = normalized.popupStyle
-                p[PreferencesKeys.CAMERA_POPUP_STYLE] = normalized.cameraPopupStyle
-                p[PreferencesKeys.CAMERA_COMPACT_SIZE] = normalized.cameraCompactSize
+        writeMutex.withLock {
+            val updated = transform(_dockConfig.value)
+            val normalized = PreferencesDomainOps.normalizeDockConfig(updated)
+            withContext(Dispatchers.IO) {
+                dataStore.edit { p ->
+                    p[PreferencesKeys.PANEL_LAYOUT] = normalized.layout
+                    p[PreferencesKeys.POPUP_STYLE] = normalized.popupStyle
+                    p[PreferencesKeys.CAMERA_POPUP_STYLE] = normalized.cameraPopupStyle
+                    p[PreferencesKeys.CAMERA_COMPACT_SIZE] = normalized.cameraCompactSize
+                }
             }
+            _dockConfig.update { normalized }
         }
-        _dockConfig.update { normalized }
     }
 
     override suspend fun updateThemeConfig(transform: (ThemeConfig) -> ThemeConfig) {
-        val updated = transform(_themeConfig.value)
-        val normalizedPreset = ThemePreset.fromId(updated.preset).id
-        val palette = calculateActivePalette(normalizedPreset, updated.customColors)
-        val normalized = ThemeConfig(
-            preset = normalizedPreset,
-            customColors = updated.customColors,
-            activePalette = palette
-        )
-        val colorsJson = json.encodeToString(normalized.customColors)
-        withContext(Dispatchers.IO) {
-            appContext.haDataStore.edit { p ->
-                p[PreferencesKeys.THEME_PRESET] = normalized.preset
-                p[PreferencesKeys.CUSTOM_THEME_COLORS] = colorsJson
+        writeMutex.withLock {
+            val updated = transform(_themeConfig.value)
+            val normalized = PreferencesDomainOps.normalizeThemeConfig(updated)
+            val colorsJson = json.encodeToString(normalized.customColors)
+            withContext(Dispatchers.IO) {
+                dataStore.edit { p ->
+                    p[PreferencesKeys.THEME_PRESET] = normalized.preset
+                    p[PreferencesKeys.CUSTOM_THEME_COLORS] = colorsJson
+                }
             }
+            _themeConfig.update { normalized }
         }
-        _themeConfig.update { normalized }
     }
 
     override suspend fun updateRecentAppsConfig(transform: (RecentAppsConfig) -> RecentAppsConfig) {
-        val updated = transform(_recentAppsConfig.value)
-        val clampedCount = updated.maxCount.coerceIn(1, 5)
-        val trimmed = updated.recentPackages.take(clampedCount)
-        val normalized = RecentAppsConfig(updated.enabled, clampedCount, trimmed)
-        val encoded = json.encodeToString(trimmed)
-        withContext(Dispatchers.IO) {
-            appContext.haDataStore.edit { p ->
-                p[PreferencesKeys.RECENT_APPS_ENABLED] = normalized.enabled
-                p[PreferencesKeys.RECENT_APPS_COUNT] = normalized.maxCount
-                p[PreferencesKeys.RECENT_APPS_LIST] = encoded
-            }
-        }
-        _recentAppsConfig.update { normalized }
-    }
-
-    override suspend fun setVolumeFixEnabled(enabled: Boolean) {
-        withContext(Dispatchers.IO) {
-            appContext.haDataStore.edit { p ->
-                p[PreferencesKeys.VOLUME_FIX_ENABLED] = enabled
-            }
-        }
-        _volumeFixEnabled.update { enabled }
-    }
-
-    override suspend fun recordRecentApp(packageName: String) {
-        if (!_recentAppsConfig.value.enabled) return
-        if (packageName.isBlank()) return
-        if (packageName == "com.homekey.tv" ||
-            packageName == "com.android.systemui" ||
-            packageName == "android" ||
-            packageName.startsWith("com.google.android.apps.tv.launcher") ||
-            packageName.startsWith("com.google.android.tvlauncher") ||
-            packageName.startsWith("com.google.android.tungsten.setupwraith") ||
-            packageName.startsWith("com.android.vending") ||
-            packageName == "com.google.android.katniss"
-        ) {
-            return
-        }
-
-        val current = _recentAppsConfig.value.recentPackages.toMutableList()
-        current.remove(packageName)
-        current.add(0, packageName)
-        val trimmed = current.take(_recentAppsConfig.value.maxCount)
-        val encoded = json.encodeToString(trimmed)
-        try {
+        writeMutex.withLock {
+            val updated = transform(_recentAppsConfig.value)
+            val normalized = PreferencesDomainOps.normalizeRecentAppsConfig(updated)
+            val encoded = json.encodeToString(normalized.recentPackages)
             withContext(Dispatchers.IO) {
-                appContext.haDataStore.edit { p ->
+                dataStore.edit { p ->
+                    p[PreferencesKeys.RECENT_APPS_ENABLED] = normalized.enabled
+                    p[PreferencesKeys.RECENT_APPS_COUNT] = normalized.maxCount
                     p[PreferencesKeys.RECENT_APPS_LIST] = encoded
                 }
             }
-            _recentAppsConfig.update { it.copy(recentPackages = trimmed) }
-        } catch (_: Exception) {}
+            _recentAppsConfig.update { normalized }
+        }
+    }
+
+    override suspend fun setVolumeFixEnabled(enabled: Boolean) {
+        writeMutex.withLock {
+            withContext(Dispatchers.IO) {
+                dataStore.edit { p ->
+                    p[PreferencesKeys.VOLUME_FIX_ENABLED] = enabled
+                }
+            }
+            _volumeFixEnabled.update { enabled }
+        }
+    }
+
+    override suspend fun recordRecentApp(packageName: String) {
+        writeMutex.withLock {
+            val updated = PreferencesDomainOps.recordRecentApp(_recentAppsConfig.value, packageName) ?: return
+            val encoded = json.encodeToString(updated.recentPackages)
+            try {
+                withContext(Dispatchers.IO) {
+                    dataStore.edit { p ->
+                        p[PreferencesKeys.RECENT_APPS_LIST] = encoded
+                    }
+                }
+                _recentAppsConfig.update { updated }
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Log.w(TAG, "Failed persisting recent app '$packageName': ${e.message}", e)
+            }
+        }
     }
 
     override suspend fun savePinnedEntities(entities: List<PinnedEntityConfig>) {
-        val indexed = entities.mapIndexed { idx, item -> item.copy(order = idx) }
+        writeMutex.withLock {
+            savePinnedEntitiesLocked(entities)
+        }
+    }
+
+    private suspend fun savePinnedEntitiesLocked(entities: List<PinnedEntityConfig>) {
+        val indexed = PreferencesDomainOps.reindexPinnedEntities(entities)
         val serialized = json.encodeToString(indexed)
         withContext(Dispatchers.IO) {
-            appContext.haDataStore.edit { p ->
+            dataStore.edit { p ->
                 p[PreferencesKeys.PINNED_ENTITIES] = serialized
             }
         }
@@ -367,10 +395,16 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
     }
 
     override suspend fun savePinnedApps(apps: List<PinnedAppConfig>) {
-        val indexed = apps.mapIndexed { idx, item -> item.copy(order = idx) }
+        writeMutex.withLock {
+            savePinnedAppsLocked(apps)
+        }
+    }
+
+    private suspend fun savePinnedAppsLocked(apps: List<PinnedAppConfig>) {
+        val indexed = PreferencesDomainOps.reindexPinnedApps(apps)
         val serialized = json.encodeToString(indexed)
         withContext(Dispatchers.IO) {
-            appContext.haDataStore.edit { p ->
+            dataStore.edit { p ->
                 p[PreferencesKeys.PINNED_APPS] = serialized
             }
         }
@@ -378,151 +412,110 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
     }
 
     override suspend fun saveButtonRemaps(remaps: List<ButtonRemapConfig>) {
-        val serialized = json.encodeToString(remaps)
-        withContext(Dispatchers.IO) {
-            appContext.haDataStore.edit { p ->
-                p[PreferencesKeys.BUTTON_REMAPS] = serialized
+        writeMutex.withLock {
+            val serialized = json.encodeToString(remaps)
+            withContext(Dispatchers.IO) {
+                dataStore.edit { p ->
+                    p[PreferencesKeys.BUTTON_REMAPS] = serialized
+                }
             }
+            _buttonRemaps.update { remaps }
         }
-        _buttonRemaps.update { remaps }
     }
 
     override suspend fun movePinnedEntity(id: String, delta: Int) {
-        if (id.startsWith("app:")) {
-            val pkg = id.removePrefix("app:")
-            val current = _pinnedApps.value.toMutableList()
-            val currentIndex = current.indexOfFirst { it.packageName == pkg }
-            if (currentIndex == -1 || current.size <= 1) return
-
-            val targetIndex = (currentIndex + delta).let {
-                if (it < 0) current.size - 1
-                else if (it >= current.size) 0
-                else it
-            }
-            if (currentIndex != targetIndex) {
-                val item = current.removeAt(currentIndex)
-                current.add(targetIndex, item)
-                savePinnedApps(current)
-            }
-        } else {
-            val current = _pinnedEntities.value.toMutableList()
-            val currentIndex = current.indexOfFirst { it.entityId == id }
-            if (currentIndex == -1 || current.size <= 1) return
-
-            val targetIndex = (currentIndex + delta).let {
-                if (it < 0) current.size - 1
-                else if (it >= current.size) 0
-                else it
-            }
-            if (currentIndex != targetIndex) {
-                val item = current.removeAt(currentIndex)
-                current.add(targetIndex, item)
-                savePinnedEntities(current)
+        writeMutex.withLock {
+            if (id.startsWith("app:")) {
+                val pkg = id.removePrefix("app:")
+                val reordered = PreferencesDomainOps.movePinnedApp(_pinnedApps.value, pkg, delta) ?: return
+                savePinnedAppsLocked(reordered)
+            } else {
+                val reordered = PreferencesDomainOps.movePinnedEntity(_pinnedEntities.value, id, delta) ?: return
+                savePinnedEntitiesLocked(reordered)
             }
         }
     }
 
     override suspend fun pinEntity(entity: PinnedEntityConfig) {
-        val current = _pinnedEntities.value.toMutableList()
-        current.removeAll { it.entityId == entity.entityId }
-        current.add(entity)
-        savePinnedEntities(current)
+        writeMutex.withLock {
+            savePinnedEntitiesLocked(PreferencesDomainOps.pinEntity(_pinnedEntities.value, entity))
+        }
     }
 
     override suspend fun unpinEntity(entityId: String) {
-        val current = _pinnedEntities.value.toMutableList()
-        current.removeAll { it.entityId == entityId }
-        savePinnedEntities(current)
+        writeMutex.withLock {
+            savePinnedEntitiesLocked(PreferencesDomainOps.unpinEntity(_pinnedEntities.value, entityId))
+        }
     }
 
     override suspend fun pinApp(app: PinnedAppConfig) {
-        val current = _pinnedApps.value.toMutableList()
-        current.removeAll { it.packageName == app.packageName }
-        current.add(app)
-        savePinnedApps(current)
+        writeMutex.withLock {
+            savePinnedAppsLocked(PreferencesDomainOps.pinApp(_pinnedApps.value, app))
+        }
     }
 
     override suspend fun unpinApp(packageName: String) {
-        val current = _pinnedApps.value.toMutableList()
-        current.removeAll { it.packageName == packageName }
-        savePinnedApps(current)
+        writeMutex.withLock {
+            savePinnedAppsLocked(PreferencesDomainOps.unpinApp(_pinnedApps.value, packageName))
+        }
     }
 
     override suspend fun exportBackupJson(includeToken: Boolean): String {
-        val backup = HomeKeyBackup(
-            serverUrl = _serverConfig.value.serverUrl,
-            fallbackServerUrl = _serverConfig.value.fallbackServerUrl,
-            accessToken = if (includeToken) _serverConfig.value.accessToken else null,
-            dockLayout = _dockConfig.value.layout,
-            panelLayout = _dockConfig.value.layout,
-            popupStyle = _dockConfig.value.popupStyle,
-            cameraPopupStyle = _dockConfig.value.cameraPopupStyle,
-            cameraCompactSize = _dockConfig.value.cameraCompactSize,
-            recentAppsEnabled = _recentAppsConfig.value.enabled,
-            recentAppsCount = _recentAppsConfig.value.maxCount,
-            haEnabled = _serverConfig.value.haEnabled,
-            themePreset = _themeConfig.value.preset,
-            customThemeColors = _themeConfig.value.customColors,
+        return HomeKeyBackupCodec.exportBackupJson(
+            serverConfig = _serverConfig.value,
+            dockConfig = _dockConfig.value,
+            themeConfig = _themeConfig.value,
+            recentAppsConfig = _recentAppsConfig.value,
             volumeFixEnabled = _volumeFixEnabled.value,
             pinnedEntities = _pinnedEntities.value,
             pinnedApps = _pinnedApps.value,
-            buttonRemaps = _buttonRemaps.value
+            buttonRemaps = _buttonRemaps.value,
+            includeToken = includeToken
         )
-        return json.encodeToString(backup)
     }
 
-    override suspend fun restoreFromBackupJson(jsonString: String): Result<Unit> {
-        return try {
-            val backup = json.decodeFromString<HomeKeyBackup>(jsonString)
-            val cleanUrl = backup.serverUrl.trim().removeSuffix("/")
-            val cleanFallbackUrl = backup.fallbackServerUrl.trim().removeSuffix("/")
-            val cleanToken = backup.accessToken?.ifBlank { null } ?: _serverConfig.value.accessToken
-            val dockLayout = DockConfig.normalizeLayout(backup.resolvedDockLayout)
-            val popupStyle = DockConfig.normalizePopupStyle(backup.popupStyle)
-            val cameraPopupStyle = DockConfig.normalizeCameraPopupStyle(backup.cameraPopupStyle)
-            val cameraCompactSize = DockConfig.normalizeCameraCompactSize(backup.cameraCompactSize)
-            val recentAppsEnabled = backup.recentAppsEnabled
-            val recentAppsCount = backup.recentAppsCount.coerceIn(1, 5)
-            val haEnabled = backup.haEnabled
-            val volumeFixEnabled = backup.volumeFixEnabled
-            val themePreset = backup.themePreset
-            val customColors = backup.customThemeColors
-            val pinnedEntities = backup.pinnedEntities
-            val pinnedApps = backup.pinnedApps
-            val buttonRemaps = backup.buttonRemaps
+    override suspend fun restoreFromBackupJson(jsonString: String): Result<Unit> = writeMutex.withLock {
+        val restored = HomeKeyBackupCodec.decodeBackup(
+            jsonString = jsonString,
+            currentServerConfig = _serverConfig.value,
+            currentRecentAppsConfig = _recentAppsConfig.value
+        ).getOrElse { return@withLock Result.failure(it) }
 
-            val encToken = if (cleanUrl.isNotBlank() && cleanToken.isNotBlank()) {
+        try {
+            val encToken = if ((restored.cleanUrl.isNotBlank() || restored.cleanFallbackUrl.isNotBlank()) &&
+                restored.cleanToken.isNotBlank()
+            ) {
                 withContext(Dispatchers.IO) {
-                    TinkKeystoreCrypto.encrypt(appContext, cleanToken)
+                    tokenCipher.encrypt(restored.cleanToken)
                 }
             } else null
 
-            val customColorsJson = json.encodeToString(customColors)
-            val pinnedEntitiesJson = json.encodeToString(pinnedEntities)
-            val pinnedAppsJson = json.encodeToString(pinnedApps)
-            val buttonRemapsJson = json.encodeToString(buttonRemaps)
+            val customColorsJson = json.encodeToString(restored.themeConfig.customColors)
+            val pinnedEntitiesJson = json.encodeToString(restored.pinnedEntities)
+            val pinnedAppsJson = json.encodeToString(restored.pinnedApps)
+            val buttonRemapsJson = json.encodeToString(restored.buttonRemaps)
 
             withContext(Dispatchers.IO) {
-                appContext.haDataStore.edit { p ->
-                    if (cleanUrl.isNotBlank()) {
-                        p[PreferencesKeys.SERVER_URL] = cleanUrl
+                dataStore.edit { p ->
+                    if (restored.cleanUrl.isNotBlank()) {
+                        p[PreferencesKeys.SERVER_URL] = restored.cleanUrl
                     }
-                    if (cleanFallbackUrl.isNotBlank()) {
-                        p[PreferencesKeys.FALLBACK_SERVER_URL] = cleanFallbackUrl
+                    if (restored.cleanFallbackUrl.isNotBlank()) {
+                        p[PreferencesKeys.FALLBACK_SERVER_URL] = restored.cleanFallbackUrl
                     }
                     if (encToken != null) {
                         p[PreferencesKeys.ENCRYPTED_ACCESS_TOKEN] = encToken
                         p.remove(PreferencesKeys.ACCESS_TOKEN)
                     }
-                    p[PreferencesKeys.PANEL_LAYOUT] = dockLayout
-                    p[PreferencesKeys.POPUP_STYLE] = popupStyle
-                    p[PreferencesKeys.CAMERA_POPUP_STYLE] = cameraPopupStyle
-                    p[PreferencesKeys.CAMERA_COMPACT_SIZE] = cameraCompactSize
-                    p[PreferencesKeys.RECENT_APPS_ENABLED] = recentAppsEnabled
-                    p[PreferencesKeys.RECENT_APPS_COUNT] = recentAppsCount
-                    p[PreferencesKeys.HA_ENABLED] = haEnabled
-                    p[PreferencesKeys.VOLUME_FIX_ENABLED] = volumeFixEnabled
-                    p[PreferencesKeys.THEME_PRESET] = themePreset
+                    p[PreferencesKeys.PANEL_LAYOUT] = restored.dockConfig.layout
+                    p[PreferencesKeys.POPUP_STYLE] = restored.dockConfig.popupStyle
+                    p[PreferencesKeys.CAMERA_POPUP_STYLE] = restored.dockConfig.cameraPopupStyle
+                    p[PreferencesKeys.CAMERA_COMPACT_SIZE] = restored.dockConfig.cameraCompactSize
+                    p[PreferencesKeys.RECENT_APPS_ENABLED] = restored.recentAppsConfig.enabled
+                    p[PreferencesKeys.RECENT_APPS_COUNT] = restored.recentAppsConfig.maxCount
+                    p[PreferencesKeys.HA_ENABLED] = restored.serverConfig.haEnabled
+                    p[PreferencesKeys.VOLUME_FIX_ENABLED] = restored.volumeFixEnabled
+                    p[PreferencesKeys.THEME_PRESET] = restored.themeConfig.preset
                     p[PreferencesKeys.CUSTOM_THEME_COLORS] = customColorsJson
                     p[PreferencesKeys.PINNED_ENTITIES] = pinnedEntitiesJson
                     p[PreferencesKeys.PINNED_APPS] = pinnedAppsJson
@@ -530,24 +523,18 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
                 }
             }
 
-            _serverConfig.update {
-                it.copy(
-                    serverUrl = if (cleanUrl.isNotBlank()) cleanUrl else it.serverUrl,
-                    fallbackServerUrl = if (cleanFallbackUrl.isNotBlank()) cleanFallbackUrl else it.fallbackServerUrl,
-                    accessToken = cleanToken,
-                    haEnabled = haEnabled
-                )
-            }
-            _dockConfig.update { DockConfig(dockLayout, popupStyle, cameraPopupStyle, cameraCompactSize) }
-            _recentAppsConfig.update { RecentAppsConfig(recentAppsEnabled, recentAppsCount, it.recentPackages) }
-            _themeConfig.update { ThemeConfig(themePreset, customColors, calculateActivePalette(themePreset, customColors)) }
-            _volumeFixEnabled.update { volumeFixEnabled }
-            _pinnedEntities.update { pinnedEntities }
-            _pinnedApps.update { pinnedApps }
-            _buttonRemaps.update { buttonRemaps }
+            _serverConfig.update { restored.serverConfig }
+            _dockConfig.update { restored.dockConfig }
+            _recentAppsConfig.update { restored.recentAppsConfig }
+            _themeConfig.update { restored.themeConfig }
+            _volumeFixEnabled.update { restored.volumeFixEnabled }
+            _pinnedEntities.update { restored.pinnedEntities }
+            _pinnedApps.update { restored.pinnedApps }
+            _buttonRemaps.update { restored.buttonRemaps }
 
             Result.success(Unit)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -588,39 +575,12 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
         }
     }
 
-    private fun calculateActivePalette(presetId: String, customColors: Map<String, String>): DomainColorPalette {
-        val preset = ThemePreset.fromId(presetId)
-        return if (preset == ThemePreset.CUSTOM) {
-            DomainColorPalette.CLASSIC.withOverrides(customColors)
-        } else {
-            DomainColorPalette.forPreset(preset)
-        }
-    }
-
     private fun loadRecentApps(raw: String?): List<String> {
         if (raw.isNullOrBlank()) return emptyList()
         return try {
             json.decodeFromString<List<String>>(raw)
         } catch (_: Exception) {
             emptyList()
-        }
-    }
-
-    private fun createSecurePrefs(context: Context): SharedPreferences? {
-        return try {
-            val masterKey = MasterKey.Builder(context)
-                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-                .build()
-            EncryptedSharedPreferences.create(
-                context,
-                FILE_SECURE_PREFS,
-                masterKey,
-                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
-            )
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed creating EncryptedSharedPreferences fallback", e)
-            null
         }
     }
 
@@ -658,6 +618,24 @@ class DataStorePreferencesRepository(context: Context) : PreferencesRepository {
         fun getInstance(context: Context): PreferencesRepository {
             return instance ?: synchronized(this) {
                 instance ?: DataStorePreferencesRepository(context.applicationContext).also { instance = it }
+            }
+        }
+
+        private fun createSecurePrefs(context: Context): SharedPreferences? {
+            return try {
+                val masterKey = MasterKey.Builder(context)
+                    .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                    .build()
+                EncryptedSharedPreferences.create(
+                    context,
+                    FILE_SECURE_PREFS,
+                    masterKey,
+                    EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                    EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+                )
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed creating EncryptedSharedPreferences fallback", e)
+                null
             }
         }
     }

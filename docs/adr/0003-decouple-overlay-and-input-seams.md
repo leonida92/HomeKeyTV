@@ -9,7 +9,7 @@
 
 We decided to decouple the overlay presentation and input system into focused, deep modules:
 1. **`DockOverlayController`**: Clean interface exposing reactive visibility (`isShowing: StateFlow<Boolean>`) and lifecycle methods (`show()`, `hide()`, `toggle()`, `prewarm()`, `teardown()`, `handleBack(): Boolean`). Context lifecycle is managed via explicit service attachment (`attachService`/`detachService`), eliminating the static `instance` leak.
-2. **`RemapActionDispatcher`**: Pure domain action executor taking `PreferencesRepository`, `HomeAssistantRepository`, and `DockOverlayController`. Fully unit-testable without Android Accessibility service mocks.
+2. **`RemapActionDispatcher`**: Pure domain action executor taking `HomeAssistantRepository` and `DockOverlayController`. Fully unit-testable without Android Accessibility service mocks.
 3. **`CameraPipOverlayController`**: Dedicated manager for transient picture-in-picture camera previews with independent window layout parameters and auto-dismiss timer cancellation.
 4. **Authoritative Back Navigation**: `DockOverlayController.handleBack(): Boolean` serves as the single source of truth for back navigation (dialogs -> reorder mode -> dock dismissal), with both frame layouts and services delegating directly to it.
 

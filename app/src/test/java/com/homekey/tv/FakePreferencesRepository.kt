@@ -8,9 +8,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 class FakePreferencesRepository(
     initialServerConfig: ServerConfig = ServerConfig(),
@@ -18,8 +15,6 @@ class FakePreferencesRepository(
     initialThemeConfig: ThemeConfig = ThemeConfig(),
     initialRecentAppsConfig: RecentAppsConfig = RecentAppsConfig()
 ) : PreferencesRepository {
-
-    private val json = Json { ignoreUnknownKeys = true; isLenient = true; encodeDefaults = true }
 
     private val _serverConfig = MutableStateFlow(initialServerConfig)
     override val serverConfig: StateFlow<ServerConfig> = _serverConfig.asStateFlow()
@@ -46,168 +41,106 @@ class FakePreferencesRepository(
     override val volumeFixEnabled: StateFlow<Boolean> = _volumeFixEnabled.asStateFlow()
 
     override suspend fun updateServerConfig(transform: (ServerConfig) -> ServerConfig) {
-        _serverConfig.update(transform)
+        _serverConfig.update { current ->
+            PreferencesDomainOps.normalizeServerConfig(transform(current))
+        }
     }
 
     override suspend fun updateDockConfig(transform: (DockConfig) -> DockConfig) {
-        _dockConfig.update(transform)
+        _dockConfig.update { current ->
+            PreferencesDomainOps.normalizeDockConfig(transform(current))
+        }
     }
 
     override suspend fun updateThemeConfig(transform: (ThemeConfig) -> ThemeConfig) {
-        _themeConfig.update(transform)
+        _themeConfig.update { current ->
+            PreferencesDomainOps.normalizeThemeConfig(transform(current))
+        }
     }
 
     override suspend fun updateRecentAppsConfig(transform: (RecentAppsConfig) -> RecentAppsConfig) {
-        _recentAppsConfig.update(transform)
+        _recentAppsConfig.update { current ->
+            PreferencesDomainOps.normalizeRecentAppsConfig(transform(current))
+        }
     }
 
     override suspend fun setVolumeFixEnabled(enabled: Boolean) {
-        _volumeFixEnabled.value = enabled
+        _volumeFixEnabled.update { enabled }
     }
 
     override suspend fun recordRecentApp(packageName: String) {
-        if (!_recentAppsConfig.value.enabled) return
-        val current = _recentAppsConfig.value.recentPackages.toMutableList()
-        current.remove(packageName)
-        current.add(0, packageName)
-        val trimmed = current.take(_recentAppsConfig.value.maxCount)
-        _recentAppsConfig.update { it.copy(recentPackages = trimmed) }
+        val updated = PreferencesDomainOps.recordRecentApp(_recentAppsConfig.value, packageName) ?: return
+        _recentAppsConfig.update { updated }
     }
 
     override suspend fun savePinnedEntities(entities: List<PinnedEntityConfig>) {
-        _pinnedEntities.value = entities.mapIndexed { idx, item -> item.copy(order = idx) }
+        _pinnedEntities.update { PreferencesDomainOps.reindexPinnedEntities(entities) }
     }
 
     override suspend fun savePinnedApps(apps: List<PinnedAppConfig>) {
-        _pinnedApps.value = apps.mapIndexed { idx, item -> item.copy(order = idx) }
+        _pinnedApps.update { PreferencesDomainOps.reindexPinnedApps(apps) }
     }
 
     override suspend fun saveButtonRemaps(remaps: List<ButtonRemapConfig>) {
-        _buttonRemaps.value = remaps
+        _buttonRemaps.update { remaps }
     }
 
     override suspend fun movePinnedEntity(id: String, delta: Int) {
         if (id.startsWith("app:")) {
             val pkg = id.removePrefix("app:")
-            val current = _pinnedApps.value.toMutableList()
-            val currentIndex = current.indexOfFirst { it.packageName == pkg }
-            if (currentIndex == -1 || current.size <= 1) return
-
-            val targetIndex = (currentIndex + delta).let {
-                if (it < 0) current.size - 1
-                else if (it >= current.size) 0
-                else it
-            }
-            if (currentIndex != targetIndex) {
-                val item = current.removeAt(currentIndex)
-                current.add(targetIndex, item)
-                savePinnedApps(current)
-            }
+            val reordered = PreferencesDomainOps.movePinnedApp(_pinnedApps.value, pkg, delta) ?: return
+            savePinnedApps(reordered)
         } else {
-            val current = _pinnedEntities.value.toMutableList()
-            val currentIndex = current.indexOfFirst { it.entityId == id }
-            if (currentIndex == -1 || current.size <= 1) return
-
-            val targetIndex = (currentIndex + delta).let {
-                if (it < 0) current.size - 1
-                else if (it >= current.size) 0
-                else it
-            }
-            if (currentIndex != targetIndex) {
-                val item = current.removeAt(currentIndex)
-                current.add(targetIndex, item)
-                savePinnedEntities(current)
-            }
+            val reordered = PreferencesDomainOps.movePinnedEntity(_pinnedEntities.value, id, delta) ?: return
+            savePinnedEntities(reordered)
         }
     }
 
     override suspend fun pinEntity(entity: PinnedEntityConfig) {
-        val current = _pinnedEntities.value.toMutableList()
-        current.removeAll { it.entityId == entity.entityId }
-        current.add(entity)
-        savePinnedEntities(current)
+        savePinnedEntities(PreferencesDomainOps.pinEntity(_pinnedEntities.value, entity))
     }
 
     override suspend fun unpinEntity(entityId: String) {
-        val current = _pinnedEntities.value.toMutableList()
-        current.removeAll { it.entityId == entityId }
-        savePinnedEntities(current)
+        savePinnedEntities(PreferencesDomainOps.unpinEntity(_pinnedEntities.value, entityId))
     }
 
     override suspend fun pinApp(app: PinnedAppConfig) {
-        val current = _pinnedApps.value.toMutableList()
-        current.removeAll { it.packageName == app.packageName }
-        current.add(app)
-        savePinnedApps(current)
+        savePinnedApps(PreferencesDomainOps.pinApp(_pinnedApps.value, app))
     }
 
     override suspend fun unpinApp(packageName: String) {
-        val current = _pinnedApps.value.toMutableList()
-        current.removeAll { it.packageName == packageName }
-        savePinnedApps(current)
+        savePinnedApps(PreferencesDomainOps.unpinApp(_pinnedApps.value, packageName))
     }
 
     override suspend fun exportBackupJson(includeToken: Boolean): String {
-        val backup = HomeKeyBackup(
-            serverUrl = _serverConfig.value.serverUrl,
-            fallbackServerUrl = _serverConfig.value.fallbackServerUrl,
-            accessToken = if (includeToken) _serverConfig.value.accessToken else null,
-            dockLayout = _dockConfig.value.layout,
-            panelLayout = _dockConfig.value.layout,
-            popupStyle = _dockConfig.value.popupStyle,
-            cameraPopupStyle = _dockConfig.value.cameraPopupStyle,
-            cameraCompactSize = _dockConfig.value.cameraCompactSize,
-            recentAppsEnabled = _recentAppsConfig.value.enabled,
-            recentAppsCount = _recentAppsConfig.value.maxCount,
-            haEnabled = _serverConfig.value.haEnabled,
-            themePreset = _themeConfig.value.preset,
-            customThemeColors = _themeConfig.value.customColors,
+        return HomeKeyBackupCodec.exportBackupJson(
+            serverConfig = _serverConfig.value,
+            dockConfig = _dockConfig.value,
+            themeConfig = _themeConfig.value,
+            recentAppsConfig = _recentAppsConfig.value,
             volumeFixEnabled = _volumeFixEnabled.value,
             pinnedEntities = _pinnedEntities.value,
             pinnedApps = _pinnedApps.value,
-            buttonRemaps = _buttonRemaps.value
+            buttonRemaps = _buttonRemaps.value,
+            includeToken = includeToken
         )
-        return json.encodeToString(backup)
     }
 
     override suspend fun restoreFromBackupJson(jsonString: String): Result<Unit> {
-        return try {
-            val backup = json.decodeFromString<HomeKeyBackup>(jsonString)
-            _serverConfig.update {
-                it.copy(
-                    serverUrl = backup.serverUrl,
-                    fallbackServerUrl = backup.fallbackServerUrl,
-                    accessToken = backup.accessToken ?: it.accessToken,
-                    haEnabled = backup.haEnabled
-                )
-            }
-            _dockConfig.update {
-                it.copy(
-                    layout = backup.resolvedDockLayout,
-                    popupStyle = backup.popupStyle,
-                    cameraPopupStyle = backup.cameraPopupStyle,
-                    cameraCompactSize = backup.cameraCompactSize
-                )
-            }
-            _recentAppsConfig.update {
-                it.copy(
-                    enabled = backup.recentAppsEnabled,
-                    maxCount = backup.recentAppsCount
-                )
-            }
-            _themeConfig.update {
-                it.copy(
-                    preset = backup.themePreset,
-                    customColors = backup.customThemeColors
-                )
-            }
-            _volumeFixEnabled.value = backup.volumeFixEnabled
-            _pinnedEntities.value = backup.pinnedEntities
-            _pinnedApps.value = backup.pinnedApps
-            _buttonRemaps.value = backup.buttonRemaps
-            Result.success(Unit)
-        } catch (e: Exception) {
-            Result.failure(e)
-        }
+        val restored = HomeKeyBackupCodec.decodeBackup(
+            jsonString = jsonString,
+            currentServerConfig = _serverConfig.value,
+            currentRecentAppsConfig = _recentAppsConfig.value
+        ).getOrElse { return Result.failure(it) }
+
+        _serverConfig.update { restored.serverConfig }
+        _dockConfig.update { restored.dockConfig }
+        _recentAppsConfig.update { restored.recentAppsConfig }
+        _themeConfig.update { restored.themeConfig }
+        _volumeFixEnabled.update { restored.volumeFixEnabled }
+        _pinnedEntities.update { restored.pinnedEntities }
+        _pinnedApps.update { restored.pinnedApps }
+        _buttonRemaps.update { restored.buttonRemaps }
+        return Result.success(Unit)
     }
 }

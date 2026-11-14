@@ -223,4 +223,23 @@ class HomeAssistantRepositoryTest {
         assertEquals("http://192.168.1.100:8123", customRepo.activeServerUrl.value)
         assertEquals("ws://192.168.1.100:8123/api/websocket", fakeTransport.lastConnectedUrl)
     }
+
+    @Test
+    fun callService_sends_domain_service_and_optional_entity_id() = runTest(testDispatcher) {
+        repository.callService("homeassistant", "restart")
+        assertTrue(fakeTransport.sentMessages.any {
+            it.contains("\"type\":\"call_service\"") &&
+                it.contains("\"domain\":\"homeassistant\"") &&
+                it.contains("\"service\":\"restart\"") &&
+                !it.contains("\"target\"")
+        })
+
+        repository.callService("switch", "turn_on", "switch.patio")
+        assertTrue(fakeTransport.sentMessages.any {
+            it.contains("\"type\":\"call_service\"") &&
+                it.contains("\"domain\":\"switch\"") &&
+                it.contains("\"service\":\"turn_on\"") &&
+                it.contains("\"entity_id\":\"switch.patio\"")
+        })
+    }
 }

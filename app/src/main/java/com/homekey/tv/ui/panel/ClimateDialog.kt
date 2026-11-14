@@ -1,6 +1,13 @@
 package com.homekey.tv.ui.panel
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -44,6 +51,7 @@ private const val TEMP_DEBOUNCE_MS = 300L
 @Composable
 fun ClimateDialog(
     entity: HAEntityState,
+    humidity: Float? = entity.currentHumidity,
     onSetTemperature: (Float) -> Unit,
     onSetHvacMode: (String) -> Unit,
     onSetFanMode: (String) -> Unit = {},
@@ -188,8 +196,8 @@ fun ClimateDialog(
                     ) {
                         // Current Environment Info (Temp & Humidity)
                         val currentTemp = entity.currentTemperature
-                        val humidity = entity.currentHumidity
-                        if (currentTemp != null || humidity != null) {
+                        val displayHumidity = humidity ?: entity.currentHumidity
+                        if (currentTemp != null || displayHumidity != null) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.Center,
@@ -209,7 +217,7 @@ fun ClimateDialog(
                                     )
                                 }
 
-                                if (humidity != null) {
+                                if (displayHumidity != null) {
                                     if (currentTemp != null) {
                                         Text(
                                             text = "   •   ",
@@ -225,7 +233,7 @@ fun ClimateDialog(
                                     )
                                     Spacer(modifier = Modifier.width(4.dp))
                                     Text(
-                                        text = "${humidity.toInt()}% Humidity",
+                                        text = "${displayHumidity.toInt()}% Humidity",
                                         fontSize = 13.sp,
                                         fontWeight = FontWeight.SemiBold,
                                         color = Color.White
@@ -640,5 +648,633 @@ private fun formatHvacStatus(action: String?, state: String): String {
         "idle" -> "IDLE"
         "off" -> "OFF"
         else -> state.uppercase()
+    }
+}
+
+@Composable
+fun MinimalClimatePopup(
+    entity: HAEntityState,
+    humidity: Float? = entity.currentHumidity,
+    isVertical: Boolean = false,
+    onSetTemperature: (Float) -> Unit,
+    onSetHvacMode: (String) -> Unit,
+    onSetFanMode: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val palette = LocalThemePalette.current
+    val climateColor = palette.getColorForDomain("climate")
+    val initialTemp = entity.targetTemperature ?: 21.0f
+    var targetTemp by remember(entity.entityId) { mutableFloatStateOf(initialTemp) }
+    var isModeMenuOpen by remember { mutableStateOf(false) }
+
+    LaunchedEffect(entity.targetTemperature) {
+        entity.targetTemperature?.let {
+            targetTemp = it
+        }
+    }
+
+    val modeButtonFocusRequester = remember { FocusRequester() }
+    val activeModeFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        try {
+            modeButtonFocusRequester.requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    LaunchedEffect(isModeMenuOpen) {
+        if (isModeMenuOpen) {
+            delay(20)
+            try {
+                activeModeFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
+    BackHandler {
+        if (isModeMenuOpen) {
+            isModeMenuOpen = false
+            try {
+                modeButtonFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        } else {
+            onDismiss()
+        }
+    }
+
+    val stepTemperature: (Int) -> Unit = { direction ->
+        val next = (targetTemp + direction * entity.targetTempStep).coerceIn(entity.minTemp, entity.maxTemp)
+        targetTemp = next
+        onSetTemperature(next)
+    }
+
+    val currentFan = entity.fanMode
+    val canCycleFan = entity.fanModes.isNotEmpty() && currentFan != null
+    val cycleFanMode: () -> Unit = {
+        if (canCycleFan && currentFan != null) {
+            val currentIndex = entity.fanModes.indexOf(currentFan)
+            val nextIndex = (currentIndex + 1) % entity.fanModes.size
+            onSetFanMode(entity.fanModes[nextIndex])
+        }
+    }
+
+    val availableModes = if (entity.hvacModes.isNotEmpty()) entity.hvacModes else listOf("off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only")
+    val currentHvacMode = entity.state
+    val isOff = currentHvacMode.equals("off", ignoreCase = true)
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Bottom
+    ) {
+        AnimatedVisibility(
+            visible = isModeMenuOpen,
+            enter = fadeIn() + expandVertically(expandFrom = Alignment.Bottom),
+            exit = fadeOut() + shrinkVertically(shrinkTowards = Alignment.Bottom)
+        ) {
+            val offColor = palette.getOffBackgroundColor()
+            Column(
+                modifier = Modifier
+                    .padding(bottom = 8.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .background(offColor)
+                    .padding(6.dp),
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                val hasMatch = availableModes.any { it.equals(currentHvacMode, ignoreCase = true) }
+                availableModes.forEachIndexed { index, mode ->
+                    val isCurrent = currentHvacMode.equals(mode, ignoreCase = true)
+                    val needsFocus = isCurrent || (!hasMatch && index == 0)
+                    MinimalModeMenuItem(
+                        mode = mode,
+                        isSelected = isCurrent,
+                        focusRequester = if (needsFocus) activeModeFocusRequester else null,
+                        onClick = {
+                            onSetHvacMode(mode)
+                            isModeMenuOpen = false
+                            try {
+                                modeButtonFocusRequester.requestFocus()
+                            } catch (_: Exception) {}
+                        }
+                    )
+                }
+            }
+        }
+
+        if (isVertical) {
+            MinimalVerticalCardContainer {
+                // Header Row: Icon + Title + Status/Humidity + Close
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    MinimalClimateIdentity(
+                        friendlyName = entity.friendlyName,
+                        currentTemperature = entity.currentTemperature,
+                        targetTemp = targetTemp,
+                        humidity = humidity ?: entity.currentHumidity,
+                        climateColor = climateColor,
+                        modifier = Modifier.weight(1f)
+                    )
+                    MinimalIconButton(
+                        icon = Icons.Default.Close,
+                        description = "Close",
+                        onClick = onDismiss
+                    )
+                }
+
+                MinimalCardDivider()
+
+                // Stepper Controls
+                MinimalClimateTempSteppers(
+                    targetTemp = targetTemp,
+                    showCenterTemp = true,
+                    onStepTemperature = stepTemperature,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                MinimalCardDivider()
+
+                // HVAC Mode Dropdown Button
+                MinimalModeDropdownButton(
+                    currentMode = currentHvacMode,
+                    isOpen = isModeMenuOpen,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(modeButtonFocusRequester),
+                    onClick = { isModeMenuOpen = !isModeMenuOpen }
+                )
+
+                // Dedicated OFF Button and Fan Mode cycling
+                if (canCycleFan && currentFan != null) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        MinimalOffButton(
+                            isOff = isOff,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                onSetHvacMode("off")
+                                isModeMenuOpen = false
+                            }
+                        )
+                        MinimalClimateFanCycleChip(
+                            currentFan = currentFan,
+                            climateColor = climateColor,
+                            modifier = Modifier.weight(1.3f),
+                            onClick = cycleFanMode
+                        )
+                    }
+                } else {
+                    MinimalOffButton(
+                        isOff = isOff,
+                        modifier = Modifier.fillMaxWidth(),
+                        onClick = {
+                            onSetHvacMode("off")
+                            isModeMenuOpen = false
+                        }
+                    )
+                }
+            }
+        } else {
+            MinimalBarContainer {
+                MinimalClimateIdentity(
+                    friendlyName = entity.friendlyName,
+                    currentTemperature = entity.currentTemperature,
+                    targetTemp = targetTemp,
+                    humidity = humidity ?: entity.currentHumidity,
+                    climateColor = climateColor,
+                    modifier = Modifier.padding(end = 12.dp)
+                )
+
+                Box(
+                    modifier = Modifier
+                        .width(1.dp)
+                        .height(28.dp)
+                        .background(Color(0x33FFFFFF))
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // Temp Steppers
+                MinimalClimateTempSteppers(
+                    targetTemp = targetTemp,
+                    showCenterTemp = false,
+                    onStepTemperature = stepTemperature
+                )
+
+                Spacer(modifier = Modifier.width(12.dp))
+
+                // HVAC Mode Dropdown Button
+                MinimalModeDropdownButton(
+                    currentMode = currentHvacMode,
+                    isOpen = isModeMenuOpen,
+                    modifier = Modifier.focusRequester(modeButtonFocusRequester),
+                    onClick = { isModeMenuOpen = !isModeMenuOpen }
+                )
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Dedicated OFF Button
+                MinimalOffButton(
+                    isOff = isOff,
+                    onClick = {
+                        onSetHvacMode("off")
+                        isModeMenuOpen = false
+                    }
+                )
+
+                Spacer(modifier = Modifier.width(6.dp))
+
+                // Fan Mode cycling if supported
+                if (canCycleFan && currentFan != null) {
+                    MinimalClimateFanCycleChip(
+                        currentFan = currentFan,
+                        climateColor = climateColor,
+                        onClick = cycleFanMode
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                }
+
+                MinimalIconButton(
+                    icon = Icons.Default.Close,
+                    description = "Close",
+                    onClick = onDismiss
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MinimalClimateIdentity(
+    friendlyName: String,
+    currentTemperature: Float?,
+    targetTemp: Float,
+    humidity: Float?,
+    climateColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(climateColor.copy(alpha = 0.2f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                imageVector = Icons.Default.Thermostat,
+                contentDescription = null,
+                tint = climateColor,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column {
+            Text(
+                text = friendlyName,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = TV_Text_Primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = "${currentTemperature ?: targetTemp}° -> ${String.format(Locale.US, "%.1f", targetTemp)}°",
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = climateColor
+                )
+                if (humidity != null) {
+                    Text(
+                        text = " • ",
+                        fontSize = 11.sp,
+                        color = Color(0x66FFFFFF)
+                    )
+                    Icon(
+                        imageVector = Icons.Default.WaterDrop,
+                        contentDescription = "Humidity",
+                        tint = Color(0xFF38BDF8),
+                        modifier = Modifier.size(11.dp)
+                    )
+                    Spacer(modifier = Modifier.width(2.dp))
+                    Text(
+                        text = "${humidity.toInt()}%",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF38BDF8)
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MinimalClimateTempSteppers(
+    targetTemp: Float,
+    showCenterTemp: Boolean,
+    onStepTemperature: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = if (showCenterTemp) Arrangement.SpaceEvenly else Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        MinimalIconButton(
+            icon = Icons.Default.Remove,
+            description = "Decrease temperature",
+            onClick = { onStepTemperature(-1) }
+        )
+        if (showCenterTemp) {
+            Text(
+                text = "${String.format(Locale.US, "%.1f", targetTemp)}°",
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+        }
+        MinimalIconButton(
+            icon = Icons.Default.Add,
+            description = "Increase temperature",
+            onClick = { onStepTemperature(1) }
+        )
+    }
+}
+
+@Composable
+private fun MinimalClimateFanCycleChip(
+    currentFan: String,
+    climateColor: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    MinimalChip(
+        text = "FAN: ${currentFan.uppercase()}",
+        isSelected = false,
+        selectedColor = climateColor,
+        modifier = modifier,
+        onClick = onClick
+    )
+}
+
+@Composable
+private fun MinimalModeDropdownButton(
+    currentMode: String,
+    isOpen: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.10f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
+        label = "mode_btn_scale"
+    )
+
+    val bgColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> TV_Surface_Focused
+            isOpen -> Color(0x4438BDF8)
+            else -> Color(0x332C3852)
+        },
+        label = "mode_btn_bg"
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> TV_Border_Focused
+            isOpen -> Color(0xFF38BDF8)
+            else -> Color.Transparent
+        },
+        label = "mode_btn_border"
+    )
+
+    Row(
+        modifier = modifier
+            .scale(scale)
+            .height(34.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(bgColor)
+            .border(if (isFocused) 2.dp else 0.dp, borderColor, RoundedCornerShape(10.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .focusable(interactionSource = interactionSource)
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Icon(
+            imageVector = resolveModeIcon(currentMode),
+            contentDescription = null,
+            tint = if (isFocused) Color.White else getHvacModeColor(currentMode),
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "MODE: ${formatHvacMode(currentMode).uppercase()}",
+            fontSize = 11.sp,
+            fontWeight = if (isOpen || isFocused) FontWeight.Bold else FontWeight.Medium,
+            color = if (isOpen || isFocused) Color.White else TV_Text_Secondary
+        )
+        Spacer(modifier = Modifier.width(4.dp))
+        Icon(
+            imageVector = if (isOpen) Icons.Default.ArrowDropUp else Icons.Default.ArrowDropDown,
+            contentDescription = null,
+            tint = if (isOpen || isFocused) Color.White else TV_Text_Secondary,
+            modifier = Modifier.size(16.dp)
+        )
+    }
+}
+
+@Composable
+private fun MinimalOffButton(
+    isOff: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.10f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
+        label = "off_btn_scale"
+    )
+
+    val bgColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> TV_Surface_Focused
+            isOff -> Color(0x33EF4444)
+            else -> Color(0x332C3852)
+        },
+        label = "off_btn_bg"
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> TV_Border_Focused
+            isOff -> Color(0xFFEF4444)
+            else -> Color.Transparent
+        },
+        label = "off_btn_border"
+    )
+
+    val contentColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> Color.White
+            isOff -> Color(0xFFEF4444)
+            else -> TV_Text_Secondary
+        },
+        label = "off_btn_content_color"
+    )
+
+    Row(
+        modifier = modifier
+            .scale(scale)
+            .height(34.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(bgColor)
+            .border(if (isFocused) 2.dp else 0.dp, borderColor, RoundedCornerShape(10.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .focusable(interactionSource = interactionSource)
+            .padding(horizontal = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            imageVector = Icons.Default.PowerSettingsNew,
+            contentDescription = "Turn off",
+            tint = contentColor,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = "OFF",
+            fontSize = 11.sp,
+            fontWeight = if (isOff || isFocused) FontWeight.Bold else FontWeight.Medium,
+            color = contentColor,
+            maxLines = 1
+        )
+    }
+}
+
+@Composable
+private fun MinimalModeMenuItem(
+    mode: String,
+    isSelected: Boolean,
+    focusRequester: FocusRequester?,
+    onClick: () -> Unit
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    val isFocused by interactionSource.collectIsFocusedAsState()
+
+    val scale by animateFloatAsState(
+        targetValue = if (isFocused) 1.06f else 1.0f,
+        animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
+        label = "mode_item_scale"
+    )
+
+    val bgColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> TV_Surface_Focused
+            isSelected -> Color(0x3338BDF8)
+            else -> Color(0x222C3852)
+        },
+        label = "mode_item_bg"
+    )
+
+    val borderColor by animateColorAsState(
+        targetValue = when {
+            isFocused -> TV_Border_Focused
+            isSelected -> Color(0xFF38BDF8)
+            else -> Color.Transparent
+        },
+        label = "mode_item_border"
+    )
+
+    val mod = if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier
+
+    Row(
+        modifier = mod
+            .scale(scale)
+            .widthIn(min = 160.dp)
+            .height(36.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(bgColor)
+            .border(if (isFocused) 2.dp else 0.dp, borderColor, RoundedCornerShape(8.dp))
+            .clickable(
+                interactionSource = interactionSource,
+                indication = null,
+                onClick = onClick
+            )
+            .focusable(interactionSource = interactionSource)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = resolveModeIcon(mode),
+                contentDescription = null,
+                tint = if (isFocused) Color.White else getHvacModeColor(mode),
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(10.dp))
+            Text(
+                text = formatHvacMode(mode),
+                fontSize = 12.sp,
+                fontWeight = if (isSelected || isFocused) FontWeight.Bold else FontWeight.Medium,
+                color = if (isSelected || isFocused) Color.White else TV_Text_Secondary
+            )
+        }
+
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = "Selected",
+                tint = Color(0xFF38BDF8),
+                modifier = Modifier.size(14.dp)
+            )
+        }
+    }
+}
+
+private fun formatHvacMode(mode: String): String {
+    return when (mode.lowercase()) {
+        "off" -> "Off"
+        "heat" -> "Heat"
+        "cool" -> "Cool"
+        "heat_cool" -> "Heat/Cool"
+        "auto" -> "Auto"
+        "dry" -> "Dry"
+        "fan_only" -> "Fan Only"
+        else -> mode.replace('_', ' ').split(' ')
+            .joinToString(" ") { it.replaceFirstChar { c -> c.uppercase() } }
+    }
+}
+
+private fun getHvacModeColor(mode: String): Color {
+    return when (mode.lowercase()) {
+        "cool" -> Color(0xFF0284C7)
+        "heat" -> Color(0xFFEA580C)
+        "heat_cool", "auto" -> Color(0xFF059669)
+        "dry" -> Color(0xFFD97706)
+        "fan_only" -> Color(0xFF0D9488)
+        "off" -> Color(0xFFDC2626)
+        else -> Color(0xFF38BDF8)
     }
 }

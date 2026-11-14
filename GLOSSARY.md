@@ -75,3 +75,11 @@ _Avoid_: DockController, OverlayManager, DockStateManager
 **Window Overlay Host**:
 Presentation host responsible for attaching, positioning, rendering, and tearing down system overlay window hierarchies.
 _Avoid_: OverlayViewManager, WindowManagerAdapter, DockViewHost
+
+**Remote Input Coordinator**:
+Reactive coordinator owning remote accessibility service attachment, button-learning state, and foreground package tracking, decoupling ViewModels from static `AccessibilityService` state.
+_Avoid_: RemapServiceBridge, KeyLearnManager
+
+**Setup Portal**:
+Mobile browser configuration endpoint (`WebSetupServer` adapter + `SetupPortalHandler` policy engine) for editing Home Assistant credentials, dock items, themes, and configuration backups.
+_Avoid_: ConfigWebServer, PhoneWizard

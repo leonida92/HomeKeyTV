@@ -8,7 +8,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
-import kotlinx.serialization.json.JsonObject
 
 class FakeHomeAssistantRepository : HomeAssistantRepository {
     private val _connectionStatus = MutableStateFlow(ConnectionStatus.DISCONNECTED)
@@ -166,7 +165,6 @@ class FakeHomeAssistantRepository : HomeAssistantRepository {
     override fun callService(
         domain: String,
         service: String,
-        serviceData: JsonObject?,
         entityId: String?
     ) {
         serviceCalls.add("callService:$domain:$service:$entityId")

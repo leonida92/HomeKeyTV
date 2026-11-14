@@ -14,9 +14,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import com.homekey.tv.service.DockOverlayController
-import com.homekey.tv.ui.panel.PanelOverlayScreen
+import com.homekey.tv.ui.panel.DockOverlayScreen
 import com.homekey.tv.ui.theme.HomeAssistantTVTheme
 import com.homekey.tv.viewmodel.PanelViewModel
 
@@ -65,8 +67,10 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = androidx.compose.ui.graphics.Color.Transparent
                 ) {
-                    PanelOverlayScreen(
+                    val dockConfig by viewModel.dockConfig.collectAsState()
+                    DockOverlayScreen(
                         viewModel = viewModel,
+                        layoutPosition = dockConfig.layout,
                         onOpenSettings = {
                             val intent = Intent(this, SettingsActivity::class.java).apply {
                                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP

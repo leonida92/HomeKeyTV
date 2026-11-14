@@ -431,3 +431,231 @@ private fun MediaActionButton(
         }
     }
 }
+
+@Composable
+fun MinimalMediaPopup(
+    entity: HAEntityState,
+    isVertical: Boolean = false,
+    onTogglePlayPause: () -> Unit,
+    onNextTrack: () -> Unit,
+    onPreviousTrack: () -> Unit,
+    onSetVolume: (Float) -> Unit,
+    onToggleMute: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isPlaying = entity.state.equals("playing", ignoreCase = true)
+    val volume = entity.volumeLevel ?: 0.5f
+
+    val initialFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        try {
+            initialFocus.requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    if (isVertical) {
+        MinimalVerticalCardContainer {
+            // Header: Icon + Title + Subtitle/Artist + Close
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x3342A5F5)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tv,
+                        contentDescription = null,
+                        tint = Color(0xFF42A5F5),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entity.mediaTitle ?: entity.friendlyName,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TV_Text_Primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = entity.mediaArtist ?: entity.state.uppercase(),
+                        fontSize = 11.sp,
+                        color = TV_Text_Secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                MinimalIconButton(
+                    icon = Icons.Default.Close,
+                    description = "Close",
+                    onClick = onDismiss
+                )
+            }
+
+            MinimalCardDivider()
+
+            // Playback controls
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MinimalIconButton(
+                    icon = Icons.Default.SkipPrevious,
+                    description = "Previous Track",
+                    onClick = onPreviousTrack
+                )
+                MinimalIconButton(
+                    icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    description = if (isPlaying) "Pause" else "Play",
+                    modifier = Modifier.focusRequester(initialFocus),
+                    onClick = onTogglePlayPause
+                )
+                MinimalIconButton(
+                    icon = Icons.Default.SkipNext,
+                    description = "Next Track",
+                    onClick = onNextTrack
+                )
+            }
+
+            MinimalCardDivider()
+
+            // Volume controls
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MinimalIconButton(
+                    icon = Icons.AutoMirrored.Filled.VolumeMute,
+                    description = "Mute",
+                    onClick = onToggleMute
+                )
+                MinimalIconButton(
+                    icon = Icons.AutoMirrored.Filled.VolumeDown,
+                    description = "Volume Down",
+                    onClick = { onSetVolume((volume - 0.05f).coerceIn(0f, 1f)) }
+                )
+                MinimalIconButton(
+                    icon = Icons.AutoMirrored.Filled.VolumeUp,
+                    description = "Volume Up",
+                    onClick = { onSetVolume((volume + 0.05f).coerceIn(0f, 1f)) }
+                )
+            }
+        }
+    } else {
+        MinimalBarContainer {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(end = 12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x3342A5F5)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Tv,
+                        contentDescription = null,
+                        tint = Color(0xFF42A5F5),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = entity.mediaTitle ?: entity.friendlyName,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TV_Text_Primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = entity.mediaArtist ?: entity.state.uppercase(),
+                        fontSize = 11.sp,
+                        color = TV_Text_Secondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(28.dp)
+                    .background(Color(0x33FFFFFF))
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Playback controls
+            MinimalIconButton(
+                icon = Icons.Default.SkipPrevious,
+                description = "Previous Track",
+                onClick = onPreviousTrack
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            MinimalIconButton(
+                icon = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                description = if (isPlaying) "Pause" else "Play",
+                modifier = Modifier.focusRequester(initialFocus),
+                onClick = onTogglePlayPause
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            MinimalIconButton(
+                icon = Icons.Default.SkipNext,
+                description = "Next Track",
+                onClick = onNextTrack
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Volume Controls
+            MinimalIconButton(
+                icon = Icons.AutoMirrored.Filled.VolumeMute,
+                description = "Mute",
+                onClick = onToggleMute
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            MinimalIconButton(
+                icon = Icons.AutoMirrored.Filled.VolumeDown,
+                description = "Volume Down",
+                onClick = { onSetVolume((volume - 0.05f).coerceIn(0f, 1f)) }
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            MinimalIconButton(
+                icon = Icons.AutoMirrored.Filled.VolumeUp,
+                description = "Volume Up",
+                onClick = { onSetVolume((volume + 0.05f).coerceIn(0f, 1f)) }
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            MinimalIconButton(
+                icon = Icons.Default.Close,
+                description = "Close",
+                onClick = onDismiss
+            )
+        }
+    }
+}

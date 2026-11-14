@@ -1,7 +1,13 @@
 package com.homekey.tv
 
 import com.homekey.tv.service.DefaultDockOverlayController
-import org.junit.Assert.*
+import com.homekey.tv.service.DockOverlayStateEngine
+import com.homekey.tv.service.FakeWindowOverlayHost
+import com.homekey.tv.service.RemoteButtonRemapService
+import com.homekey.tv.service.VirtualTimeScheduler
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DockOverlayControllerTest {
@@ -37,50 +43,57 @@ class DockOverlayControllerTest {
     }
 
     @Test
-    fun delegatesOperationsToEngine() {
-        var engineShowCalled = false
-        var engineHideCalled = false
-        var engineToggleCalled = false
-        var enginePrewarmCalled = false
-        var engineTeardownCalled = false
-        var engineHandleBackCalled = false
-
-        val testEngine = object : com.homekey.tv.service.DockOverlayStateEngine {
-            override val state = kotlinx.coroutines.flow.MutableStateFlow<com.homekey.tv.service.DockOverlayState>(com.homekey.tv.service.DockOverlayState.Hidden)
-            override val isShowing = kotlinx.coroutines.flow.MutableStateFlow(false)
-            override val isServiceAttached = true
-
-            override fun attachService() {}
-            override fun detachService() {}
-            override fun show(): Boolean { engineShowCalled = true; return true }
-            override fun hide() { engineHideCalled = true }
-            override fun toggle() { engineToggleCalled = true }
-            override fun prewarm() { enginePrewarmCalled = true }
-            override fun teardown() { engineTeardownCalled = true }
-            override fun handleBack(): Boolean { engineHandleBackCalled = true; return true }
-        }
-
+    fun delegatesLifecycleAndWindowOperationsThroughStateEngineToHost() {
+        val scheduler = VirtualTimeScheduler(currentTime = 1000L)
+        val fakeHost = FakeWindowOverlayHost()
         val controller = DefaultDockOverlayController(
-            engine = testEngine
+            scheduler = scheduler,
+            host = fakeHost
         )
+        val service = RemoteButtonRemapService()
 
+        controller.attachService(service)
         assertTrue(controller.isServiceAttached)
-        assertTrue(controller.show())
-        assertTrue(engineShowCalled)
+        assertFalse(controller.isShowing.value)
 
-        controller.hide()
-        assertTrue(engineHideCalled)
-
-        controller.toggle()
-        assertTrue(engineToggleCalled)
-
+        // Prewarm schedules via injected TimeScheduler instead of silently swallowing
         controller.prewarm()
-        assertTrue(enginePrewarmCalled)
+        assertEquals(0, fakeHost.prewarmWindowCalls)
+        scheduler.advanceTimeBy(DockOverlayStateEngine.PREWARM_DELAY_MS)
+        assertEquals(1, fakeHost.prewarmWindowCalls)
+        assertFalse(controller.isShowing.value)
 
+        // Show transitions to showing
+        assertTrue(controller.show())
+        assertTrue(controller.isShowing.value)
+        assertEquals(1, fakeHost.showWindowCalls)
+
+        // Handle back dismisses active modal first
+        fakeHost.dismissActiveModalResult = true
         assertTrue(controller.handleBack())
-        assertTrue(engineHandleBackCalled)
+        assertEquals(1, fakeHost.dismissActiveModalCalls)
+        assertTrue(controller.isShowing.value)
 
+        // Handle back hides dock when no modal is open
+        fakeHost.dismissActiveModalResult = false
+        assertTrue(controller.handleBack())
+        assertEquals(2, fakeHost.dismissActiveModalCalls)
+        assertFalse(controller.isShowing.value)
+        assertEquals(1, fakeHost.hideWindowCalls)
+
+        // Toggle respects debounce window and then opens
+        scheduler.advanceTimeBy(DockOverlayStateEngine.TOGGLE_DEBOUNCE_MS)
+        controller.toggle()
+        assertTrue(controller.isShowing.value)
+        assertEquals(2, fakeHost.showWindowCalls)
+
+        // Teardown and detach clean up via host
         controller.teardown()
-        assertTrue(engineTeardownCalled)
+        assertFalse(controller.isShowing.value)
+        assertEquals(1, fakeHost.teardownWindowCalls)
+
+        controller.detachService()
+        assertFalse(controller.isServiceAttached)
+        assertEquals(2, fakeHost.teardownWindowCalls)
     }
 }

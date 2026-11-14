@@ -198,6 +198,35 @@ class PreferencesRepositoryTest {
     }
 
     @Test
+    fun `shared domain ops normalize dock styles, clamp recentAppsCount, calculate theme palette, and filter excluded packages`() = runTest {
+        repo.updateDockConfig {
+            it.copy(
+                layout = "SIDE_PANEL",
+                popupStyle = "COMPACT",
+                cameraPopupStyle = "MINIMAL",
+                cameraCompactSize = "L"
+            )
+        }
+        assertEquals(DockConfig.LAYOUT_RIGHT, repo.dockConfig.value.layout)
+        assertEquals(DockConfig.POPUP_STYLE_MINIMAL, repo.dockConfig.value.popupStyle)
+        assertEquals(DockConfig.CAMERA_POPUP_COMPACT, repo.dockConfig.value.cameraPopupStyle)
+        assertEquals(DockConfig.CAMERA_COMPACT_SIZE_LARGE, repo.dockConfig.value.cameraCompactSize)
+
+        repo.updateRecentAppsConfig { it.copy(enabled = true, maxCount = 12) }
+        assertEquals(5, repo.recentAppsConfig.value.maxCount)
+
+        repo.recordRecentApp("com.homekey.tv")
+        repo.recordRecentApp("com.android.systemui")
+        assertTrue(repo.recentAppsConfig.value.recentPackages.isEmpty())
+
+        repo.updateThemeConfig {
+            it.copy(preset = "custom", customColors = mapOf("light" to "#123456"))
+        }
+        assertEquals("custom", repo.themeConfig.value.preset)
+        assertEquals("#123456", repo.themeConfig.value.activePalette.light)
+    }
+
+    @Test
     fun `PanelViewModel and SettingsViewModel have public single-arg Application constructor for AndroidViewModelFactory`() {
         val panelConstructor = PanelViewModel::class.java.getConstructor(Application::class.java)
         assertNotNull(panelConstructor)

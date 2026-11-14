@@ -2,6 +2,8 @@ package com.homekey.tv
 
 import com.homekey.tv.data.models.HAEntityState
 import com.homekey.tv.data.models.OptimisticToggle
+import com.homekey.tv.ui.panel.EntityDialogRoute
+import com.homekey.tv.ui.panel.resolveEntityDialogRoute
 import androidx.compose.material.icons.filled.*
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -1050,7 +1052,7 @@ class HAModelTest {
             0x0D, 0x0A
         )
         val extracted = mutableListOf<ByteArray>()
-        com.homekey.tv.ui.panel.extractJpegFrames(java.io.ByteArrayInputStream(streamData)) { frame ->
+        com.homekey.tv.data.api.extractJpegFrames(java.io.ByteArrayInputStream(streamData)) { frame ->
             extracted.add(frame)
         }
 
@@ -1076,13 +1078,141 @@ class HAModelTest {
         )
 
         val extracted = mutableListOf<ByteArray>()
-        com.homekey.tv.ui.panel.extractJpegFrames(java.io.ByteArrayInputStream(combined)) { frame ->
+        com.homekey.tv.data.api.extractJpegFrames(java.io.ByteArrayInputStream(combined)) { frame ->
             extracted.add(frame)
         }
 
         assertEquals(2, extracted.size)
         org.junit.Assert.assertArrayEquals(frame1, extracted[0])
         org.junit.Assert.assertArrayEquals(frame2, extracted[1])
+    }
+
+    @Test
+    fun testSupportsDetailDialogIncludesExtendedDomainsAndExcludesNonDialogDomains() {
+        val supported = listOf(
+            "light.ceiling",
+            "climate.living_room",
+            "switch.outlet",
+            "input_boolean.guest_mode",
+            "media_player.shield",
+            "camera.porch",
+            "cover.blinds",
+            "fan.bedroom",
+            "lock.front_door"
+        )
+        for (entityId in supported) {
+            val entity = HAEntityState(entityId = entityId, state = "on")
+            assertTrue("$entityId must support detail dialog", entity.supportsDetailDialog)
+        }
+
+        val unsupported = listOf(
+            "sensor.temperature",
+            "binary_sensor.motion",
+            "scene.movie_night",
+            "script.goodnight",
+            "button.restart",
+            "automation.evening_lights"
+        )
+        for (entityId in unsupported) {
+            val entity = HAEntityState(entityId = entityId, state = "on")
+            assertFalse("$entityId must not support detail dialog", entity.supportsDetailDialog)
+        }
+    }
+
+    @Test
+    fun testResolveClimateHumidityFromAttributeAndCompanionSensors() {
+        val climateWithAttr = json.decodeFromString<HAEntityState>(
+            """{"entity_id":"climate.living_room","state":"heat","attributes":{"friendly_name":"Living Room","current_humidity":48.5}}"""
+        )
+        assertEquals(48.5f, climateWithAttr.resolveClimateHumidity(emptyMap()) ?: 0f, 0.01f)
+
+        val climateNoAttr = json.decodeFromString<HAEntityState>(
+            """{"entity_id":"climate.bedroom","state":"cool","attributes":{"friendly_name":"Bedroom Thermostat"}}"""
+        )
+        val directSensor = HAEntityState(entityId = "sensor.bedroom_humidity", state = "52")
+        assertEquals(
+            52f,
+            climateNoAttr.resolveClimateHumidity(mapOf(directSensor.entityId to directSensor)) ?: 0f,
+            0.01f
+        )
+
+        val fallbackSensor = json.decodeFromString<HAEntityState>(
+            """{"entity_id":"sensor.upstairs_humidity_level","state":"61.2","attributes":{"friendly_name":"Bedroom Thermostat Humidity","device_class":"humidity"}}"""
+        )
+        assertEquals(
+            61.2f,
+            climateNoAttr.resolveClimateHumidity(mapOf(fallbackSensor.entityId to fallbackSensor)) ?: 0f,
+            0.01f
+        )
+
+        assertNull(climateNoAttr.resolveClimateHumidity(emptyMap()))
+        assertNull(HAEntityState(entityId = "light.bedroom", state = "on").resolveClimateHumidity(mapOf(directSensor.entityId to directSensor)))
+    }
+
+    @Test
+    fun testResolveEntityDialogRouteCoversAllDomainsAndPopupStyles() {
+        val dimmableLight = json.decodeFromString<HAEntityState>(
+            """{"entity_id":"light.dimmable","state":"on","attributes":{"supported_color_modes":["brightness"]}}"""
+        )
+        val nonDimmableLight = json.decodeFromString<HAEntityState>(
+            """{"entity_id":"light.on_off_only","state":"on","attributes":{"supported_color_modes":["onoff"]}}"""
+        )
+        val plainLight = HAEntityState(entityId = "light.plain", state = "off")
+
+        for (isMinimal in listOf(false, true)) {
+            assertEquals(
+                EntityDialogRoute.Camera(isMinimal),
+                resolveEntityDialogRoute(HAEntityState(entityId = "camera.front_door", state = "idle"), isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Climate(isMinimal),
+                resolveEntityDialogRoute(HAEntityState(entityId = "climate.living_room", state = "heat"), isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Brightness(isMinimal),
+                resolveEntityDialogRoute(dimmableLight, isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Switch(isMinimal),
+                resolveEntityDialogRoute(nonDimmableLight, isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Switch(isMinimal),
+                resolveEntityDialogRoute(plainLight, isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Switch(isMinimal),
+                resolveEntityDialogRoute(HAEntityState(entityId = "switch.outlet", state = "on"), isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Switch(isMinimal),
+                resolveEntityDialogRoute(HAEntityState(entityId = "input_boolean.guest_mode", state = "off"), isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.MediaPlayer(isMinimal),
+                resolveEntityDialogRoute(HAEntityState(entityId = "media_player.shield", state = "playing"), isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Cover(isMinimal),
+                resolveEntityDialogRoute(HAEntityState(entityId = "cover.blinds", state = "open"), isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Fan(isMinimal),
+                resolveEntityDialogRoute(HAEntityState(entityId = "fan.bedroom", state = "on"), isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Lock(isMinimal),
+                resolveEntityDialogRoute(HAEntityState(entityId = "lock.front_door", state = "locked"), isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Unsupported,
+                resolveEntityDialogRoute(HAEntityState(entityId = "sensor.temperature", state = "22.5"), isMinimal)
+            )
+            assertEquals(
+                EntityDialogRoute.Unsupported,
+                resolveEntityDialogRoute(HAEntityState(entityId = "binary_sensor.motion", state = "off"), isMinimal)
+            )
+        }
     }
 }
 

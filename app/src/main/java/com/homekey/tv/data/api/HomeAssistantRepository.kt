@@ -4,7 +4,6 @@ import com.homekey.tv.data.models.CameraPipAlert
 import com.homekey.tv.data.models.ConnectionStatus
 import com.homekey.tv.data.models.HAEntityState
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.serialization.json.JsonObject
 
 interface HomeAssistantRepository {
     val connectionStatus: StateFlow<ConnectionStatus>
@@ -52,7 +51,6 @@ interface HomeAssistantRepository {
     fun callService(
         domain: String,
         service: String,
-        serviceData: JsonObject? = null,
         entityId: String? = null
     )
 

@@ -469,7 +469,7 @@ class DefaultHomeAssistantRepository(
             else -> domain to "toggle"
         }
 
-        callService(serviceDomain, service, entityId = entityId)
+        sendServiceCall(serviceDomain, service, entityId = entityId)
     }
 
     override fun turnOn(entityId: String, brightness: Int?) {
@@ -486,13 +486,13 @@ class DefaultHomeAssistantRepository(
             HAMessageCodec.buildBrightnessData(brightness)
         } else null
 
-        callService(domain, "turn_on", serviceData, entityId)
+        sendServiceCall(domain, "turn_on", serviceData, entityId)
     }
 
     override fun turnOff(entityId: String) {
         val domain = HAMessageCodec.extractDomain(entityId)
         applyOptimistic(entityId) { it.copy(state = "off") }
-        callService(domain, "turn_off", entityId = entityId)
+        sendServiceCall(domain, "turn_off", entityId = entityId)
     }
 
     override fun setBrightness(entityId: String, brightness: Int) {
@@ -502,7 +502,7 @@ class DefaultHomeAssistantRepository(
             curr.copy(state = "on", attributes = JsonObject(newAttrs))
         }
         val serviceData = HAMessageCodec.buildBrightnessData(brightness)
-        callService("light", "turn_on", serviceData, entityId)
+        sendServiceCall("light", "turn_on", serviceData, entityId)
     }
 
     override fun setTargetTemperature(entityId: String, temperature: Float) {
@@ -512,104 +512,112 @@ class DefaultHomeAssistantRepository(
             curr.copy(attributes = JsonObject(newAttrs))
         }
         val serviceData = HAMessageCodec.buildTemperatureData(temperature)
-        callService("climate", "set_temperature", serviceData, entityId)
+        sendServiceCall("climate", "set_temperature", serviceData, entityId)
     }
 
     override fun setHvacMode(entityId: String, mode: String) {
         val serviceData = HAMessageCodec.buildHvacModeData(mode)
-        callService("climate", "set_hvac_mode", serviceData, entityId)
+        sendServiceCall("climate", "set_hvac_mode", serviceData, entityId)
     }
 
     override fun setFanMode(entityId: String, fanMode: String) {
         val serviceData = HAMessageCodec.buildFanModeData(fanMode)
-        callService("climate", "set_fan_mode", serviceData, entityId)
+        sendServiceCall("climate", "set_fan_mode", serviceData, entityId)
     }
 
     override fun setPresetMode(entityId: String, presetMode: String) {
         val serviceData = HAMessageCodec.buildPresetModeData(presetMode)
-        callService("climate", "set_preset_mode", serviceData, entityId)
+        sendServiceCall("climate", "set_preset_mode", serviceData, entityId)
     }
 
     override fun mediaPlayPause(entityId: String) {
-        callService("media_player", "media_play_pause", entityId = entityId)
+        sendServiceCall("media_player", "media_play_pause", entityId = entityId)
     }
 
     override fun mediaNext(entityId: String) {
-        callService("media_player", "media_next_track", entityId = entityId)
+        sendServiceCall("media_player", "media_next_track", entityId = entityId)
     }
 
     override fun mediaPrevious(entityId: String) {
-        callService("media_player", "media_previous_track", entityId = entityId)
+        sendServiceCall("media_player", "media_previous_track", entityId = entityId)
     }
 
     override fun mediaVolumeUp(entityId: String) {
-        callService("media_player", "volume_up", entityId = entityId)
+        sendServiceCall("media_player", "volume_up", entityId = entityId)
     }
 
     override fun mediaVolumeDown(entityId: String) {
-        callService("media_player", "volume_down", entityId = entityId)
+        sendServiceCall("media_player", "volume_down", entityId = entityId)
     }
 
     override fun selectSource(entityId: String, source: String) {
         val serviceData = HAMessageCodec.buildSourceData(source)
-        callService("media_player", "select_source", serviceData, entityId)
+        sendServiceCall("media_player", "select_source", serviceData, entityId)
     }
 
     override fun setVolume(entityId: String, volume: Float) {
         val serviceData = HAMessageCodec.buildVolumeData(volume)
-        callService("media_player", "volume_set", serviceData, entityId)
+        sendServiceCall("media_player", "volume_set", serviceData, entityId)
     }
 
     override fun mediaMute(entityId: String, mute: Boolean) {
         val serviceData = HAMessageCodec.buildMuteData(mute)
-        callService("media_player", "volume_mute", serviceData, entityId)
+        sendServiceCall("media_player", "volume_mute", serviceData, entityId)
     }
 
     override fun openCover(entityId: String) {
-        callService("cover", "open_cover", entityId = entityId)
+        sendServiceCall("cover", "open_cover", entityId = entityId)
     }
 
     override fun closeCover(entityId: String) {
-        callService("cover", "close_cover", entityId = entityId)
+        sendServiceCall("cover", "close_cover", entityId = entityId)
     }
 
     override fun stopCover(entityId: String) {
-        callService("cover", "stop_cover", entityId = entityId)
+        sendServiceCall("cover", "stop_cover", entityId = entityId)
     }
 
     override fun setCoverPosition(entityId: String, position: Int) {
         val serviceData = HAMessageCodec.buildPositionData(position)
-        callService("cover", "set_cover_position", serviceData, entityId)
+        sendServiceCall("cover", "set_cover_position", serviceData, entityId)
     }
 
     override fun setCoverTiltPosition(entityId: String, tilt: Int) {
         val serviceData = HAMessageCodec.buildTiltData(tilt)
-        callService("cover", "set_cover_tilt_position", serviceData, entityId)
+        sendServiceCall("cover", "set_cover_tilt_position", serviceData, entityId)
     }
 
     override fun setFanPercentage(entityId: String, percentage: Int) {
         val serviceData = HAMessageCodec.buildPercentageData(percentage)
-        callService("fan", "set_percentage", serviceData, entityId)
+        sendServiceCall("fan", "set_percentage", serviceData, entityId)
     }
 
     override fun setFanOscillating(entityId: String, oscillating: Boolean) {
         val serviceData = HAMessageCodec.buildOscillateData(oscillating)
-        callService("fan", "oscillate", serviceData, entityId)
+        sendServiceCall("fan", "oscillate", serviceData, entityId)
     }
 
     override fun lock(entityId: String) {
-        callService("lock", "lock", entityId = entityId)
+        sendServiceCall("lock", "lock", entityId = entityId)
     }
 
     override fun unlock(entityId: String) {
-        callService("lock", "unlock", entityId = entityId)
+        sendServiceCall("lock", "unlock", entityId = entityId)
     }
 
     override fun callService(
         domain: String,
         service: String,
-        serviceData: JsonObject?,
         entityId: String?
+    ) {
+        sendServiceCall(domain, service, serviceData = null, entityId = entityId)
+    }
+
+    private fun sendServiceCall(
+        domain: String,
+        service: String,
+        serviceData: JsonObject? = null,
+        entityId: String? = null
     ) {
         val id = messageId.getAndIncrement()
         val cmd = HAMessageCodec.encodeCallService(id, domain, service, serviceData, entityId)

@@ -1,6 +1,8 @@
 package com.homekey.tv
 
+import android.app.Application
 import com.homekey.tv.service.LocalAdbManager
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -95,5 +97,30 @@ class LocalAdbTest {
         assertEquals("_adb-tls-connect._tcp", service.serviceType)
         assertEquals("127.0.0.1", service.host)
         assertEquals(41235, service.port)
+    }
+
+    @Test
+    fun testFakeAdbAccessibilityProvisioner() = runTest {
+        val fake = FakeAdbAccessibilityProvisioner().apply {
+            secureSettingsResult = false
+            adbResult = LocalAdbManager.AdbResult.Success
+        }
+        val app = Application()
+        val statuses = mutableListOf<String>()
+
+        org.junit.Assert.assertFalse(fake.tryEnableViaSecureSettings(app))
+        val result = fake.enableAccessibilityService(
+            context = app,
+            host = "127.0.0.1",
+            port = LocalAdbManager.DEFAULT_PORT,
+            onStatusUpdate = { statuses.add(it) }
+        )
+
+        assertTrue(result is LocalAdbManager.AdbResult.Success)
+        assertEquals(1, fake.secureSettingsCallCount)
+        assertEquals(1, fake.enableAdbCallCount)
+        assertEquals("127.0.0.1", fake.lastHost)
+        assertEquals(5555, fake.lastPort)
+        assertEquals(1, statuses.size)
     }
 }

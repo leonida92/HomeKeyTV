@@ -6,11 +6,9 @@ import android.content.Intent
 import android.os.Build
 import android.util.Log
 import com.homekey.tv.data.api.HomeAssistantRepository
-import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.models.RemapAction
 
 class RemapActionDispatcher(
-    private val prefs: PreferencesRepository,
     private val haRepository: HomeAssistantRepository,
     private val dockController: DockOverlayController,
     private val globalActionExecutor: ((Int) -> Boolean)? = null

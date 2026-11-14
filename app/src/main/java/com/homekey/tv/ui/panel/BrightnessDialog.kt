@@ -14,7 +14,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Lightbulb
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -26,6 +29,7 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.homekey.tv.data.models.DomainColorPalette
@@ -319,6 +323,248 @@ fun BrightnessDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+fun MinimalBrightnessPopup(
+    entity: HAEntityState,
+    isVertical: Boolean = false,
+    onSetBrightness: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val initialBrightness = entity.brightness ?: 128
+    var brightness by remember { mutableIntStateOf(initialBrightness) }
+    val brightnessPercent = ((brightness / 255f) * 100).toInt()
+
+    val initialFocus = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        try {
+            initialFocus.requestFocus()
+        } catch (_: Exception) {}
+    }
+
+    BackHandler(onBack = onDismiss)
+
+    if (isVertical) {
+        MinimalVerticalCardContainer {
+            // Header Row: Icon + Title + Status + Close
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x33FFD54F)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lightbulb,
+                        contentDescription = null,
+                        tint = Color(0xFFFFD54F),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = entity.friendlyName,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TV_Text_Primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "$brightnessPercent%",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFFFD54F)
+                    )
+                }
+                MinimalIconButton(
+                    icon = Icons.Default.Close,
+                    description = "Close",
+                    onClick = onDismiss
+                )
+            }
+
+            MinimalCardDivider()
+
+            // Stepper Controls
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MinimalIconButton(
+                    icon = Icons.Default.Remove,
+                    description = "Decrease brightness",
+                    onClick = {
+                        val next = (brightness - 25).coerceIn(0, 255)
+                        brightness = next
+                        onSetBrightness(next)
+                    }
+                )
+                Text(
+                    text = "$brightnessPercent%",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                MinimalIconButton(
+                    icon = Icons.Default.Add,
+                    description = "Increase brightness",
+                    onClick = {
+                        val next = (brightness + 25).coerceIn(0, 255)
+                        brightness = next
+                        onSetBrightness(next)
+                    }
+                )
+            }
+
+            MinimalCardDivider()
+
+            // Presets grid: 2 rows of 2 chips
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(25, 50).forEach { pct ->
+                    val targetVal = (pct * 2.55f).roundToInt()
+                    val isCurrent = (brightnessPercent in (pct - 10)..(pct + 10))
+                    MinimalChip(
+                        text = "$pct%",
+                        isSelected = isCurrent,
+                        modifier = Modifier
+                            .weight(1f)
+                            .then(if (pct == 50) Modifier.focusRequester(initialFocus) else Modifier),
+                        onClick = {
+                            brightness = targetVal
+                            onSetBrightness(targetVal)
+                        }
+                    )
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(75, 100).forEach { pct ->
+                    val targetVal = (pct * 2.55f).roundToInt()
+                    val isCurrent = (brightnessPercent in (pct - 10)..(pct + 10))
+                    MinimalChip(
+                        text = "$pct%",
+                        isSelected = isCurrent,
+                        modifier = Modifier.weight(1f),
+                        onClick = {
+                            brightness = targetVal
+                            onSetBrightness(targetVal)
+                        }
+                    )
+                }
+            }
+        }
+    } else {
+        MinimalBarContainer {
+            // Entity Header
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(end = 12.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(34.dp)
+                        .clip(CircleShape)
+                        .background(Color(0x33FFD54F)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Lightbulb,
+                        contentDescription = null,
+                        tint = Color(0xFFFFD54F),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = entity.friendlyName,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = TV_Text_Primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "$brightnessPercent%",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFFFFD54F)
+                    )
+                }
+            }
+
+            Box(
+                modifier = Modifier
+                    .width(1.dp)
+                    .height(28.dp)
+                    .background(Color(0x33FFFFFF))
+            )
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Stepper Controls
+            MinimalIconButton(
+                icon = Icons.Default.Remove,
+                description = "Decrease brightness",
+                onClick = {
+                    val next = (brightness - 25).coerceIn(0, 255)
+                    brightness = next
+                    onSetBrightness(next)
+                }
+            )
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            MinimalIconButton(
+                icon = Icons.Default.Add,
+                description = "Increase brightness",
+                onClick = {
+                    val next = (brightness + 25).coerceIn(0, 255)
+                    brightness = next
+                    onSetBrightness(next)
+                }
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Quick Presets
+            listOf(25, 50, 75, 100).forEach { pct ->
+                val targetVal = (pct * 2.55f).roundToInt()
+                val isCurrent = (brightnessPercent in (pct - 10)..(pct + 10))
+                MinimalChip(
+                    text = "$pct%",
+                    isSelected = isCurrent,
+                    modifier = if (pct == 50) Modifier.focusRequester(initialFocus) else Modifier,
+                    onClick = {
+                        brightness = targetVal
+                        onSetBrightness(targetVal)
+                    }
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+            }
+
+            Spacer(modifier = Modifier.width(6.dp))
+
+            // Close
+            MinimalIconButton(
+                icon = Icons.Default.Close,
+                description = "Close",
+                onClick = onDismiss
+            )
         }
     }
 }

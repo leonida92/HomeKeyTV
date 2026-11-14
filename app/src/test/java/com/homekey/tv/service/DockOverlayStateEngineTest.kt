@@ -1,5 +1,9 @@
 package com.homekey.tv.service
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -10,13 +14,13 @@ class DockOverlayStateEngineTest {
 
     private lateinit var scheduler: VirtualTimeScheduler
     private lateinit var host: FakeWindowOverlayHost
-    private lateinit var engine: DefaultDockOverlayStateEngine
+    private lateinit var engine: DockOverlayStateEngine
 
     @Before
     fun setup() {
         scheduler = VirtualTimeScheduler(currentTime = 1000L)
         host = FakeWindowOverlayHost()
-        engine = DefaultDockOverlayStateEngine(host = host, scheduler = scheduler)
+        engine = DockOverlayStateEngine(host = host, scheduler = scheduler)
     }
 
     @Test
@@ -263,5 +267,23 @@ class DockOverlayStateEngineTest {
         assertFalse(handled)
         assertEquals(0, host.dismissActiveModalCalls)
         assertEquals(0, host.hideWindowCalls)
+    }
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    @Test
+    fun isShowing_projects_state_with_distinct_emissions() = runTest {
+        val emissions = mutableListOf<Boolean>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            engine.isShowing.collect { emissions.add(it) }
+        }
+
+        engine.attachService()
+        engine.prewarm()
+        scheduler.advanceTimeBy(DockOverlayStateEngine.PREWARM_DELAY_MS)
+        engine.show()
+        engine.hide()
+        engine.teardown()
+
+        assertEquals(listOf(false, true, false), emissions)
     }
 }

@@ -12,7 +12,6 @@ class RemapActionDispatcherTest {
 
     private lateinit var fakeDockController: FakeDockOverlayController
     private lateinit var fakeHaRepo: FakeHomeAssistantRepository
-    private lateinit var fakePrefsRepo: FakePreferencesRepository
     private val executedGlobalActions = mutableListOf<Int>()
     private lateinit var dispatcher: RemapActionDispatcher
 
@@ -21,9 +20,7 @@ class RemapActionDispatcherTest {
         executedGlobalActions.clear()
         fakeDockController = FakeDockOverlayController()
         fakeHaRepo = FakeHomeAssistantRepository()
-        fakePrefsRepo = FakePreferencesRepository()
         dispatcher = RemapActionDispatcher(
-            prefs = fakePrefsRepo,
             haRepository = fakeHaRepo,
             dockController = fakeDockController,
             globalActionExecutor = { action ->

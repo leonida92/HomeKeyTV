@@ -3,32 +3,22 @@ package com.homekey.tv.service
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.graphics.PixelFormat
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.WindowManager
-import android.widget.FrameLayout
-import androidx.activity.compose.LocalOnBackPressedDispatcherOwner
-import androidx.activity.setViewTreeOnBackPressedDispatcherOwner
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.LocalSavedStateRegistryOwner
-import androidx.compose.ui.platform.ViewCompositionStrategy
-import androidx.lifecycle.setViewTreeLifecycleOwner
-import androidx.lifecycle.setViewTreeViewModelStoreOwner
-import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.homekey.tv.data.api.HomeAssistantRepository
+import com.homekey.tv.data.api.MjpegCameraStreamClient
 import com.homekey.tv.data.local.PreferencesRepository
 import com.homekey.tv.data.models.CameraPipAlert
 import com.homekey.tv.ui.panel.CameraPipCard
-import com.homekey.tv.ui.theme.HomeAssistantTVTheme
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 
 interface CameraPipOverlayController {
@@ -57,10 +47,7 @@ class DefaultCameraPipOverlayController(
 ) : CameraPipOverlayController {
 
     private val tag = "CameraPipOverlayController"
-    private var windowManager: WindowManager? = null
-    private var pipRootLayout: FrameLayout? = null
-    private var pipComposeView: ComposeView? = null
-    private var pipLifecycleOwner: OverlayLifecycleOwner? = null
+    private val windowHost = AndroidOverlayWindowHost(tag)
     private var pipDismissJob: Job? = null
     private val pipScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
@@ -104,73 +91,43 @@ class DefaultCameraPipOverlayController(
 
         dismissPip()
 
-        val uiContext = if (context is AccessibilityService) {
-            context
-        } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            try {
-                context.createWindowContext(WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY, null)
-            } catch (_: Exception) {
-                context
-            }
-        } else {
-            context
-        }
-
-        val wm = (uiContext.getSystemService(Context.WINDOW_SERVICE) as? WindowManager) ?: return
-        windowManager = wm
-
-        val serverUrl = haRepository.activeServerUrl.value.ifBlank { prefs.serverConfig.value.serverUrl }
+        val fallbackServerUrl = prefs.serverConfig.value.serverUrl
+        val initialServerUrl = haRepository.activeServerUrl.value.ifBlank { fallbackServerUrl }
         val accessToken = prefs.serverConfig.value.accessToken
-        if (serverUrl.isBlank()) return
+        if (initialServerUrl.isBlank()) return
 
         val safeDuration = alert.durationSeconds.coerceIn(3, 120)
+        val feedFlow = MjpegCameraStreamClient.getInstance().observeStream(
+            entityId = alert.entityId,
+            serverUrlFlow = haRepository.activeServerUrl.map { it.ifBlank { fallbackServerUrl } },
+            accessToken = accessToken,
+            maxTargetWidthPx = 960
+        )
 
-        try {
-            val owner = OverlayLifecycleOwner {
+        val attached = windowHost.attach(
+            context = context,
+            layoutParams = ::createPipLayoutParams,
+            initiallyVisible = true,
+            interceptBack = false,
+            onBackPressed = {
                 dismissPip()
+                true
             }
-            pipLifecycleOwner = owner
+        ) {
+            CameraPipCard(
+                alert = alert.copy(durationSeconds = safeDuration),
+                feedFlow = feedFlow,
+                onDismiss = { dismissPip() }
+            )
+        }
 
-            val layout = FrameLayout(uiContext)
-            pipRootLayout = layout
-
-            layout.setViewTreeLifecycleOwner(owner)
-            layout.setViewTreeViewModelStoreOwner(owner)
-            layout.setViewTreeSavedStateRegistryOwner(owner)
-            layout.setViewTreeOnBackPressedDispatcherOwner(owner)
-
-            val cv = ComposeView(uiContext).apply {
-                setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindowOrReleasedFromPool)
-                setContent {
-                    CompositionLocalProvider(
-                        LocalSavedStateRegistryOwner provides owner,
-                        LocalOnBackPressedDispatcherOwner provides owner
-                    ) {
-                        HomeAssistantTVTheme {
-                            CameraPipCard(
-                                alert = alert.copy(durationSeconds = safeDuration),
-                                serverUrl = serverUrl,
-                                accessToken = accessToken,
-                                onDismiss = { dismissPip() }
-                            )
-                        }
-                    }
-                }
-            }
-            pipComposeView = cv
-            layout.addView(cv, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
-
-            val params = createPipLayoutParams(uiContext)
-            wm.addView(layout, params)
-            owner.resume()
+        if (attached) {
             Log.d(tag, "Camera PiP alert shown for ${alert.entityId} (${safeDuration}s)")
-
             pipDismissJob = pipScope.launch {
                 delay(safeDuration * 1000L)
                 dismissPip()
             }
-        } catch (e: Exception) {
-            Log.e(tag, "Error displaying PiP alert", e)
+        } else {
             dismissPip()
         }
     }
@@ -183,19 +140,7 @@ class DefaultCameraPipOverlayController(
         pipDismissJob?.cancel()
         pipDismissJob = null
 
-        val wm = windowManager
-        val layout = pipRootLayout
-        if (wm != null && layout != null && layout.isAttachedToWindow) {
-            try {
-                wm.removeViewImmediate(layout)
-            } catch (e: Exception) {
-                Log.e(tag, "Error removing PiP view", e)
-            }
-        }
-        pipRootLayout = null
-        pipComposeView = null
-        pipLifecycleOwner?.destroy()
-        pipLifecycleOwner = null
+        windowHost.detach()
         haRepository.dismissPipAlert()
     }
 }

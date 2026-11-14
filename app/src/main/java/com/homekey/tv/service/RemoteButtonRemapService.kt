@@ -11,6 +11,7 @@ import android.os.Looper
 import android.util.Log
 import android.view.KeyEvent
 import android.view.accessibility.AccessibilityEvent
+import com.homekey.tv.HATVApplication
 import com.homekey.tv.data.api.HomeAssistantRepository
 import com.homekey.tv.data.local.DataStorePreferencesRepository
 import com.homekey.tv.data.local.PreferencesRepository
@@ -18,10 +19,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 class RemoteButtonRemapService : AccessibilityService() {
@@ -35,9 +32,9 @@ class RemoteButtonRemapService : AccessibilityService() {
     private val audioManager by lazy { getSystemService(Context.AUDIO_SERVICE) as? AudioManager }
     private val dockController: DockOverlayController by lazy { DockOverlayController.getInstance() }
     private val pipController: CameraPipOverlayController by lazy { CameraPipOverlayController.getInstance() }
+    private val coordinator: RemoteInputCoordinator by lazy { RemoteInputCoordinator.getInstance() }
     private val actionDispatcher: RemapActionDispatcher by lazy {
         RemapActionDispatcher(
-            prefs = prefs,
             haRepository = HomeAssistantRepository.getInstance(),
             dockController = dockController
         )
@@ -72,7 +69,7 @@ class RemoteButtonRemapService : AccessibilityService() {
     fun updateKeyFilterState() {
         val info = serviceInfo ?: return
         val hasRemaps = ::prefs.isInitialized && prefs.buttonRemaps.value.isNotEmpty()
-        val isLearning = _isLearnModeActive.value
+        val isLearning = coordinator.isLearnModeActive.value
         val shouldFilter = hasRemaps || isLearning
 
         val currentlyFiltering = (info.flags and AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0
@@ -91,8 +88,10 @@ class RemoteButtonRemapService : AccessibilityService() {
         super.onServiceConnected()
         dockController.attachService(this)
         Log.d(tag, "RemoteButtonRemapService connected and attached to DockOverlayController")
-        prefs = DataStorePreferencesRepository.getInstance(this)
-        _isServiceRunning.update { true }
+        prefs = (application as? HATVApplication)?.let { HATVApplication.preferencesRepository }
+            ?: DataStorePreferencesRepository.getInstance(this)
+        coordinator.attachInputEngine(inputEngine)
+        coordinator.setServiceRunning(true)
 
         inputEngine.updateRemaps(prefs.buttonRemaps.value)
         inputEngine.setVolumeFixEnabled(prefs.volumeFixEnabled.value)
@@ -127,34 +126,32 @@ class RemoteButtonRemapService : AccessibilityService() {
             }
         }
 
-        // Reactively sync Settings foreground state
+        // Reactively sync Settings foreground state (coordinator -> engine)
         scope.launch {
-            _isSettingsForeground.collect { isForeground ->
+            coordinator.isSettingsForeground.collect { isForeground ->
                 inputEngine.setSettingsForeground(isForeground)
             }
         }
 
-        // Reactively sync Learn Mode
+        // Reactively sync Learn Mode (coordinator -> engine)
         scope.launch {
-            _isLearnModeActive.collect { isLearning ->
+            coordinator.isLearnModeActive.collect { isLearning ->
                 inputEngine.setLearnMode(isLearning)
                 updateKeyFilterState()
             }
         }
 
-        // Reactively sync learned key to companion StateFlow
+        // Reactively sync foreground package (coordinator -> engine)
         scope.launch {
-            inputEngine.learnedKey.collect { learned ->
-                _lastLearnedKeyCode.update { learned }
+            coordinator.currentForegroundPackage.collect { pkg ->
+                inputEngine.setForegroundPackage(pkg)
             }
         }
 
-        // Reactively sync clearing learned key from companion to inputEngine
+        // Reactively sync learned key (engine -> coordinator)
         scope.launch {
-            _lastLearnedKeyCode.collect { learned ->
-                if (learned == null) {
-                    inputEngine.clearLearnedKey()
-                }
+            inputEngine.learnedKey.collect { learned ->
+                coordinator.updateLearnedKey(learned)
             }
         }
 
@@ -178,18 +175,21 @@ class RemoteButtonRemapService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        coordinator.detachInputEngine()
         dockController.detachService()
+        coordinator.setServiceRunning(false)
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
         super.onDestroy()
         Log.d(tag, "RemoteButtonRemapService destroyed")
-        currentForegroundPackage = null
+        coordinator.setForegroundPackage(null)
+        coordinator.detachInputEngine()
         serviceScope?.cancel()
         serviceScope = null
         dockController.detachService()
-        _isServiceRunning.update { false }
+        coordinator.setServiceRunning(false)
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -220,13 +220,13 @@ class RemoteButtonRemapService : AccessibilityService() {
         if (event.eventType == AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) {
             val pkg = event.packageName?.toString() ?: return
             if (pkg != packageName && pkg != "com.android.systemui") {
-                currentForegroundPackage = pkg
+                coordinator.setForegroundPackage(pkg)
                 inputEngine.setForegroundPackage(pkg)
                 if (::prefs.isInitialized && prefs.recentAppsConfig.value.enabled) {
                     try {
                         val pm = packageManager
                         val isLaunchable = pm.getLeanbackLaunchIntentForPackage(pkg) != null ||
-                                pm.getLaunchIntentForPackage(pkg) != null
+                            pm.getLaunchIntentForPackage(pkg) != null
                         if (isLaunchable) {
                             serviceScope?.launch(Dispatchers.IO) { prefs.recordRecentApp(pkg) }
                         }
@@ -262,39 +262,6 @@ class RemoteButtonRemapService : AccessibilityService() {
                 dockController.hide()
                 false
             }
-        }
-    }
-
-    companion object {
-        @Volatile
-        var currentForegroundPackage: String? = null
-            private set
-
-        private val _isServiceRunning = MutableStateFlow(false)
-        val isServiceRunning: StateFlow<Boolean> = _isServiceRunning.asStateFlow()
-
-        private val _isSettingsForeground = MutableStateFlow(false)
-        val isSettingsForeground: StateFlow<Boolean> = _isSettingsForeground.asStateFlow()
-
-        private val _isLearnModeActive = MutableStateFlow(false)
-        val isLearnModeActive: StateFlow<Boolean> = _isLearnModeActive.asStateFlow()
-
-        private val _lastLearnedKeyCode = MutableStateFlow<Pair<Int, String>?>(null)
-        val lastLearnedKeyCode: StateFlow<Pair<Int, String>?> = _lastLearnedKeyCode.asStateFlow()
-
-        fun setSettingsForeground(inForeground: Boolean) {
-            _isSettingsForeground.update { inForeground }
-        }
-
-        fun setLearnMode(active: Boolean) {
-            _isLearnModeActive.update { active }
-            if (active) {
-                _lastLearnedKeyCode.update { null }
-            }
-        }
-
-        fun clearLearnedKey() {
-            _lastLearnedKeyCode.update { null }
         }
     }
 }

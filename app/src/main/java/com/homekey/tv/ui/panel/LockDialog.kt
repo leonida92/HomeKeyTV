@@ -1,7 +1,6 @@
 package com.homekey.tv.ui.panel
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -221,13 +220,14 @@ fun MinimalLockPopup(
     onDismiss: () -> Unit
 ) {
     val palette = LocalThemePalette.current
-    val offColor = palette.getOffBackgroundColor()
-
     val lockGreen = palette.getColorForDomain("lock")
     val isLocked = entity.isLocked
-    val statusColor = if (isLocked) lockGreen else LockAlertRed
-    val statusIcon = if (isLocked) Icons.Default.Lock else Icons.Default.LockOpen
-    val statusText = if (isLocked) "LOCKED" else "UNLOCKED"
+    val isJammed = entity.isJammed
+    val (statusColor, statusText, statusIcon) = when {
+        isJammed -> Triple(LockAmber, "JAMMED", Icons.Default.Warning)
+        isLocked -> Triple(lockGreen, "LOCKED", Icons.Default.Lock)
+        else -> Triple(LockAlertRed, "UNLOCKED", Icons.Default.LockOpen)
+    }
 
     var isConfirmingUnlock by remember { mutableStateOf(false) }
     var resetJob by remember { mutableStateOf<Job?>(null) }
@@ -245,173 +245,130 @@ fun MinimalLockPopup(
         isConfirmingUnlock -> "Confirm Unlock"
         else -> "Unlock Door"
     }
+    val actionColor = if (isConfirmingUnlock) LockAmber else statusColor
+    val handleLockAction: () -> Unit = {
+        if (!isLocked) {
+            onLock()
+        } else if (isConfirmingUnlock) {
+            resetJob?.cancel()
+            isConfirmingUnlock = false
+            onUnlock()
+        } else {
+            isConfirmingUnlock = true
+            resetJob?.cancel()
+            resetJob = scope.launch {
+                delay(4000L)
+                isConfirmingUnlock = false
+            }
+        }
+    }
 
     if (isVertical) {
-        Column(
-            modifier = Modifier
-                .width(240.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(offColor)
-                .padding(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        MinimalVerticalCardContainer {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(statusColor.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(20.dp))
-                }
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = entity.friendlyName,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = statusText,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = statusColor
-                    )
-                }
-            }
-
-            // In-place button
-            val interactionSource = remember { MutableInteractionSource() }
-            val isFocused by interactionSource.collectIsFocusedAsState()
-
-            Box(
-                modifier = Modifier
-                    .focusRequester(initialFocus)
-                    .fillMaxWidth()
-                    .height(42.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (isFocused) TV_Surface_Focused else statusColor.copy(alpha = 0.2f))
-                    .border(if (isFocused) 2.dp else 1.dp, if (isFocused) TV_Border_Focused else statusColor, RoundedCornerShape(10.dp))
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = {
-                            if (!isLocked) {
-                                onLock()
-                            } else if (isConfirmingUnlock) {
-                                resetJob?.cancel()
-                                isConfirmingUnlock = false
-                                onUnlock()
-                            } else {
-                                isConfirmingUnlock = true
-                                resetJob?.cancel()
-                                resetJob = scope.launch {
-                                    delay(4000L)
-                                    isConfirmingUnlock = false
-                                }
-                            }
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = buttonText,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                LockMinimalIdentity(
+                    friendlyName = entity.friendlyName,
+                    statusText = statusText,
+                    statusColor = statusColor,
+                    statusIcon = statusIcon,
+                    modifier = Modifier.weight(1f)
+                )
+                MinimalIconButton(
+                    icon = Icons.Default.Close,
+                    description = "Close",
+                    onClick = onDismiss
                 )
             }
+
+            MinimalCardDivider()
+
+            MinimalChip(
+                text = buttonText,
+                isSelected = isConfirmingUnlock,
+                selectedColor = actionColor,
+                unselectedColor = actionColor.copy(alpha = 0.2f),
+                unselectedBorderColor = actionColor,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(initialFocus),
+                onClick = handleLockAction
+            )
         }
     } else {
-        // Horizontal Minimal Card
-        Row(
-            modifier = Modifier
-                .wrapContentWidth()
-                .height(58.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(offColor)
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(statusColor.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(20.dp))
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Column {
-                Text(
-                    text = entity.friendlyName,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = statusText,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = statusColor
-                )
-            }
+        MinimalBarContainer {
+            LockMinimalIdentity(
+                friendlyName = entity.friendlyName,
+                statusText = statusText,
+                statusColor = statusColor,
+                statusIcon = statusIcon
+            )
 
             Spacer(modifier = Modifier.width(14.dp))
             Box(modifier = Modifier.width(1.dp).height(28.dp).background(Color(0x33FFFFFF)))
             Spacer(modifier = Modifier.width(14.dp))
 
-            val interactionSource = remember { MutableInteractionSource() }
-            val isFocused by interactionSource.collectIsFocusedAsState()
-
-            Box(
+            MinimalChip(
+                text = buttonText,
+                isSelected = isConfirmingUnlock,
+                selectedColor = actionColor,
+                unselectedColor = actionColor.copy(alpha = 0.2f),
+                unselectedBorderColor = actionColor,
                 modifier = Modifier
-                    .focusRequester(initialFocus)
-                    .height(38.dp)
-                    .width(120.dp)
-                    .clip(RoundedCornerShape(10.dp))
-                    .background(if (isFocused) TV_Surface_Focused else statusColor.copy(alpha = 0.2f))
-                    .border(if (isFocused) 2.dp else 1.dp, if (isFocused) TV_Border_Focused else statusColor, RoundedCornerShape(10.dp))
-                    .clickable(
-                        interactionSource = interactionSource,
-                        indication = null,
-                        onClick = {
-                            if (!isLocked) {
-                                onLock()
-                            } else if (isConfirmingUnlock) {
-                                resetJob?.cancel()
-                                isConfirmingUnlock = false
-                                onUnlock()
-                            } else {
-                                isConfirmingUnlock = true
-                                resetJob?.cancel()
-                                resetJob = scope.launch {
-                                    delay(4000L)
-                                    isConfirmingUnlock = false
-                                }
-                            }
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = buttonText,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-            }
+                    .widthIn(min = 120.dp)
+                    .focusRequester(initialFocus),
+                onClick = handleLockAction
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+            MinimalIconButton(
+                icon = Icons.Default.Close,
+                description = "Close",
+                onClick = onDismiss
+            )
+        }
+    }
+}
+
+@Composable
+private fun LockMinimalIdentity(
+    friendlyName: String,
+    statusText: String,
+    statusColor: Color,
+    statusIcon: androidx.compose.ui.graphics.vector.ImageVector,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(statusColor.copy(alpha = 0.2f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(statusIcon, contentDescription = null, tint = statusColor, modifier = Modifier.size(20.dp))
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column {
+            Text(
+                text = friendlyName,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = TV_Text_Primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = statusText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = statusColor
+            )
         }
     }
 }

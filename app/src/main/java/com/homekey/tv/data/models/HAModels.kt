@@ -174,7 +174,38 @@ data class HAEntityState(
 
     val isUnlocking: Boolean
         get() = state.equals("unlocking", ignoreCase = true)
+
+    val supportsDetailDialog: Boolean
+        get() = domain in DETAIL_DIALOG_DOMAINS
+
+    /**
+     * Resolves humidity for a climate entity, falling back to companion humidity sensors
+     * when the thermostat entity itself does not expose `current_humidity` or `humidity`.
+     */
+    fun resolveClimateHumidity(allEntities: Map<String, HAEntityState>): Float? {
+        if (domain != "climate") return null
+        currentHumidity?.let { return it }
+        val baseId = entityId.removePrefix("climate.")
+        return allEntities["sensor.${baseId}_humidity"]?.state?.toFloatOrNull()
+            ?: allEntities.values.firstOrNull {
+                it.domain == "sensor" &&
+                    it.attributes["device_class"]?.toString()?.contains("humidity", ignoreCase = true) == true &&
+                    (it.entityId.contains(baseId, ignoreCase = true) || it.friendlyName.contains(friendlyName, ignoreCase = true))
+            }?.state?.toFloatOrNull()
+    }
 }
+
+private val DETAIL_DIALOG_DOMAINS = setOf(
+    "light",
+    "climate",
+    "switch",
+    "input_boolean",
+    "media_player",
+    "camera",
+    "cover",
+    "fan",
+    "lock"
+)
 
 private const val COVER_SUPPORT_SET_TILT_POSITION = 128
 

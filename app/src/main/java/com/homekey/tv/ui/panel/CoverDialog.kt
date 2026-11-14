@@ -1,7 +1,6 @@
 package com.homekey.tv.ui.panel
 
 import androidx.activity.compose.BackHandler
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
@@ -176,10 +175,10 @@ fun CoverDialog(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 listOf(0, 25, 50, 75, 100).forEach { pct ->
-                    CoverPresetChip(
+                    MinimalChip(
                         text = "$pct%",
                         isSelected = position == pct,
-                        color = coverColor,
+                        selectedColor = coverColor,
                         onClick = {
                             position = pct
                             debouncePositionJob?.cancel()
@@ -220,10 +219,10 @@ fun CoverDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     listOf(0, 50, 100).forEach { pct ->
-                        CoverPresetChip(
+                        MinimalChip(
                             text = "$pct%",
                             isSelected = tilt == pct,
-                            color = coverColor,
+                            selectedColor = coverColor,
                             onClick = {
                                 tilt = pct
                                 debounceTiltJob?.cancel()
@@ -249,7 +248,6 @@ fun MinimalCoverPopup(
 ) {
     val palette = LocalThemePalette.current
     val coverColor = palette.getColorForDomain("cover")
-    val offColor = palette.getOffBackgroundColor()
 
     val initialFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) {
@@ -262,131 +260,188 @@ fun MinimalCoverPopup(
     val posText = if (currentPos != null) "$currentPos%" else entity.state.uppercase()
 
     if (isVertical) {
-        Column(
-            modifier = Modifier
-                .width(240.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(offColor)
-                .padding(14.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
+        MinimalVerticalCardContainer {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Box(
-                    modifier = Modifier
-                        .size(34.dp)
-                        .clip(CircleShape)
-                        .background(coverColor.copy(alpha = 0.2f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        Icons.Default.Window,
-                        contentDescription = null,
-                        tint = coverColor,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-                Spacer(modifier = Modifier.width(10.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = entity.friendlyName,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = posText,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = coverColor
-                    )
-                }
+                CoverMinimalIdentity(
+                    friendlyName = entity.friendlyName,
+                    statusText = posText,
+                    coverColor = coverColor,
+                    modifier = Modifier.weight(1f)
+                )
+                MinimalIconButton(
+                    icon = Icons.Default.Close,
+                    description = "Close",
+                    onClick = onDismiss
+                )
             }
 
-            // Command buttons
+            MinimalCardDivider()
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
             ) {
-                CoverMiniButton(Icons.Default.ArrowUpward, "Open", focusRequester = initialFocus, onClick = onOpen)
-                CoverMiniButton(Icons.Default.Stop, "Stop", onClick = onStop)
-                CoverMiniButton(Icons.Default.ArrowDownward, "Close", onClick = onClose)
+                CoverMinimalCommandButtons(
+                    initialFocus = initialFocus,
+                    onOpen = onOpen,
+                    onStop = onStop,
+                    onClose = onClose
+                )
             }
 
-            // Quick presets
+            MinimalCardDivider()
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                listOf(0, 50, 100).forEach { pct ->
-                    CoverPresetChip(text = "$pct%", isSelected = currentPos == pct, color = coverColor, onClick = { onSetPosition(pct) })
-                }
+                CoverMinimalPresets(
+                    currentPos = currentPos,
+                    coverColor = coverColor,
+                    onSetPosition = onSetPosition
+                )
             }
         }
     } else {
-        // Horizontal Minimal Card
-        Row(
-            modifier = Modifier
-                .wrapContentWidth()
-                .height(58.dp)
-                .clip(RoundedCornerShape(18.dp))
-                .background(offColor)
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(coverColor.copy(alpha = 0.2f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    Icons.Default.Window,
-                    contentDescription = null,
-                    tint = coverColor,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(10.dp))
-            Column {
-                Text(
-                    text = entity.friendlyName,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = posText,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = coverColor
-                )
-            }
+        MinimalBarContainer {
+            CoverMinimalIdentity(
+                friendlyName = entity.friendlyName,
+                statusText = posText,
+                coverColor = coverColor
+            )
 
             Spacer(modifier = Modifier.width(14.dp))
             Box(modifier = Modifier.width(1.dp).height(28.dp).background(Color(0x33FFFFFF)))
             Spacer(modifier = Modifier.width(14.dp))
 
-            CoverMiniButton(Icons.Default.ArrowUpward, "Open", focusRequester = initialFocus, onClick = onOpen)
-            Spacer(modifier = Modifier.width(8.dp))
-            CoverMiniButton(Icons.Default.Stop, "Stop", onClick = onStop)
-            Spacer(modifier = Modifier.width(8.dp))
-            CoverMiniButton(Icons.Default.ArrowDownward, "Close", onClick = onClose)
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                CoverMinimalCommandButtons(
+                    initialFocus = initialFocus,
+                    onOpen = onOpen,
+                    onStop = onStop,
+                    onClose = onClose
+                )
+            }
 
             Spacer(modifier = Modifier.width(14.dp))
-            listOf(0, 50, 100).forEach { pct ->
-                CoverPresetChip(text = "$pct%", isSelected = currentPos == pct, color = coverColor, onClick = { onSetPosition(pct) })
-                Spacer(modifier = Modifier.width(6.dp))
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                CoverMinimalPresets(
+                    currentPos = currentPos,
+                    coverColor = coverColor,
+                    onSetPosition = onSetPosition
+                )
             }
+
+            Spacer(modifier = Modifier.width(12.dp))
+            MinimalIconButton(
+                icon = Icons.Default.Close,
+                description = "Close",
+                onClick = onDismiss
+            )
         }
+    }
+}
+
+@Composable
+private fun CoverMinimalIdentity(
+    friendlyName: String,
+    statusText: String,
+    coverColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .size(34.dp)
+                .clip(CircleShape)
+                .background(coverColor.copy(alpha = 0.2f)),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(
+                Icons.Default.Window,
+                contentDescription = null,
+                tint = coverColor,
+                modifier = Modifier.size(20.dp)
+            )
+        }
+        Spacer(modifier = Modifier.width(10.dp))
+        Column {
+            Text(
+                text = friendlyName,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Bold,
+                color = TV_Text_Primary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = statusText,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = coverColor
+            )
+        }
+    }
+}
+
+@Composable
+private fun CoverMinimalCommandButtons(
+    initialFocus: FocusRequester,
+    onOpen: () -> Unit,
+    onStop: () -> Unit,
+    onClose: () -> Unit
+) {
+    val buttonTint = Color.White
+    val buttonBg = Color(0x332C3852)
+    MinimalIconButton(
+        icon = Icons.Default.ArrowUpward,
+        description = "Open",
+        modifier = Modifier.focusRequester(initialFocus),
+        tint = buttonTint,
+        containerColor = buttonBg,
+        onClick = onOpen
+    )
+    MinimalIconButton(
+        icon = Icons.Default.Stop,
+        description = "Stop",
+        tint = buttonTint,
+        containerColor = buttonBg,
+        onClick = onStop
+    )
+    MinimalIconButton(
+        icon = Icons.Default.ArrowDownward,
+        description = "Close",
+        tint = buttonTint,
+        containerColor = buttonBg,
+        onClick = onClose
+    )
+}
+
+@Composable
+private fun CoverMinimalPresets(
+    currentPos: Int?,
+    coverColor: Color,
+    onSetPosition: (Int) -> Unit
+) {
+    listOf(0, 50, 100).forEach { pct ->
+        MinimalChip(
+            text = "$pct%",
+            isSelected = currentPos == pct,
+            selectedColor = coverColor,
+            onClick = { onSetPosition(pct) }
+        )
     }
 }
 
@@ -430,34 +485,6 @@ private fun CoverActionButton(
             Icon(icon, contentDescription = label, tint = color, modifier = Modifier.size(18.dp))
             Text(label, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color.White)
         }
-    }
-}
-
-@Composable
-private fun CoverMiniButton(
-    icon: ImageVector,
-    description: String,
-    focusRequester: FocusRequester? = null,
-    onClick: () -> Unit
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isFocused by interactionSource.collectIsFocusedAsState()
-
-    Box(
-        modifier = Modifier
-            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .size(34.dp)
-            .clip(CircleShape)
-            .background(if (isFocused) TV_Surface_Focused else Color(0x332C3852))
-            .border(if (isFocused) 2.dp else 0.dp, if (isFocused) TV_Border_Focused else Color.Transparent, CircleShape)
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, contentDescription = description, tint = Color.White, modifier = Modifier.size(18.dp))
     }
 }
 
@@ -507,55 +534,6 @@ private fun CoverSliderTrack(
             fontSize = 11.sp,
             color = Color(0x88FFFFFF),
             modifier = Modifier.align(Alignment.Center)
-        )
-    }
-}
-
-@Composable
-private fun CoverPresetChip(
-    text: String,
-    isSelected: Boolean,
-    color: Color,
-    onClick: () -> Unit
-) {
-    val interactionSource = remember { MutableInteractionSource() }
-    val isFocused by interactionSource.collectIsFocusedAsState()
-
-    val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.10f else 1.0f,
-        animationSpec = spring(dampingRatio = 0.75f, stiffness = 400f),
-        label = "chip_scale"
-    )
-
-    val bgColor by animateColorAsState(
-        targetValue = when {
-            isFocused -> TV_Surface_Focused
-            isSelected -> color
-            else -> Color(0x332C3852)
-        },
-        label = "chip_bg"
-    )
-
-    Box(
-        modifier = Modifier
-            .scale(scale)
-            .height(32.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(bgColor)
-            .border(if (isFocused) 2.dp else 0.dp, if (isFocused) TV_Border_Focused else Color.Transparent, RoundedCornerShape(8.dp))
-            .clickable(
-                interactionSource = interactionSource,
-                indication = null,
-                onClick = onClick
-            )
-            .padding(horizontal = 10.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Text(
-            text = text,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = if (isSelected) Color.White else Color(0xCCFFFFFF)
         )
     }
 }
