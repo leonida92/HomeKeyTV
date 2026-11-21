@@ -34,6 +34,10 @@ class DefaultRemoteInputEngine(
     private val _learnedKey = MutableStateFlow<Pair<Int, String>?>(null)
     override val learnedKey: StateFlow<Pair<Int, String>?> = _learnedKey.asStateFlow()
 
+    // Tracks a key captured on ACTION_DOWN in Learn Mode so its trailing ACTION_UP is consumed
+    // even if the UI immediately disables Learn Mode before the user releases the button.
+    private var pendingLearnedKeyUp: Int? = null
+
     private var volumeRepeatToken: Any? = null
     private var volumeRepeatStartTime: Long = 0L
 
@@ -41,26 +45,25 @@ class DefaultRemoteInputEngine(
         val newGlobal = mutableMapOf<Int, ButtonRemapConfig>()
         val newScoped = mutableMapOf<String, MutableMap<Int, ButtonRemapConfig>>()
 
-        fun putWithAliasing(map: MutableMap<Int, ButtonRemapConfig>, config: ButtonRemapConfig) {
-            map[config.keyCode] = config
-            if (config.keyCode == RemoteInputEngine.KEYCODE_STAR_ALIAS) {
-                if (!map.containsKey(RemoteInputEngine.KEYCODE_PAIRING)) {
-                    map[RemoteInputEngine.KEYCODE_PAIRING] = config
-                }
-            } else if (config.keyCode == RemoteInputEngine.KEYCODE_PAIRING) {
-                if (!map.containsKey(RemoteInputEngine.KEYCODE_STAR_ALIAS)) {
-                    map[RemoteInputEngine.KEYCODE_STAR_ALIAS] = config
-                }
+        fun targetMapFor(config: ButtonRemapConfig): MutableMap<Int, ButtonRemapConfig> {
+            val scope = config.appScope?.trim()?.ifEmpty { null }
+            return if (scope != null) {
+                newScoped.getOrPut(scope) { mutableMapOf() }
+            } else {
+                newGlobal
             }
         }
 
+        // Populate explicit bindings first so they always take precedence over inferred OEM aliases.
         for (config in remaps) {
-            val scope = config.appScope?.trim()?.ifEmpty { null }
-            if (scope != null) {
-                val map = newScoped.getOrPut(scope) { mutableMapOf() }
-                putWithAliasing(map, config)
-            } else {
-                putWithAliasing(newGlobal, config)
+            targetMapFor(config)[config.keyCode] = config
+        }
+        for (config in remaps) {
+            val map = targetMapFor(config)
+            for (alias in RemoteInputEngine.aliasesFor(config.keyCode)) {
+                if (!map.containsKey(alias)) {
+                    map[alias] = config
+                }
             }
         }
         this.globalRemaps = newGlobal
@@ -82,6 +85,7 @@ class DefaultRemoteInputEngine(
     override fun setLearnMode(isLearnMode: Boolean) {
         this.isLearnMode = isLearnMode
         if (isLearnMode) {
+            pendingLearnedKeyUp = null
             _learnedKey.update { null }
         }
     }
@@ -111,74 +115,82 @@ class DefaultRemoteInputEngine(
         return globalRemaps[keyCode]
     }
 
-    override fun onKeyEvent(keyCode: Int, action: Int, repeatCount: Int): InputDecision {
-        // Volume Buttons Fix
-        val isVolumeKey = keyCode in listOf(
-            RemoteInputEngine.KEYCODE_VOLUME_UP,
-            RemoteInputEngine.KEYCODE_VOLUME_DOWN,
-            RemoteInputEngine.KEYCODE_VOLUME_MUTE,
-            RemoteInputEngine.KEYCODE_MUTE
-        )
+    private fun handleUnmappedVolumeFix(keyCode: Int, action: Int, repeatCount: Int): InputDecision {
+        if (keyCode == RemoteInputEngine.KEYCODE_VOLUME_UP || keyCode == RemoteInputEngine.KEYCODE_VOLUME_DOWN) {
+            val direction = if (keyCode == RemoteInputEngine.KEYCODE_VOLUME_UP) VolumeDirection.UP else VolumeDirection.DOWN
+            if (action == RemoteInputEngine.ACTION_DOWN) {
+                if (repeatCount > 0) {
+                    cancelVolumeRepeat()
+                    return InputDecision.PassThrough
+                }
+                cancelVolumeRepeat()
+                val token = "volume_repeat_$keyCode"
+                volumeRepeatToken = token
+                volumeRepeatStartTime = scheduler.currentTimeMs()
 
-        if (isVolumeKey && !isLearnMode) {
-            val mapped = findRemapConfig(keyCode)
-            if ((mapped == null || mapped.isPassThroughOnly) && isVolumeFixEnabled) {
-                if (keyCode == RemoteInputEngine.KEYCODE_VOLUME_UP || keyCode == RemoteInputEngine.KEYCODE_VOLUME_DOWN) {
-                    val direction = if (keyCode == RemoteInputEngine.KEYCODE_VOLUME_UP) VolumeDirection.UP else VolumeDirection.DOWN
-                    if (action == RemoteInputEngine.ACTION_DOWN) {
-                        if (repeatCount > 0) {
-                            cancelVolumeRepeat()
-                            return InputDecision.PassThrough
-                        } else {
-                            cancelVolumeRepeat()
-                            val token = "volume_repeat_$keyCode"
-                            volumeRepeatToken = token
-                            volumeRepeatStartTime = scheduler.currentTimeMs()
-
-                            fun scheduleNextRepeat() {
-                                scheduler.schedule(RemoteInputEngine.VOLUME_REPEAT_INTERVAL_MS, token) {
-                                    if (scheduler.currentTimeMs() - volumeRepeatStartTime <= RemoteInputEngine.VOLUME_MAX_DURATION_MS) {
-                                        onVolumeAdjust(direction)
-                                        scheduleNextRepeat()
-                                    }
-                                }
-                            }
-                            scheduler.schedule(RemoteInputEngine.VOLUME_REPEAT_INITIAL_DELAY_MS, token) {
-                                onVolumeAdjust(direction)
-                                scheduleNextRepeat()
-                            }
-                            return InputDecision.PassThrough
+                fun scheduleNextRepeat() {
+                    scheduler.schedule(RemoteInputEngine.VOLUME_REPEAT_INTERVAL_MS, token) {
+                        if (scheduler.currentTimeMs() - volumeRepeatStartTime <= RemoteInputEngine.VOLUME_MAX_DURATION_MS) {
+                            onVolumeAdjust(direction)
+                            scheduleNextRepeat()
                         }
-                    } else if (action == RemoteInputEngine.ACTION_UP) {
-                        cancelVolumeRepeat()
-                        return InputDecision.PassThrough
                     }
                 }
+                scheduler.schedule(RemoteInputEngine.VOLUME_REPEAT_INITIAL_DELAY_MS, token) {
+                    onVolumeAdjust(direction)
+                    scheduleNextRepeat()
+                }
+                return InputDecision.PassThrough
+            } else if (action == RemoteInputEngine.ACTION_UP) {
+                cancelVolumeRepeat()
                 return InputDecision.PassThrough
             }
         }
+        return InputDecision.PassThrough
+    }
 
-        // Fast-path bypass when dock is closed, learn mode is inactive, and settings is not foreground
-        if (!isDockShowing && !isLearnMode && !isSettingsForeground) {
+    override fun onKeyEvent(keyCode: Int, action: Int, repeatCount: Int): InputDecision {
+        // Consume trailing repeat/release events of a key just captured in Learn Mode
+        // even after UI stops Learn Mode upon ACTION_DOWN.
+        if (!isLearnMode && pendingLearnedKeyUp == keyCode) {
+            if (action == RemoteInputEngine.ACTION_DOWN && repeatCount == 0) {
+                pendingLearnedKeyUp = null
+            } else {
+                if (action == RemoteInputEngine.ACTION_UP) {
+                    pendingLearnedKeyUp = null
+                }
+                return InputDecision.Consume
+            }
+        }
+
+        if (isLearnMode) {
             if (keyCode in NAVIGATION_AND_SYSTEM_KEYS) {
                 return InputDecision.PassThrough
             }
-            if (isVolumeKey) {
-                val cfg = findRemapConfig(keyCode)
-                if (cfg == null || cfg.isPassThroughOnly) {
-                    return InputDecision.PassThrough
+            if (action == RemoteInputEngine.ACTION_DOWN && repeatCount == 0) {
+                pendingLearnedKeyUp = keyCode
+                val name = keyNameResolver(keyCode)
+                _learnedKey.update { Pair(keyCode, name) }
+            }
+            return InputDecision.Consume
+        }
+
+        // Volume Buttons Fix
+        val isVolumeKey = keyCode in VOLUME_KEYS
+        if (isVolumeKey) {
+            val mapped = findRemapConfig(keyCode)
+            if (mapped == null || mapped.isPassThroughOnly) {
+                return if (isVolumeFixEnabled) {
+                    handleUnmappedVolumeFix(keyCode, action, repeatCount)
+                } else {
+                    InputDecision.PassThrough
                 }
             }
         }
 
-        // Settings is foreground or Learn Mode is active
-        if (isSettingsForeground || isLearnMode) {
-            if (isLearnMode && action == RemoteInputEngine.ACTION_DOWN) {
-                val name = keyNameResolver(keyCode)
-                _learnedKey.update { Pair(keyCode, name) }
-                return InputDecision.Consume
-            }
-            return if (keyCode in NAVIGATION_AND_SYSTEM_KEYS) InputDecision.PassThrough else InputDecision.Consume
+        // Fast-path bypass when dock is closed and settings is not foreground
+        if (!isDockShowing && !isSettingsForeground && keyCode in NAVIGATION_AND_SYSTEM_KEYS) {
+            return InputDecision.PassThrough
         }
 
         // Active Dock Navigation
@@ -200,9 +212,17 @@ class DefaultRemoteInputEngine(
         }
 
         // Check if key is mapped
-        val config = findRemapConfig(keyCode) ?: return InputDecision.PassThrough
+        val config = findRemapConfig(keyCode)
+        if (config == null || config.isPassThroughOnly) {
+            if (isSettingsForeground) {
+                return if (keyCode in NAVIGATION_AND_SYSTEM_KEYS) InputDecision.PassThrough else InputDecision.Consume
+            }
+            return InputDecision.PassThrough
+        }
 
-        if (config.isPassThroughOnly) {
+        // In Settings, navigation keys still control the UI unless explicitly overridden;
+        // mapped non-navigation shortcut keys execute normally so users can test them right away.
+        if (isSettingsForeground && keyCode in NAVIGATION_AND_SYSTEM_KEYS) {
             return InputDecision.PassThrough
         }
 
@@ -291,6 +311,13 @@ class DefaultRemoteInputEngine(
     }
 
     companion object {
+        private val VOLUME_KEYS = setOf(
+            RemoteInputEngine.KEYCODE_VOLUME_UP,
+            RemoteInputEngine.KEYCODE_VOLUME_DOWN,
+            RemoteInputEngine.KEYCODE_VOLUME_MUTE,
+            RemoteInputEngine.KEYCODE_MUTE
+        )
+
         private val NAVIGATION_AND_SYSTEM_KEYS = setOf(
             RemoteInputEngine.KEYCODE_DPAD_UP,
             RemoteInputEngine.KEYCODE_DPAD_DOWN,

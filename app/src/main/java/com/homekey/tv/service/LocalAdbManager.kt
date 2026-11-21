@@ -50,15 +50,13 @@ class DefaultAdbAccessibilityProvisioner : AdbAccessibilityProvisioner {
         return try {
             val resolver = context.contentResolver
             val current = Settings.Secure.getString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES)
-            if (current != null && current.contains("RemoteButtonRemapService")) {
-                Settings.Secure.putInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
-                Log.d(TAG, "RemoteButtonRemapService already present in Secure Settings")
-                return true
-            }
-
             val withoutService = LocalAdbManager.removeAccessibilityService(current)
             val merged = LocalAdbManager.mergeAccessibilityServices(withoutService, LocalAdbManager.SERVICE_NAME)
 
+            if (current != null && current.contains("RemoteButtonRemapService")) {
+                // Cycling the entry forces AccessibilityManagerService to re-bind after an APK update or kill.
+                Settings.Secure.putString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, withoutService)
+            }
             Settings.Secure.putString(resolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, merged)
             Settings.Secure.putInt(resolver, Settings.Secure.ACCESSIBILITY_ENABLED, 1)
             Log.d(TAG, "Successfully wrote accessibility settings directly via Secure Settings")
@@ -134,6 +132,7 @@ class DefaultAdbAccessibilityProvisioner : AdbAccessibilityProvisioner {
                     client.shell("pm grant ${LocalAdbManager.PACKAGE_NAME} android.permission.WRITE_SECURE_SETTINGS")
                     client.shell("appops set ${LocalAdbManager.PACKAGE_NAME} REQUEST_INSTALL_PACKAGES allow")
                     client.shell("appops set ${LocalAdbManager.PACKAGE_NAME} SYSTEM_ALERT_WINDOW allow")
+                    client.shell("appops set ${LocalAdbManager.PACKAGE_NAME} AUTO_START allow")
                 } catch (pe: Exception) {
                     Log.w(TAG, "Permission/appops grant warning: ${pe.message}")
                 }

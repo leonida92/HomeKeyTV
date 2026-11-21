@@ -352,4 +352,115 @@ class RemoteInputEngineTest {
         scheduler.advanceTimeBy(200)
         assertEquals(2, volumeAdjustments.size)
     }
+
+    @Test
+    fun netflix_preset_191_aliases_to_tcl_netflix_4062_and_vice_versa() {
+        val action = RemapAction("LAUNCH_APP", "com.github.damontecres.wholphin")
+        engine.updateRemaps(
+            listOf(
+                ButtonRemapConfig(
+                    keyCode = 191,
+                    keyName = "Netflix Button",
+                    singlePressAction = action
+                )
+            )
+        )
+
+        // Pressing TCL physical Netflix keyCode 4062 executes Wholphin launch
+        val down4062 = engine.onKeyEvent(4062, RemoteInputEngine.ACTION_DOWN, 0)
+        assertEquals(InputDecision.Execute(action), down4062)
+        val up4062 = engine.onKeyEvent(4062, RemoteInputEngine.ACTION_UP, 0)
+        assertEquals(InputDecision.Consume, up4062)
+
+        // Rapid bounce across alias keys within 250ms shares debounce state
+        scheduler.advanceTimeBy(80)
+        val bounce191 = engine.onKeyEvent(191, RemoteInputEngine.ACTION_DOWN, 0)
+        assertEquals(InputDecision.Consume, bounce191)
+
+        // Configuring remap directly on 4062 also intercepts 191
+        scheduler.advanceTimeBy(500)
+        engine.updateRemaps(
+            listOf(
+                ButtonRemapConfig(
+                    keyCode = 4062,
+                    keyName = "Netflix Button",
+                    singlePressAction = action
+                )
+            )
+        )
+        val down191 = engine.onKeyEvent(191, RemoteInputEngine.ACTION_DOWN, 0)
+        assertEquals(InputDecision.Execute(action), down191)
+    }
+
+    @Test
+    fun youtube_and_prime_video_presets_alias_to_tcl_shortcut_keycodes() {
+        val ytAction = RemapAction("OPEN_DOCK")
+        val primeAction = RemapAction("LAUNCH_APP", "com.github.damontecres.wholphin")
+        val starAction = RemapAction("SYSTEM_SETTINGS")
+        engine.updateRemaps(
+            listOf(
+                ButtonRemapConfig(keyCode = 190, keyName = "YouTube Button", singlePressAction = ytAction),
+                ButtonRemapConfig(keyCode = 229, keyName = "Prime Video Button", singlePressAction = primeAction),
+                ButtonRemapConfig(keyCode = 313, keyName = "Custom Star Button", singlePressAction = starAction)
+            )
+        )
+
+        assertEquals(InputDecision.Execute(ytAction), engine.onKeyEvent(4065, RemoteInputEngine.ACTION_DOWN, 0))
+        scheduler.advanceTimeBy(300)
+        assertEquals(InputDecision.Execute(ytAction), engine.onKeyEvent(4097, RemoteInputEngine.ACTION_DOWN, 0))
+
+        assertEquals(InputDecision.Execute(primeAction), engine.onKeyEvent(4099, RemoteInputEngine.ACTION_DOWN, 0))
+        scheduler.advanceTimeBy(300)
+        assertEquals(InputDecision.Execute(primeAction), engine.onKeyEvent(4061, RemoteInputEngine.ACTION_DOWN, 0))
+        scheduler.advanceTimeBy(300)
+        assertEquals(InputDecision.Execute(primeAction), engine.onKeyEvent(4069, RemoteInputEngine.ACTION_DOWN, 0))
+
+        assertEquals(InputDecision.Execute(starAction), engine.onKeyEvent(4149, RemoteInputEngine.ACTION_DOWN, 0))
+
+        // Live TV / EPG (4001) and Favorite (4002) are distinct buttons and must NOT alias to Star (313)
+        assertEquals(InputDecision.PassThrough, engine.onKeyEvent(4001, RemoteInputEngine.ACTION_DOWN, 0))
+        assertEquals(InputDecision.PassThrough, engine.onKeyEvent(4002, RemoteInputEngine.ACTION_DOWN, 0))
+    }
+
+    @Test
+    fun mapped_shortcut_key_executes_even_when_settings_is_foreground() {
+        val launchWholphin = RemapAction("LAUNCH_APP", "com.github.damontecres.wholphin")
+        engine.updateRemaps(
+            listOf(
+                ButtonRemapConfig(
+                    keyCode = 191,
+                    keyName = "Netflix Button",
+                    singlePressAction = launchWholphin
+                )
+            )
+        )
+        engine.setSettingsForeground(true)
+
+        // Mapped shortcut key executes while Settings is foreground
+        assertEquals(InputDecision.Execute(launchWholphin), engine.onKeyEvent(4062, RemoteInputEngine.ACTION_DOWN, 0))
+        assertEquals(InputDecision.Consume, engine.onKeyEvent(4062, RemoteInputEngine.ACTION_UP, 0))
+
+        // Unmapped non-navigation shortcut key still consumed in Settings
+        assertEquals(InputDecision.Consume, engine.onKeyEvent(4099, RemoteInputEngine.ACTION_DOWN, 0))
+
+        // Navigation key passes through in Settings
+        assertEquals(InputDecision.PassThrough, engine.onKeyEvent(RemoteInputEngine.KEYCODE_DPAD_DOWN, RemoteInputEngine.ACTION_DOWN, 0))
+    }
+
+    @Test
+    fun learn_mode_consumes_matching_action_up_after_learn_mode_stops_on_down() {
+        // Key 4062 has NO remap yet (typical first-time Learn Mode flow)
+        engine.setLearnMode(true)
+        val down = engine.onKeyEvent(4062, RemoteInputEngine.ACTION_DOWN, 0)
+        assertEquals(InputDecision.Consume, down)
+        assertEquals(4062, engine.learnedKey.value?.first)
+
+        // UI stops learn mode immediately upon receiving ACTION_DOWN learned key
+        engine.setLearnMode(false)
+
+        // Subsequent ACTION_UP for 4062 must still be consumed rather than PassThrough to OS
+        val up = engine.onKeyEvent(4062, RemoteInputEngine.ACTION_UP, 0)
+        assertEquals(InputDecision.Consume, up)
+        assertTrue(dispatchedActions.isEmpty())
+    }
 }

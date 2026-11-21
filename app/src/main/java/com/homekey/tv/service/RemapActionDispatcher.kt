@@ -44,10 +44,14 @@ class RemapActionDispatcher(
 
             "LAUNCH_APP" -> {
                 action.target?.let { pkgName ->
-                    val launchIntent = context.packageManager?.getLaunchIntentForPackage(pkgName)
+                    val pm = context.packageManager
+                    val launchIntent = pm?.getLeanbackLaunchIntentForPackage(pkgName)
+                        ?: pm?.getLaunchIntentForPackage(pkgName)
                     if (launchIntent != null) {
                         launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                         context.startActivity(launchIntent)
+                    } else {
+                        Log.w(tag, "No launch intent found for package: $pkgName")
                     }
                 }
             }

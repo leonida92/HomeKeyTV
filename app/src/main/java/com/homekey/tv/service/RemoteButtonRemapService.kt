@@ -44,7 +44,10 @@ class RemoteButtonRemapService : AccessibilityService() {
     private val inputEngine: RemoteInputEngine by lazy {
         DefaultRemoteInputEngine(
             scheduler = scheduler,
-            keyNameResolver = { KeyEvent.keyCodeToString(it).removePrefix("KEYCODE_") },
+            keyNameResolver = {
+                RemoteInputEngine.friendlyKeyName(it)
+                    ?: KeyEvent.keyCodeToString(it).removePrefix("KEYCODE_")
+            },
             onVolumeAdjust = { adjustVolume(it) },
             onAction = { actionDispatcher.execute(it, this@RemoteButtonRemapService) }
         )
@@ -70,7 +73,8 @@ class RemoteButtonRemapService : AccessibilityService() {
         val info = serviceInfo ?: return
         val hasRemaps = ::prefs.isInitialized && prefs.buttonRemaps.value.isNotEmpty()
         val isLearning = coordinator.isLearnModeActive.value
-        val shouldFilter = hasRemaps || isLearning
+        val isSettingsForeground = coordinator.isSettingsForeground.value
+        val shouldFilter = hasRemaps || isLearning || isSettingsForeground
 
         val currentlyFiltering = (info.flags and AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0
         if (shouldFilter != currentlyFiltering) {
@@ -80,7 +84,10 @@ class RemoteButtonRemapService : AccessibilityService() {
                 info.flags and AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS.inv()
             }
             serviceInfo = info
-            Log.d(tag, "updateKeyFilterState: shouldFilter=$shouldFilter (hasRemaps=$hasRemaps, isLearning=$isLearning)")
+            Log.d(
+                tag,
+                "updateKeyFilterState: shouldFilter=$shouldFilter (hasRemaps=$hasRemaps, isLearning=$isLearning, settings=$isSettingsForeground)"
+            )
         }
     }
 
@@ -130,6 +137,7 @@ class RemoteButtonRemapService : AccessibilityService() {
         scope.launch {
             coordinator.isSettingsForeground.collect { isForeground ->
                 inputEngine.setSettingsForeground(isForeground)
+                updateKeyFilterState()
             }
         }
 

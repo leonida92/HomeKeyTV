@@ -20,9 +20,9 @@ Coding standards and architectural rules live in `CODING_STANDARDS.md`. Review a
 
 ## Hardware verification
 
-- **Target Device**: Google Streamer Android TV at `192.168.1.50:5555`.
+- **Target Device**: TCL Google TV at `192.168.1.40:5555`.
 - **ADB Executable**: `C:\Users\user\AppData\Local\Android\Sdk\platform-tools\adb.exe`.
-- **Deployment**: Always chain connection with commands (`adb connect 192.168.1.50:5555; adb install ...`). Always install release APK (`./gradlew assembleRelease` -> `HomeKeyTV-v*.apk`) to avoid debug overlay UI stutter.
+- **Deployment**: Always chain connection with commands (`adb connect 192.168.1.40:5555; adb install ...`). Always install release APK (`./gradlew assembleRelease` -> `HomeKeyTV-v*.apk`) to avoid debug overlay UI stutter.
 - **Verification**: After deployment, launch the app (`adb shell monkey -p com.homekey.tv -c android.intent.category.LAUNCHER 1`), obtain PID via `$appPid = (adb shell pidof com.homekey.tv).Trim()` (avoid `$pid` which is PowerShell's read-only variable), broadcast explicit intent with `-p com.homekey.tv` (`adb shell am broadcast -a com.homekey.tv.ACTION_TOGGLE_DOCK -p com.homekey.tv`), and inspect logcat with `adb logcat --pid=$appPid -d` to verify startup and toggle traces immediately.
 
 ## Agent skills
