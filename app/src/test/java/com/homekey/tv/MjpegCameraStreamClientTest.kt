@@ -8,21 +8,36 @@ import com.homekey.tv.data.api.SnapshotFetcher
 import com.homekey.tv.data.api.SnapshotResult
 import com.homekey.tv.data.api.StreamPipelineState
 import com.homekey.tv.data.api.extractJpegFrames
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import okhttp3.OkHttpClient
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.BufferedReader
 import java.io.ByteArrayInputStream
 import java.io.InputStream
+import java.io.InputStreamReader
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class MjpegCameraStreamClientTest {
@@ -135,7 +150,10 @@ class MjpegCameraStreamClientTest {
 
         val transport = MjpegStreamTransport { streamUrl, accessToken, onStreamOpened ->
             mjpegUrls.add("$streamUrl|$accessToken")
-            onStreamOpened(ByteArrayInputStream(frame1 + frame2))
+            onStreamOpened(ByteArrayInputStream(frame1))
+            kotlinx.coroutines.yield()
+            onStreamOpened(ByteArrayInputStream(frame2))
+            kotlinx.coroutines.yield()
             MjpegStreamOutcome.Completed
         }
         val snapshotFetcher = SnapshotFetcher { snapshotUrl, accessToken ->
@@ -152,7 +170,7 @@ class MjpegCameraStreamClientTest {
             streamTransport = transport,
             snapshotFetcher = snapshotFetcher,
             snapshotPollIntervalMs = 1500L,
-            decodeDispatcher = dispatcher
+            ioDispatcher = dispatcher
         )
 
         val states = mutableListOf<StreamPipelineState<FakeImage>>()
@@ -209,7 +227,7 @@ class MjpegCameraStreamClientTest {
             streamTransport = transport,
             snapshotFetcher = snapshotFetcher,
             snapshotPollIntervalMs = 1500L,
-            decodeDispatcher = dispatcher
+            ioDispatcher = dispatcher
         )
 
         val states = mutableListOf<StreamPipelineState<FakeImage>>()
@@ -273,7 +291,7 @@ class MjpegCameraStreamClientTest {
         val client = MjpegCameraStreamClient(
             streamTransport = transport,
             snapshotFetcher = snapshotFetcher,
-            decodeDispatcher = dispatcher
+            ioDispatcher = dispatcher
         )
 
         val activeServerUrl = MutableStateFlow("http://192.168.1.50:8123")
@@ -340,7 +358,7 @@ class MjpegCameraStreamClientTest {
         val client = MjpegCameraStreamClient(
             streamTransport = transport,
             snapshotFetcher = { _, _ -> SnapshotResult.Failure("unused") },
-            decodeDispatcher = dispatcher
+            ioDispatcher = dispatcher
         )
 
         val serverUrl = MutableStateFlow("")
@@ -369,5 +387,293 @@ class MjpegCameraStreamClientTest {
         reconnectTrigger.value = 1
         runCurrent()
         assertEquals(2, openCount)
+    }
+
+    @Test
+    fun observeStreamPipeline_executesTransportAndDecodeOnIoDispatcherWithoutFlowInvariantViolation() {
+        val uiExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "camera-ui-collector") }
+        val ioExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "camera-io-producer") }
+        val uiDispatcher = uiExecutor.asCoroutineDispatcher()
+        val ioDispatcher = ioExecutor.asCoroutineDispatcher()
+
+        try {
+            val liveFrame = fakeJpeg(0x11)
+            val snapFrame = fakeJpeg(0x22)
+            val liveDelivered = CompletableDeferred<Unit>()
+            val transportThread = AtomicReference<String>()
+            val decodeThread = AtomicReference<String>()
+            val collectorThread = AtomicReference<String>()
+
+            val transport = MjpegStreamTransport { _, _, onStreamOpened ->
+                transportThread.set(Thread.currentThread().name)
+                onStreamOpened(ByteArrayInputStream(liveFrame))
+                liveDelivered.await()
+                MjpegStreamOutcome.Completed
+            }
+            val snapshotFetcher = SnapshotFetcher { _, _ ->
+                SnapshotResult.Success(snapFrame)
+            }
+
+            val client = MjpegCameraStreamClient(
+                streamTransport = transport,
+                snapshotFetcher = snapshotFetcher,
+                snapshotPollIntervalMs = 50L,
+                ioDispatcher = ioDispatcher
+            )
+
+            val received = mutableListOf<StreamPipelineState.Streaming<FakeImage>>()
+            runBlocking(uiDispatcher) {
+                withTimeout(5000L) {
+                    val job = launch {
+                        client.observeStreamPipeline(
+                            entityId = "camera.porch",
+                            serverUrlFlow = MutableStateFlow("http://192.168.1.50:8123"),
+                            accessToken = "token"
+                        ) { bytes ->
+                            decodeThread.set(Thread.currentThread().name)
+                            DecodedFrame(FakeImage("img_${bytes[4]}", bytes), 1280, 720)
+                        }.collect { state ->
+                            collectorThread.set(Thread.currentThread().name)
+                            if (state is StreamPipelineState.Streaming) {
+                                received.add(state)
+                                if (state.isLive) {
+                                    liveDelivered.complete(Unit)
+                                }
+                            }
+                        }
+                    }
+
+                    while (received.none { !it.isLive }) {
+                        kotlinx.coroutines.delay(10L)
+                    }
+                    job.cancel()
+                }
+            }
+
+            assertTrue(
+                "Expected transport on IO thread, got ${transportThread.get()}",
+                transportThread.get().startsWith("camera-io-producer")
+            )
+            assertTrue(
+                "Expected decode on IO thread, got ${decodeThread.get()}",
+                decodeThread.get().startsWith("camera-io-producer")
+            )
+            assertTrue(
+                "Expected collector on UI thread, got ${collectorThread.get()}",
+                collectorThread.get().startsWith("camera-ui-collector")
+            )
+            assertNotEquals(transportThread.get(), collectorThread.get())
+            assertTrue(received.any { it.isLive && it.frame.bytes.contentEquals(liveFrame) })
+            assertTrue(received.any { !it.isLive && it.frame.bytes.contentEquals(snapFrame) })
+        } finally {
+            uiDispatcher.close()
+            ioDispatcher.close()
+            uiExecutor.shutdownNow()
+            ioExecutor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun observeStreamPipeline_conflatesBackloggedFramesWhenCollectorIsSlow() {
+        val uiExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "camera-conflate-ui") }
+        val ioExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "camera-conflate-io") }
+        val uiDispatcher = uiExecutor.asCoroutineDispatcher()
+        val ioDispatcher = ioExecutor.asCoroutineDispatcher()
+
+        try {
+            val frames = (1..5).map { fakeJpeg(it) }
+            val firstFrameCollected = CompletableDeferred<Unit>()
+            val burstEmitted = CompletableDeferred<Unit>()
+
+            val gatedStream = object : InputStream() {
+                private var index = 0
+                override fun read(): Int = -1
+                override fun read(b: ByteArray, off: Int, len: Int): Int {
+                    if (index == 1) {
+                        runBlocking { firstFrameCollected.await() }
+                    }
+                    if (index >= frames.size) {
+                        burstEmitted.complete(Unit)
+                        return -1
+                    }
+                    val payload = frames[index++]
+                    System.arraycopy(payload, 0, b, off, payload.size)
+                    return payload.size
+                }
+            }
+
+            val transport = MjpegStreamTransport { _, _, onStreamOpened ->
+                onStreamOpened(gatedStream)
+                awaitCancellation()
+            }
+
+            val client = MjpegCameraStreamClient(
+                streamTransport = transport,
+                snapshotFetcher = { _, _ -> SnapshotResult.Failure("unused") },
+                ioDispatcher = ioDispatcher
+            )
+
+            val receivedIds = mutableListOf<String>()
+            runBlocking(uiDispatcher) {
+                withTimeout(5000L) {
+                    val job = launch {
+                        client.observeStreamPipeline(
+                            entityId = "camera.driveway",
+                            serverUrlFlow = MutableStateFlow("http://192.168.1.50:8123"),
+                            accessToken = "token"
+                        ) { bytes ->
+                            DecodedFrame(FakeImage("f${bytes[4]}", bytes), 1280, 720)
+                        }.collect { state ->
+                            if (state is StreamPipelineState.Streaming) {
+                                receivedIds.add(state.frame.id)
+                                if (state.frame.id == "f1") {
+                                    firstFrameCollected.complete(Unit)
+                                    burstEmitted.await()
+                                }
+                            }
+                        }
+                    }
+
+                    while (!receivedIds.contains("f5")) {
+                        kotlinx.coroutines.delay(10L)
+                    }
+                    job.cancel()
+                }
+            }
+
+            assertEquals("f1", receivedIds.first())
+            assertEquals("f5", receivedIds.last())
+            assertTrue(
+                "Expected conflation to drop intermediate frames, but got $receivedIds",
+                receivedIds.size < frames.size
+            )
+        } finally {
+            uiDispatcher.close()
+            ioDispatcher.close()
+            uiExecutor.shutdownNow()
+            ioExecutor.shutdownNow()
+        }
+    }
+
+    @Test
+    fun observeStreamPipeline_realOkHttpTransportStreamsMjpegAndFallsBackToSnapshotsOverLoopback() {
+        val uiExecutor = Executors.newSingleThreadExecutor { r -> Thread(r, "fake-android-ui") }
+        val uiDispatcher = uiExecutor.asCoroutineDispatcher()
+        val serverExecutor = Executors.newCachedThreadPool()
+        val serverSocket = ServerSocket(0, 8, InetAddress.getByName("127.0.0.1"))
+
+        val liveFrame = fakeJpeg(0x31)
+        val snapFrame = fakeJpeg(0x42)
+        val streamAuthHeader = AtomicReference<String?>()
+        val snapshotAuthHeader = AtomicReference<String?>()
+        val liveReceivedLatch = CountDownLatch(1)
+
+        serverExecutor.submit {
+            while (!serverSocket.isClosed) {
+                val socket = try {
+                    serverSocket.accept()
+                } catch (_: Exception) {
+                    break
+                }
+                serverExecutor.submit {
+                    socket.use { clientSocket ->
+                        val reader = BufferedReader(InputStreamReader(clientSocket.getInputStream()))
+                        val requestLine = reader.readLine() ?: return@use
+                        val path = requestLine.split(" ").getOrNull(1) ?: ""
+                        var authHeader: String? = null
+                        while (true) {
+                            val headerLine = reader.readLine() ?: break
+                            if (headerLine.isEmpty()) break
+                            if (headerLine.startsWith("Authorization:", ignoreCase = true)) {
+                                authHeader = headerLine.substringAfter(":").trim()
+                            }
+                        }
+
+                        val out = clientSocket.getOutputStream()
+                        when (path) {
+                            "/api/camera_proxy_stream/camera.front_door" -> {
+                                streamAuthHeader.set(authHeader)
+                                val headers = "HTTP/1.1 200 OK\r\n" +
+                                    "Content-Type: multipart/x-mixed-replace; boundary=frame\r\n" +
+                                    "Connection: close\r\n\r\n"
+                                out.write(headers.toByteArray())
+                                out.write("--frame\r\nContent-Type: image/jpeg\r\n\r\n".toByteArray())
+                                out.write(liveFrame)
+                                out.write("\r\n".toByteArray())
+                                out.flush()
+                                liveReceivedLatch.await(3, TimeUnit.SECONDS)
+                                out.write("--frame--\r\n".toByteArray())
+                                out.flush()
+                            }
+
+                            "/api/camera_proxy/camera.front_door" -> {
+                                snapshotAuthHeader.set(authHeader)
+                                val headers = "HTTP/1.1 200 OK\r\n" +
+                                    "Content-Type: image/jpeg\r\n" +
+                                    "Content-Length: ${snapFrame.size}\r\n" +
+                                    "Connection: close\r\n\r\n"
+                                out.write(headers.toByteArray())
+                                out.write(snapFrame)
+                                out.flush()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        val httpClient = OkHttpClient.Builder()
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(0, TimeUnit.MILLISECONDS)
+            .writeTimeout(5, TimeUnit.SECONDS)
+            .build()
+
+        try {
+            val client = MjpegCameraStreamClient(httpClient = httpClient)
+            val baseUrl = "http://127.0.0.1:${serverSocket.localPort}"
+            val received = mutableListOf<StreamPipelineState.Streaming<FakeImage>>()
+            val collectorThread = AtomicReference<String>()
+
+            runBlocking(uiDispatcher) {
+                withTimeout(5000L) {
+                    client.observeStreamPipeline(
+                        entityId = "camera.front_door",
+                        serverUrlFlow = MutableStateFlow(baseUrl),
+                        accessToken = "test-token"
+                    ) { bytes ->
+                        DecodedFrame(FakeImage("ok_${bytes[4]}", bytes), 640, 480)
+                    }.takeWhile { state ->
+                        collectorThread.set(Thread.currentThread().name)
+                        if (state is StreamPipelineState.Streaming) {
+                            received.add(state)
+                            if (state.isLive) {
+                                liveReceivedLatch.countDown()
+                                true
+                            } else {
+                                false
+                            }
+                        } else {
+                            true
+                        }
+                    }.collect { }
+                }
+            }
+
+            assertEquals("Bearer test-token", streamAuthHeader.get())
+            assertEquals("Bearer test-token", snapshotAuthHeader.get())
+            assertTrue(
+                "Expected collector on fake-android-ui thread, got ${collectorThread.get()}",
+                collectorThread.get().startsWith("fake-android-ui")
+            )
+            assertTrue(received.any { it.isLive && it.frame.bytes.contentEquals(liveFrame) })
+            assertTrue(received.any { !it.isLive && it.frame.bytes.contentEquals(snapFrame) })
+        } finally {
+            serverSocket.close()
+            httpClient.dispatcher.executorService.shutdown()
+            httpClient.connectionPool.evictAll()
+            uiDispatcher.close()
+            uiExecutor.shutdownNow()
+            serverExecutor.shutdownNow()
+        }
     }
 }

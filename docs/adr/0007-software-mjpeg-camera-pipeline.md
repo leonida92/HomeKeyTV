@@ -5,7 +5,7 @@ Camera streaming on Android TV overlays presents a unique hardware contention ch
 
 We decided to strictly use pure software-downsampled MJPEG over HTTP (`RGB_565` bitmaps via `cameraHttpClient`) for all camera views, including the interactive `CameraDialog` and transient `CameraPipAlert`:
 1. **Zero Hardware Decoder Contention**: Pure software bitmap decoding bypasses Android `MediaCodec` entirely, guaranteeing active 4K/HDR video decoders in foreground TV apps are never interrupted.
-2. **Sub-Sampled Memory Footprint**: Frame decodes target downsampled dimensions (`RGB_565` color config, 2 bytes per pixel) and recycle buffers immediately on disposal, avoiding GC thrashing.
+2. **Sub-Sampled Memory Footprint**: Frame decodes target downsampled dimensions (`RGB_565` color config, 2 bytes per pixel) and recycle buffers immediately on disposal, avoiding GC thrashing. Stream emissions are confined to IO via `.flowOn(ioDispatcher).conflate()` so slow TV rendering drops stale frames rather than queueing buffered bitmaps in memory.
 3. **Transient Alert Safety**: Camera PiP Alerts can appear over active video playback with zero dropped frames.
 
 ## Considered Options

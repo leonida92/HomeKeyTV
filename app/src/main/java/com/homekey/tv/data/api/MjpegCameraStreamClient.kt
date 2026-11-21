@@ -10,18 +10,21 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.conflate
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
-import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.ByteArrayOutputStream
+import java.io.IOException
 import java.io.InputStream
 import java.util.concurrent.TimeUnit
 
@@ -92,25 +95,29 @@ private class OkHttpMjpegStreamTransport(
         streamUrl: String,
         accessToken: String,
         onStreamOpened: suspend (InputStream) -> Unit
-    ): MjpegStreamOutcome = withContext(Dispatchers.IO) {
-        val request = Request.Builder()
-            .url(streamUrl)
-            .header("Authorization", "Bearer $accessToken")
-            .build()
+    ): MjpegStreamOutcome {
+        val request = try {
+            Request.Builder()
+                .url(streamUrl)
+                .header("Authorization", "Bearer $accessToken")
+                .build()
+        } catch (e: IllegalArgumentException) {
+            return MjpegStreamOutcome.Failure(e.message ?: "Invalid MJPEG stream URL")
+        }
 
         val call = client.newCall(request)
-        // Register cancellation on the withContext Job so cancelling the collector aborts
+        // Register cancellation on the flow producer Job so cancelling the collector aborts
         // blocking socket reads immediately instead of waiting for readTimeout.
         val cancelHandle = currentCoroutineContext()[Job]?.invokeOnCompletion {
             call.cancel()
         }
-        try {
+        return try {
             call.execute().use { response ->
                 if (!response.isSuccessful) {
-                    return@withContext MjpegStreamOutcome.HttpError(response.code)
+                    return MjpegStreamOutcome.HttpError(response.code)
                 }
                 val body = response.body
-                    ?: return@withContext MjpegStreamOutcome.Failure("Empty MJPEG response body")
+                    ?: return MjpegStreamOutcome.Failure("Empty MJPEG response body")
                 body.byteStream().use { inputStream ->
                     onStreamOpened(inputStream)
                 }
@@ -119,8 +126,9 @@ private class OkHttpMjpegStreamTransport(
         } catch (ce: CancellationException) {
             call.cancel()
             throw ce
-        } catch (e: Exception) {
+        } catch (e: IOException) {
             call.cancel()
+            currentCoroutineContext().ensureActive()
             MjpegStreamOutcome.Failure(e.message ?: "MJPEG connection failed")
         } finally {
             cancelHandle?.dispose()
@@ -131,40 +139,44 @@ private class OkHttpMjpegStreamTransport(
 private class OkHttpSnapshotFetcher(
     private val client: OkHttpClient
 ) : SnapshotFetcher {
-    override suspend fun fetchSnapshot(snapshotUrl: String, accessToken: String): SnapshotResult =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
+    override suspend fun fetchSnapshot(snapshotUrl: String, accessToken: String): SnapshotResult {
+        val request = try {
+            Request.Builder()
                 .url(snapshotUrl)
                 .header("Authorization", "Bearer $accessToken")
                 .build()
-
-            val call = client.newCall(request)
-            val cancelHandle = currentCoroutineContext()[Job]?.invokeOnCompletion {
-                call.cancel()
-            }
-            try {
-                call.execute().use { response ->
-                    if (response.isSuccessful) {
-                        val bytes = response.body?.bytes()
-                        if (bytes != null && bytes.isNotEmpty()) {
-                            SnapshotResult.Success(bytes)
-                        } else {
-                            SnapshotResult.Failure("Empty snapshot response")
-                        }
-                    } else {
-                        SnapshotResult.HttpError(response.code)
-                    }
-                }
-            } catch (ce: CancellationException) {
-                call.cancel()
-                throw ce
-            } catch (e: Exception) {
-                call.cancel()
-                SnapshotResult.Failure(e.message ?: "Connection failed")
-            } finally {
-                cancelHandle?.dispose()
-            }
+        } catch (e: IllegalArgumentException) {
+            return SnapshotResult.Failure(e.message ?: "Invalid snapshot URL")
         }
+
+        val call = client.newCall(request)
+        val cancelHandle = currentCoroutineContext()[Job]?.invokeOnCompletion {
+            call.cancel()
+        }
+        return try {
+            call.execute().use { response ->
+                if (response.isSuccessful) {
+                    val bytes = response.body?.bytes()
+                    if (bytes != null && bytes.isNotEmpty()) {
+                        SnapshotResult.Success(bytes)
+                    } else {
+                        SnapshotResult.Failure("Empty snapshot response")
+                    }
+                } else {
+                    SnapshotResult.HttpError(response.code)
+                }
+            }
+        } catch (ce: CancellationException) {
+            call.cancel()
+            throw ce
+        } catch (e: IOException) {
+            call.cancel()
+            currentCoroutineContext().ensureActive()
+            SnapshotResult.Failure(e.message ?: "Connection failed")
+        } finally {
+            cancelHandle?.dispose()
+        }
+    }
 }
 
 /**
@@ -176,7 +188,7 @@ class MjpegCameraStreamClient internal constructor(
     private val streamTransport: MjpegStreamTransport,
     private val snapshotFetcher: SnapshotFetcher,
     private val snapshotPollIntervalMs: Long = DEFAULT_SNAPSHOT_POLL_INTERVAL_MS,
-    private val decodeDispatcher: CoroutineDispatcher = Dispatchers.IO
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO
 ) {
     constructor(
         httpClient: OkHttpClient = defaultCameraHttpClient
@@ -245,26 +257,20 @@ class MjpegCameraStreamClient internal constructor(
                 val snapshotUrl = "$cleanBaseUrl/api/camera_proxy/$entityId"
                 var hasDecodedFrame = false
 
-                val streamOutcome = try {
-                    streamTransport.stream(streamUrl, accessToken) { inputStream ->
-                        extractJpegFrames(inputStream) { jpegBytes ->
-                            val decoded = decoder(jpegBytes)
-                            if (decoded != null) {
-                                hasDecodedFrame = true
-                                emit(
-                                    StreamPipelineState.Streaming(
-                                        frame = decoded.image,
-                                        aspectRatio = decoded.aspectRatio,
-                                        isLive = true
-                                    )
+                val streamOutcome = streamTransport.stream(streamUrl, accessToken) { inputStream ->
+                    extractJpegFrames(inputStream) { jpegBytes ->
+                        val decoded = decoder(jpegBytes)
+                        if (decoded != null) {
+                            hasDecodedFrame = true
+                            emit(
+                                StreamPipelineState.Streaming(
+                                    frame = decoded.image,
+                                    aspectRatio = decoded.aspectRatio,
+                                    isLive = true
                                 )
-                            }
+                            )
                         }
                     }
-                } catch (ce: CancellationException) {
-                    throw ce
-                } catch (e: Exception) {
-                    MjpegStreamOutcome.Failure(e.message ?: "MJPEG stream error")
                 }
 
                 when (streamOutcome) {
@@ -281,7 +287,7 @@ class MjpegCameraStreamClient internal constructor(
                 while (currentCoroutineContext().isActive) {
                     when (val snapResult = snapshotFetcher.fetchSnapshot(snapshotUrl, accessToken)) {
                         is SnapshotResult.Success -> {
-                            val decoded = withContext(decodeDispatcher) { decoder(snapResult.bytes) }
+                            val decoded = decoder(snapResult.bytes)
                             if (decoded != null) {
                                 hasDecodedFrame = true
                                 emit(
@@ -307,7 +313,9 @@ class MjpegCameraStreamClient internal constructor(
                     delay(snapshotPollIntervalMs)
                 }
             }
-        }
+                .flowOn(ioDispatcher)
+                .conflate()
+        }.conflate()
     }
 
     companion object {

@@ -52,6 +52,10 @@ _Avoid_: SubscribedEntity, WatchedEntity, TrackedEntity
 A transient picture-in-picture video feed overlay triggered automatically by an external Home Assistant notification event.
 _Avoid_: NotificationPopup, PipNotification
 
+**Camera Preview**:
+An interactive, user-opened live camera overlay triggered from a pinned camera entity on the dock, rendered in either compact or full modal layout.
+_Avoid_: Camera Popup, Camera Feed, Camera Dialog
+
 **Cover Control**:
 Dedicated TV overlay controls for motorized blinds, shades, and garage doors, providing open/stop/close buttons and position/tilt sliders.
 _Avoid_: BlindPopup, ShadeDialog
